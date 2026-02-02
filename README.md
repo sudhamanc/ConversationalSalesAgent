@@ -63,264 +63,285 @@ The system is divided into **four distinct layers**:
 
 ### Architecture Diagram
 
-<div align="center">
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '18px', 'fontFamily': 'arial'}, 'flowchart': {'nodeSpacing': 30, 'rankSpacing': 50, 'curve': 'basis'}}}%%
-graph TD
-    subgraph Client ["<br/>🖥️ CLIENT LAYER - React<br/><br/>"]
-        UI["<br/>B2B Chat Interface<br/><br/>"]
-        Socket["<br/>WebSocket Client<br/><br/>"]
-    end
-
-    subgraph Orchestrator ["<br/>🧠 ORCHESTRATION LAYER - Python<br/><br/>"]
-        SuperAgent["<br/>🧠 SUPER AGENT<br/>Orchestrator<br/><br/>"]
-        Router["<br/>Intent Router<br/><br/>"]
-        Steer["<br/>Steering & Guardrails<br/><br/>"]
-    end
-
-    subgraph Mesh ["<br/>🤝 AGENT MESH - A2A Protocol<br/><br/>"]
-        subgraph Discovery ["Discovery"]
-            P_Agent["<br/>👤 Prospect Agent<br/><br/>"]
-            L_Agent["<br/>📊 Lead Gen Agent<br/><br/>"]
-        end
-        subgraph Config ["Configuration"]
-            Prod_Agent["<br/>📦 Product Agent<br/><br/>"]
-            Off_Agent["<br/>💰 Offer Mgmt Agent<br/><br/>"]
-        end
-        subgraph Transaction ["Transaction"]
-            Pay_Agent["<br/>💳 Payment Agent<br/><br/>"]
-            Ord_Agent["<br/>🛒 Order Agent<br/><br/>"]
-            Svc_Agent["<br/>🔧 Service Fulfillment Agent<br/><br/>"]
-        end
-    end
-
-    subgraph Tools ["<br/>⚙️ INFRASTRUCTURE & TOOLS - ADK/MCP<br/><br/>"]
-        API_GW["<br/>Backend API Gateway<br/><br/>"]
-        RAG["<br/>RAG Engine<br/>Vector DB<br/><br/>"]
-        Obs["<br/>Observability<br/>& Logging<br/><br/>"]
-        DB[("<br/>State<br/>Database<br/><br/>")]
-    end
-
-    UI <--> Socket
-    Socket <--> SuperAgent
-    SuperAgent --> Router
-    Router --> Discovery
-    Router --> Config
-    Router --> Transaction
-    Discovery -- "A2A" --> Config
-    Config -- "A2A" --> Transaction
-    P_Agent -- "MCP/REST" --> API_GW
-    Prod_Agent -- "MCP/REST" --> RAG
-    Off_Agent -- "MCP/REST" --> API_GW
-    Pay_Agent -- "MCP/REST" --> API_GW
-    Ord_Agent -- "MCP/REST" --> DB
-    Svc_Agent -- "MCP/REST" --> API_GW
-    Steer -.-> SuperAgent
-    Mesh -.-> Obs
-
-    style SuperAgent fill:#ff6b6b,stroke:#333,stroke-width:3px,color:#fff
-    style UI fill:#4ecdc4,stroke:#333,stroke-width:2px
-    style DB fill:#95e1d3,stroke:#333,stroke-width:2px
-    style P_Agent fill:#a8e6cf,stroke:#333,stroke-width:2px
-    style L_Agent fill:#a8e6cf,stroke:#333,stroke-width:2px
-    style Prod_Agent fill:#ffd93d,stroke:#333,stroke-width:2px
-    style Off_Agent fill:#ffd93d,stroke:#333,stroke-width:2px
-    style Pay_Agent fill:#c9b1ff,stroke:#333,stroke-width:2px
-    style Ord_Agent fill:#c9b1ff,stroke:#333,stroke-width:2px
-    style Svc_Agent fill:#c9b1ff,stroke:#333,stroke-width:2px
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          🖥️  CLIENT LAYER (React)                               │
+│  ┌─────────────────────────────┐    ┌─────────────────────────────┐            │
+│  │    B2B Chat Interface       │◄──►│     WebSocket Client        │            │
+│  └─────────────────────────────┘    └──────────────┬──────────────┘            │
+└────────────────────────────────────────────────────┼────────────────────────────┘
+                                                     │
+                                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                       🧠  ORCHESTRATION LAYER (Python)                          │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                         🧠 SUPER AGENT                                   │   │
+│  │                    (Orchestrator / Router / Guardrails)                  │   │
+│  └─────────────────────────────────────┬───────────────────────────────────┘   │
+└────────────────────────────────────────┼────────────────────────────────────────┘
+                                         │
+           ┌─────────────────────────────┼─────────────────────────────┐
+           │                             │                             │
+           ▼                             ▼                             ▼
+┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
+│  🔍 DISCOVERY       │    │  ⚙️ CONFIGURATION   │    │  💰 TRANSACTION     │
+│                     │    │                     │    │                     │
+│ ┌─────────────────┐ │    │ ┌─────────────────┐ │    │ ┌─────────────────┐ │
+│ │ 👤 Prospect     │ │    │ │ 📦 Product      │ │    │ │ 💳 Payment      │ │
+│ │    Agent        │ │    │ │    Agent        │ │    │ │    Agent        │ │
+│ └─────────────────┘ │    │ └─────────────────┘ │    │ └─────────────────┘ │
+│ ┌─────────────────┐ │    │ ┌─────────────────┐ │    │ ┌─────────────────┐ │
+│ │ 📊 Lead Gen     │ │    │ │ 💰 Offer Mgmt   │ │    │ │ 🛒 Order        │ │
+│ │    Agent        │ │    │ │    Agent        │ │    │ │    Agent        │ │
+│ └─────────────────┘ │    │ └─────────────────┘ │    │ └─────────────────┘ │
+│                     │    │                     │    │ ┌─────────────────┐ │
+│                     │    │                     │    │ │ 🔧 Service      │ │
+│                     │    │                     │    │ │ Fulfillment     │ │
+│                     │    │                     │    │ └─────────────────┘ │
+└──────────┬──────────┘    └──────────┬──────────┘    └──────────┬──────────┘
+           │                          │                          │
+           └──────────────────────────┼──────────────────────────┘
+                                      │ A2A Protocol
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                       ⚙️  INFRASTRUCTURE & TOOLS (ADK/MCP)                      │
+│                                                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
+│  │ Backend API  │  │ RAG Engine   │  │ Observability│  │    State     │        │
+│  │   Gateway    │  │ (Vector DB)  │  │  & Logging   │  │  Database    │        │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-</div>
-
-### Detailed System Flow Diagram
-
-The following sequence diagram shows a complete sales flow involving multiple agents:
+### Mermaid Architecture Diagram
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '16px'}, 'sequence': {'width': 200, 'height': 60, 'boxMargin': 20, 'mirrorActors': false}}}%%
-sequenceDiagram
-    autonumber
-    
-    box rgb(230, 245, 255) Customer Interface
-        participant Customer as 👤 B2B Customer
-        participant UI as 🖥️ Chat Interface
-    end
-    
-    box rgb(255, 235, 235) Orchestration
-        participant Super as 🧠 Super Agent
-    end
-    
-    box rgb(235, 255, 235) Discovery Agents
-        participant Prospect as 👤 Prospect Agent
-        participant LeadGen as 📊 Lead Gen Agent
-    end
-    
-    box rgb(255, 250, 230) Configuration Agents
-        participant Product as 📦 Product Agent
-        participant Offer as 💰 Offer Mgmt Agent
-    end
-    
-    box rgb(240, 235, 255) Transaction Agents
-        participant Payment as 💳 Payment Agent
-        participant Order as 🛒 Order Agent
-        participant ServiceFulfill as 🔧 Service Fulfillment Agent
-    end
-    
-    box rgb(245, 245, 245) Infrastructure
-        participant API as ⚙️ Backend APIs
-        participant Log as 📊 Observability
+graph TB
+    subgraph Client["CLIENT LAYER"]
+        UI[B2B Chat Interface]
+        WS[WebSocket Client]
     end
 
-    Customer->>UI: "I need internet for my new office in Philadelphia"
-    UI->>Super: WebSocket Message
+    subgraph Orchestration["ORCHESTRATION LAYER"]
+        SA[SUPER AGENT]
+        R[Intent Router]
+        G[Guardrails]
+    end
+
+    subgraph Discovery["DISCOVERY AGENTS"]
+        PA[Prospect Agent]
+        LA[Lead Gen Agent]
+    end
+
+    subgraph Configuration["CONFIGURATION AGENTS"]
+        ProdA[Product Agent]
+        OA[Offer Mgmt Agent]
+    end
+
+    subgraph Transaction["TRANSACTION AGENTS"]
+        PayA[Payment Agent]
+        OrdA[Order Agent]
+        SFA[Service Fulfillment Agent]
+    end
+
+    subgraph Infrastructure["INFRASTRUCTURE"]
+        API[API Gateway]
+        RAG[RAG Engine]
+        DB[(Database)]
+        LOG[Observability]
+    end
+
+    UI <--> WS
+    WS <--> SA
+    SA --> R
+    G -.-> SA
+    R --> Discovery
+    R --> Configuration
+    R --> Transaction
     
-    Note over Super: Intent Analysis & Routing
+    PA --> API
+    LA --> API
+    ProdA --> RAG
+    OA --> API
+    PayA --> API
+    OrdA --> DB
+    SFA --> API
     
-    rect rgb(235, 255, 235)
-        Note over Prospect,LeadGen: Discovery Phase
-        Super->>Prospect: Extract company details
-        Prospect->>Super: Context (Company, Address, Contact)
-        Super->>LeadGen: Qualify lead
-        LeadGen->>Super: BANT Score & Readiness
+    Discovery -.-> LOG
+    Configuration -.-> LOG
+    Transaction -.-> LOG
+
+    style SA fill:#ff6b6b,stroke:#333,stroke-width:2px,color:#fff
+    style UI fill:#4ecdc4,stroke:#333,stroke-width:2px
+    style DB fill:#95e1d3,stroke:#333,stroke-width:2px
+```
+
+---
+
+### Detailed System Flow
+
+```
+                                    COMPLETE B2B SALES FLOW
+    ═══════════════════════════════════════════════════════════════════════════
+
+    👤 CUSTOMER                    🧠 SUPER AGENT                    ⚙️ BACKEND
+         │                              │                                │
+         │  "I need internet for       │                                │
+         │   my Philadelphia office"   │                                │
+         │ ─────────────────────────►  │                                │
+         │                              │                                │
+         │                              │  ┌─────────────────────────┐  │
+         │                              │  │   DISCOVERY PHASE       │  │
+         │                              │  ├─────────────────────────┤  │
+         │                              │  │ 👤 Prospect Agent       │  │
+         │                              │  │    → Extract details    │  │
+         │                              │  │ 📊 Lead Gen Agent       │  │
+         │                              │  │    → BANT scoring       │  │
+         │                              │  └─────────────────────────┘  │
+         │                              │               │                │
+         │                              │               ▼                │
+         │                              │  ┌─────────────────────────┐  │
+         │                              │  │  CONFIGURATION PHASE    │  │
+         │                              │  ├─────────────────────────┤  │
+         │                              │  │ 🔧 Service Fulfillment  │──┼──► GIS API
+         │                              │  │    → Check availability │◄─┼─── ✅ Serviceable
+         │                              │  │ 📦 Product Agent        │──┼──► Vector DB
+         │                              │  │    → Get products       │◄─┼─── Product Specs
+         │                              │  │ 💰 Offer Mgmt Agent     │──┼──► Pricing API
+         │                              │  │    → Calculate pricing  │◄─┼─── Quote
+         │                              │  └─────────────────────────┘  │
+         │                              │               │                │
+         │                              │               ▼                │
+         │                              │  ┌─────────────────────────┐  │
+         │                              │  │   TRANSACTION PHASE     │  │
+         │                              │  ├─────────────────────────┤  │
+         │                              │  │ 💳 Payment Agent        │──┼──► Payment Gateway
+         │                              │  │    → Credit check       │◄─┼─── ✅ Approved
+         │                              │  │ 🛒 Order Agent          │──┼──► Order DB
+         │                              │  │    → Generate contract  │◄─┼─── Order ID
+         │                              │  │ 🔧 Service Fulfillment  │──┼──► Scheduler API
+         │                              │  │    → Schedule install   │◄─┼─── Install Date
+         │                              │  └─────────────────────────┘  │
+         │                              │                                │
+         │  "Great news! Your office   │                                │
+         │   is serviceable..."        │                                │
+         │ ◄─────────────────────────  │                                │
+         │                              │                                │
+
+    ═══════════════════════════════════════════════════════════════════════════
+                            📊 All steps logged for auditability
+```
+
+### Mermaid Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Customer
+    participant UI as Chat UI
+    participant S as Super Agent
+    participant P as Prospect Agent
+    participant L as Lead Gen Agent
+    participant Pr as Product Agent
+    participant O as Offer Agent
+    participant Pay as Payment Agent
+    participant Ord as Order Agent
+    participant SF as Service Fulfillment
+    participant API as Backend APIs
+
+    C->>UI: Request internet service
+    UI->>S: WebSocket message
+    
+    Note over S: Intent Analysis
+    
+    rect rgb(200, 230, 200)
+        Note over P,L: Discovery Phase
+        S->>P: Extract details
+        P-->>S: Company info
+        S->>L: Qualify lead
+        L-->>S: BANT score
     end
     
-    rect rgb(255, 250, 230)
-        Note over Product,Offer: Configuration Phase
-        Super->>ServiceFulfill: Check address serviceability
-        ServiceFulfill->>API: Query GIS/Serviceability API
-        API-->>ServiceFulfill: Deterministic Response
-        ServiceFulfill->>Super: ✅ Address Serviceable
-        
-        Super->>Product: Get product recommendations
-        Product->>API: Query Vector DB (RAG)
-        API-->>Product: Product Specs
-        Product->>Super: Recommended Products
-        
-        Super->>Offer: Calculate pricing
-        Offer->>API: Query Pricing Engine
-        API-->>Offer: Pricing & Bundles
-        Offer->>Super: Custom Quote
+    rect rgb(230, 220, 200)
+        Note over Pr,O: Configuration Phase
+        S->>SF: Check serviceability
+        SF->>API: Query GIS
+        API-->>SF: Serviceable
+        S->>Pr: Get products
+        Pr->>API: Query RAG
+        API-->>Pr: Specs
+        S->>O: Calculate price
+        O->>API: Pricing engine
+        API-->>O: Quote
     end
     
-    rect rgb(240, 235, 255)
-        Note over Payment,ServiceFulfill: Transaction Phase
-        Super->>Payment: Run credit check
-        Payment->>API: Query Payment Gateway
-        API-->>Payment: Credit Approved
-        Payment->>Super: ✅ Credit Approved
-        
-        Super->>Order: Generate contract
-        Order->>API: Create Order in DB
-        API-->>Order: Order Confirmed
-        Order->>Super: Contract & Order ID
-        
-        Super->>ServiceFulfill: Schedule installation
-        ServiceFulfill->>API: Query Scheduler API
-        API-->>ServiceFulfill: Installation Date
-        ServiceFulfill->>Super: ✅ Installation Scheduled
+    rect rgb(220, 200, 230)
+        Note over Pay,SF: Transaction Phase
+        S->>Pay: Credit check
+        Pay->>API: Payment gateway
+        API-->>Pay: Approved
+        S->>Ord: Create order
+        Ord->>API: Order DB
+        API-->>Ord: Order ID
+        S->>SF: Schedule install
+        SF->>API: Scheduler
+        API-->>SF: Date
     end
     
-    Super->>UI: Natural Language Response with Full Quote
-    UI->>Customer: "Great news! Your Philadelphia office is serviceable..."
-    
-    Note over Log: All steps logged for auditability
+    S->>UI: Complete response
+    UI->>C: Confirmation & details
 ```
 
 ### Agent Interaction Flow
 
-<div align="center">
-
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '16px'}, 'flowchart': {'nodeSpacing': 40, 'rankSpacing': 60, 'curve': 'basis', 'padding': 20}}}%%
 flowchart LR
-    subgraph Discovery["<br/>🔍 DISCOVERY PHASE<br/><br/>"]
-        A["<br/>💬 Customer Intent<br/><br/>"] --> B["<br/>👤 Prospect Agent<br/>Extract Details<br/><br/>"]
-        B --> C["<br/>📊 Lead Gen Agent<br/>BANT Scoring<br/><br/>"]
+    subgraph D[DISCOVERY]
+        A[Customer Intent] --> B[Prospect Agent]
+        B --> C[Lead Gen Agent]
     end
     
-    subgraph Configuration["<br/>⚙️ CONFIGURATION PHASE<br/><br/>"]
-        C --> D["<br/>📦 Product Agent<br/>Tech Specs & RAG<br/><br/>"]
-        D --> E["<br/>💰 Offer Mgmt Agent<br/>Pricing & Bundles<br/><br/>"]
+    subgraph CF[CONFIGURATION]
+        C --> D1[Product Agent]
+        D1 --> E[Offer Mgmt Agent]
     end
     
-    subgraph Transaction["<br/>💰 TRANSACTION PHASE<br/><br/>"]
-        E --> F["<br/>💳 Payment Agent<br/>Credit Check<br/><br/>"]
-        F --> G["<br/>🛒 Order Agent<br/>Contract & Checkout<br/><br/>"]
-        G --> H["<br/>🔧 Service Fulfillment Agent<br/>Schedule Installation<br/><br/>"]
+    subgraph T[TRANSACTION]
+        E --> F[Payment Agent]
+        F --> G[Order Agent]
+        G --> H[Service Fulfillment]
     end
     
-    subgraph Output["<br/>✅ OUTPUT<br/><br/>"]
-        H --> I["<br/>📋 Confirmed Order<br/>& Installation Date<br/><br/>"]
-    end
+    H --> I[Confirmed Order]
 
-    style A fill:#e8f4f8,stroke:#333,stroke-width:2px
-    style B fill:#a8e6cf,stroke:#333,stroke-width:2px
-    style C fill:#a8e6cf,stroke:#333,stroke-width:2px
-    style D fill:#ffd93d,stroke:#333,stroke-width:2px
-    style E fill:#ffd93d,stroke:#333,stroke-width:2px
-    style F fill:#c9b1ff,stroke:#333,stroke-width:2px
-    style G fill:#c9b1ff,stroke:#333,stroke-width:2px
-    style H fill:#c9b1ff,stroke:#333,stroke-width:2px
-    style I fill:#d4edda,stroke:#333,stroke-width:3px
+    style A fill:#e3f2fd
+    style B fill:#c8e6c9
+    style C fill:#c8e6c9
+    style D1 fill:#fff9c4
+    style E fill:#fff9c4
+    style F fill:#e1bee7
+    style G fill:#e1bee7
+    style H fill:#e1bee7
+    style I fill:#a5d6a7
 ```
-
-</div>
 
 ### Data Flow & Lifecycle
 
-The complete data flow follows these stages:
-
-<div align="center">
-
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '16px'}, 'state': {'padding': 20}}}%%
 stateDiagram-v2
-    direction LR
-    [*] --> Ingest: Customer Message
+    [*] --> Ingest
+    Ingest --> Orchestration
+    Orchestration --> Routing
+    Routing --> AgentCollab
+    AgentCollab --> APIQuery
+    APIQuery --> Synthesis
+    Synthesis --> Response
+    Response --> [*]
     
-    state "📥 INGEST" as Ingest
-    state "🧠 ORCHESTRATION" as Orchestration
-    state "🔀 ROUTING" as Routing
-    state "🤝 AGENT COLLABORATION" as AgentCollaboration
-    state "🔒 DETERMINISTIC QUERY" as DeterministicQuery  
-    state "✨ SYNTHESIS" as Synthesis
-    state "💬 RESPONSE" as Response
-    
-    Ingest --> Orchestration: WebSocket
-    Orchestration --> Routing: Intent Analysis
-    Routing --> AgentCollaboration: Task Distribution
-    AgentCollaboration --> DeterministicQuery: API Calls
-    DeterministicQuery --> Synthesis: Results Aggregation
-    Synthesis --> Response: Natural Language
-    Response --> [*]: Customer Receives Answer
-    
-    note right of Orchestration
-        Super Agent analyzes intent
-        and determines which agents to invoke
-    end note
-    
-    note right of AgentCollaboration
-        A2A Protocol communication between:
-        • Prospect Agent
-        • Lead Gen Agent  
-        • Product Agent
-        • Offer Mgmt Agent
-        • Payment Agent
-        • Order Agent
-        • Service Fulfillment Agent
-    end note
-    
-    note right of DeterministicQuery
-        Zero-hallucination APIs:
-        • Pricing Engine
-        • GIS/Serviceability
-        • Payment Gateway
-        • Order Database
-    end note
+    note right of Orchestration: Super Agent analyzes intent
+    note right of AgentCollab: A2A Protocol between 7 agents
+    note right of APIQuery: Deterministic data from APIs
 ```
-
-</div>
 
 | Stage | Description | Example |
 |-------|-------------|---------|
@@ -350,20 +371,15 @@ All agents are developed using a custom **ADK (Agent Development Kit)** ensuring
 
 ### Agent Type Classification
 
-<div align="center">
-
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '18px', 'pieTitleTextSize': '20px', 'pieSectionTextSize': '16px', 'pieLegendTextSize': '16px'}}}%%
 pie showData
-    title Agent Types Distribution (8 Total Agents)
-    "Orchestrator (Super Agent)" : 1
-    "Operational (Prospect, Lead Gen)" : 2
-    "Info/RAG (Product)" : 1
-    "Deterministic (Offer Mgmt, Service Fulfillment)" : 2
-    "Transactional (Order, Payment)" : 2
+    title Agent Types Distribution
+    "Orchestrator" : 1
+    "Operational" : 2
+    "Info/RAG" : 1
+    "Deterministic" : 2
+    "Transactional" : 2
 ```
-
-</div>
 
 ---
 
@@ -373,44 +389,63 @@ pie showData
 
 To prevent **"hallucinations"** in critical business areas, we separate concerns:
 
-<div align="center">
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '16px'}, 'flowchart': {'nodeSpacing': 40, 'rankSpacing': 50, 'padding': 20}}}%%
-graph LR
-    subgraph Autonomous["<br/>🤖 LLM FLOWS - Autonomous<br/><br/>"]
-        A1["<br/>💬 Conversation<br/><br/>"]
-        A2["<br/>📝 Summarization<br/><br/>"]
-        A3["<br/>🔍 Data Extraction<br/><br/>"]
-    end
-    
-    subgraph Deterministic["<br/>🔒 DETERMINISTIC FLOWS - Zero Hallucination<br/><br/>"]
-        D1["<br/>💰 Pricing<br/>(Offer Mgmt Agent)<br/><br/>"]
-        D2["<br/>📦 Inventory<br/>(Product Agent)<br/><br/>"]
-        D3["<br/>📍 Serviceability<br/>(Service Fulfillment Agent)<br/><br/>"]
-    end
-    
-    subgraph Sources["<br/>📊 SOURCES OF TRUTH<br/><br/>"]
-        S1[("🔗 APIs")]
-        S2[("🗄️ Databases")]
-    end
-    
-    Autonomous --> |"Context & Intent"| Deterministic
-    Deterministic --> |"Fetch Data"| Sources
-    Sources --> |"Rigid Data"| Deterministic
-
-    style Autonomous fill:#fff3cd,stroke:#333,stroke-width:2px
-    style Deterministic fill:#d4edda,stroke:#333,stroke-width:2px
-    style Sources fill:#cce5ff,stroke:#333,stroke-width:2px
-    style A1 fill:#ffeaa7,stroke:#333
-    style A2 fill:#ffeaa7,stroke:#333
-    style A3 fill:#ffeaa7,stroke:#333
-    style D1 fill:#55efc4,stroke:#333
-    style D2 fill:#55efc4,stroke:#333
-    style D3 fill:#55efc4,stroke:#333
+```
+    ┌────────────────────────────────────────────────────────────────────────┐
+    │                    HYBRID COGNITIVE MODEL                              │
+    ├────────────────────────────────────────────────────────────────────────┤
+    │                                                                        │
+    │   🤖 LLM FLOWS (Autonomous)          🔒 DETERMINISTIC FLOWS           │
+    │   ─────────────────────────          ─────────────────────────        │
+    │                                                                        │
+    │   ┌─────────────────────┐            ┌─────────────────────┐          │
+    │   │ • Conversation      │            │ • Pricing           │          │
+    │   │ • Summarization     │ ────────►  │ • Inventory         │          │
+    │   │ • Data Extraction   │  Context   │ • Serviceability    │          │
+    │   │ • Intent Analysis   │  & Intent  │ • Credit Checks     │          │
+    │   └─────────────────────┘            └──────────┬──────────┘          │
+    │                                                 │                      │
+    │           Creative & Flexible                   │ Fetch Only           │
+    │                                                 ▼                      │
+    │                                      ┌─────────────────────┐          │
+    │                                      │  📊 SOURCES OF      │          │
+    │                                      │     TRUTH           │          │
+    │                                      │                     │          │
+    │                                      │  • APIs             │          │
+    │                                      │  • Databases        │          │
+    │                                      │  • External Systems │          │
+    │                                      └─────────────────────┘          │
+    │                                                                        │
+    │   ⚠️  Agents are "tool users" - they FETCH data, never INVENT it      │
+    └────────────────────────────────────────────────────────────────────────┘
 ```
 
-</div>
+```mermaid
+graph LR
+    subgraph LLM[LLM Flows - Autonomous]
+        A1[Conversation]
+        A2[Summarization]
+        A3[Data Extraction]
+    end
+    
+    subgraph DET[Deterministic Flows]
+        D1[Pricing]
+        D2[Inventory]
+        D3[Serviceability]
+    end
+    
+    subgraph SRC[Sources of Truth]
+        S1[(APIs)]
+        S2[(Databases)]
+    end
+    
+    LLM -->|Context| DET
+    DET -->|Fetch| SRC
+    SRC -->|Data| DET
+
+    style LLM fill:#fff3cd
+    style DET fill:#d4edda
+    style SRC fill:#cce5ff
+```
 
 | Flow Type | Use Cases | Key Principle |
 |-----------|-----------|---------------|
@@ -458,49 +493,41 @@ graph LR
 
 ### Technology Architecture
 
-<div align="center">
-
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '16px'}, 'flowchart': {'nodeSpacing': 40, 'rankSpacing': 50, 'padding': 20}}}%%
 graph TB
-    subgraph Frontend["<br/>🎨 FRONTEND<br/><br/>"]
-        React["<br/>React 19<br/>Functional Components<br/><br/>"]
-        Tailwind["<br/>Tailwind CSS<br/>Rapid UI<br/><br/>"]
-        SocketClient["<br/>Socket.io Client<br/>Real-time Streaming<br/><br/>"]
+    subgraph FE[Frontend]
+        React[React 19]
+        Tailwind[Tailwind CSS]
+        Socket[Socket.io]
     end
     
-    subgraph Backend["<br/>⚙️ BACKEND & AGENTS<br/><br/>"]
-        FastAPI["<br/>FastAPI<br/>WebSockets & REST<br/><br/>"]
-        ADK["<br/>Custom ADK<br/>Agent Development Kit<br/><br/>"]
-        Python["<br/>Python 3.12+<br/><br/>"]
+    subgraph BE[Backend]
+        FastAPI[FastAPI]
+        ADK[Custom ADK]
+        Python[Python 3.12+]
     end
     
-    subgraph Protocols["<br/>🔗 PROTOCOLS<br/><br/>"]
-        A2A["<br/>A2A Protocol<br/>JSON-RPC Messaging<br/><br/>"]
-        MCP["<br/>MCP Protocol<br/>Tool Connections<br/><br/>"]
-        REST["<br/>REST APIs<br/>External Services<br/><br/>"]
+    subgraph PROTO[Protocols]
+        A2A[A2A JSON-RPC]
+        MCP[MCP Protocol]
+        REST[REST APIs]
     end
     
-    subgraph Data["<br/>💾 DATA LAYER<br/><br/>"]
-        LLM["<br/>LLM Provider<br/>Agnostic/Abstracted<br/><br/>"]
-        Chroma["<br/>ChromaDB<br/>Vector DB for RAG<br/><br/>"]
-        SQLite["<br/>SQLite / PostgreSQL<br/>Transactional DB<br/><br/>"]
+    subgraph DATA[Data Layer]
+        LLM[LLM Provider]
+        Chroma[ChromaDB]
+        PG[PostgreSQL]
     end
     
-    Frontend --> |"WebSocket"| Backend
-    Backend --> Protocols
-    Protocols --> Data
+    FE -->|WebSocket| BE
+    BE --> PROTO
+    PROTO --> DATA
 
-    style Frontend fill:#e1f5fe,stroke:#333,stroke-width:2px
-    style Backend fill:#fff3e0,stroke:#333,stroke-width:2px
-    style Protocols fill:#f3e5f5,stroke:#333,stroke-width:2px
-    style Data fill:#e8f5e9,stroke:#333,stroke-width:2px
-    style React fill:#61dafb,stroke:#333
-    style FastAPI fill:#009688,stroke:#333,color:#fff
-    style Python fill:#3776ab,stroke:#333,color:#fff
+    style FE fill:#e1f5fe
+    style BE fill:#fff3e0
+    style PROTO fill:#f3e5f5
+    style DATA fill:#e8f5e9
 ```
-
-</div>
 
 ---
 
@@ -508,35 +535,79 @@ graph TB
 
 ### Timeline Overview (2 Quarters)
 
-<div align="center">
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px'}, 'gantt': {'titleTopMargin': 25, 'barHeight': 30, 'barGap': 10, 'topPadding': 50, 'leftPadding': 100, 'gridLineStartPadding': 35, 'fontSize': 14, 'sectionFontSize': 16}}}%%
-gantt
-    title 📅 B2B Agentic Sales System - Development Roadmap
-    dateFormat YYYY-MM-DD
+```
+    2025 DEVELOPMENT ROADMAP
+    ════════════════════════════════════════════════════════════════════════════
     
-    section 🛠️ Q1: Foundation Phase
-    Infrastructure Setup (React + FastAPI + WebSocket)    :a1, 2025-01-01, 4w
-    Build ADK Base Class (Logging, Memory, Tools)         :a1b, 2025-01-01, 4w
-    Super Agent with Basic Routing                        :a2, after a1, 2w
-    RAG Setup - Ingest Product PDFs to ChromaDB           :a2b, after a1, 2w
-    Product Agent (RAG-based Q&A)                         :a2c, after a2, 2w
-    Prospect Agent (Extract Name, Address)                :a3, after a2c, 2w
-    Service Fulfillment Agent (Serviceability Check)      :a3b, after a2c, 2w
-    Q1 Deliverable - Functional Sales Chat                :milestone, m1, after a3b, 0d
+    Q1: FOUNDATION PHASE                    Q2: TRANSACTION PHASE
+    ─────────────────────                   ───────────────────────
     
-    section 💰 Q2: Transaction Phase
-    Offer Management Agent (Pricing & Bundles)            :b1, after a3b, 2w
-    Payment Agent (Credit Check)                          :b1b, after a3b, 2w
-    A2A Handshake Implementation                          :b2, after b1, 2w
-    Inter-Agent Communication (Without User Input)        :b2b, after b1, 2w
-    Order Agent (Contract Generation)                     :b3, after b2, 2w
-    Telemetry Dashboard (Agent Logic Visualization)       :b3b, after b2, 2w
-    Q2 Deliverable - Full Autonomous Sales Demo           :milestone, m2, after b3b, 0d
+    Jan     Feb     Mar     Apr     May     Jun
+    │       │       │       │       │       │
+    ├───────┴───────┤       │       │       │
+    │ Sprint 1-2    │       │       │       │
+    │ Infrastructure│       │       │       │
+    │ • React + FastAPI     │       │       │
+    │ • WebSocket   │       │       │       │
+    │ • ADK Base    │       │       │       │
+    │               ├───────┴───────┤       │
+    │               │ Sprint 3-4    │       │
+    │               │ Super Agent   │       │
+    │               │ • Routing     │       │
+    │               │ • RAG Setup   │       │
+    │               │ • Product Agent       │
+    │               │               ├───────┴───────┤
+    │               │               │ Sprint 5-6    │
+    │               │               │ Discovery     │
+    │               │               │ • Prospect    │
+    │               │               │ • Svc Fulfill │
+    │               │               │               │
+    ▼               ▼               ▼               │
+    ════════════════════════════════╪═══════════════╪═══════════════════════════
+                              Q1 DELIVERABLE        │
+                              Chat UI with          │
+                              Product Q&A &         │
+                              Serviceability        │
+                                                    │       │       │
+                                                    ├───────┴───────┤
+                                                    │ Sprint 1-2    │
+                                                    │ Deterministic │
+                                                    │ • Offer Mgmt  │
+                                                    │ • Payment     │
+                                                    │               ├───────┴───────┐
+                                                    │               │ Sprint 3-4    │
+                                                    │               │ A2A Protocol  │
+                                                    │               │ • Handshakes  │
+                                                    │               │ • Inter-agent │
+                                                    │               │               ├───────┐
+                                                    │               │               │ Sprint│
+                                                    │               │               │ 5-6   │
+                                                    │               │               │ Order │
+                                                    │               │               │ Telemetry
+                                                    ▼               ▼               ▼
+                                                    ═════════════════════════════════
+                                                                        Q2 DELIVERABLE
+                                                                        Full Autonomous
+                                                                        Sales Demo
 ```
 
-</div>
+```mermaid
+gantt
+    title B2B Agentic Sales System Roadmap
+    dateFormat YYYY-MM-DD
+    
+    section Q1 Foundation
+    Infrastructure Setup    :a1, 2025-01-01, 4w
+    Super Agent & RAG       :a2, after a1, 4w
+    Discovery Agents        :a3, after a2, 4w
+    Q1 Deliverable          :milestone, m1, after a3, 0d
+    
+    section Q2 Transaction
+    Deterministic Agents    :b1, after a3, 4w
+    A2A Orchestration       :b2, after b1, 4w
+    Order & Observability   :b3, after b2, 4w
+    Q2 Deliverable          :milestone, m2, after b3, 0d
+```
 
 ### Quarter 1: Foundation & Discovery Phase
 
@@ -640,8 +711,12 @@ b2b-agentic-sales/
 │   ├── 📁 agents/
 │   │   ├── super_agent.py
 │   │   ├── prospect_agent.py
+│   │   ├── lead_gen_agent.py
 │   │   ├── product_agent.py
-│   │   └── ...
+│   │   ├── offer_mgmt_agent.py
+│   │   ├── payment_agent.py
+│   │   ├── order_agent.py
+│   │   └── service_fulfillment_agent.py
 │   ├── 📁 adk/
 │   │   └── base_agent.py
 │   ├── 📁 tools/
