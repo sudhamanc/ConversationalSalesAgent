@@ -1,4 +1,4 @@
----
+
 
 # B2B Agentic Sales Orchestration System
 ## Sales Scenarios &amp; Academic Milestone Plan
@@ -6,7 +6,6 @@
 **Drexel University – Senior Design Project**  
 **Winter Quarter (Jan – Mar 2026) | Spring Quarter (Apr – Jun 2026)**
 
----
 
 ## Project Overview
 
