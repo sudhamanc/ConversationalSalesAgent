@@ -356,7 +356,7 @@ stateDiagram-v2
 
 ## 🤖 Agent Catalog & Roles
 
-All agents are developed using a custom **ADK (Agent Development Kit)** ensuring standardized logging and error handling.
+All agents are developed using **Google's ADK (Agent Development Kit)**, providing standardized agent lifecycle management, tool integration, memory persistence, and structured logging.
 
 | Agent Name | Role | Type | Source of Truth |
 |------------|------|------|-----------------|
@@ -459,6 +459,130 @@ graph LR
 | **Agent Steering** | "System Prompts" and "Guardrails" at Super Agent level prevent discussion of competitors or sensitive topics |
 | **Structured Logging** | All A2A communication logged in structured JSON format, enabling "replay" of sales to understand agent decisions |
 
+### Error Handling & Resilience
+
+The system implements defensive patterns to ensure graceful degradation:
+
+| Pattern | Implementation | Purpose |
+|---------|----------------|---------|
+| **Circuit Breaker** | Wraps all external API calls | Prevents cascade failures when downstream services are unavailable |
+| **Retry with Backoff** | Exponential backoff on transient failures | Handles temporary network issues without user impact |
+| **Fallback Responses** | Graceful degradation per agent | If Product Agent fails, Super Agent can still provide basic info |
+| **Timeout Management** | Configurable per-agent timeouts | Prevents hung conversations from blocking resources |
+| **Dead Letter Queue** | Failed transactions logged for retry | Ensures no orders are lost due to transient failures |
+
+```
+    ERROR HANDLING FLOW
+    ═══════════════════════════════════════════════════════════════
+
+    Agent Request → [Circuit Breaker] → External API
+                          │
+                    ┌─────┴─────┐
+                    │  CLOSED   │ ← Normal operation
+                    └─────┬─────┘
+                          │ Failures exceed threshold
+                          ▼
+                    ┌───────────┐
+                    │   OPEN    │ ← Fast-fail, no API calls
+                    └─────┬─────┘
+                          │ After cooldown period
+                          ▼
+                    ┌───────────┐
+                    │ HALF-OPEN │ ← Test with single request
+                    └───────────┘
+```
+
+---
+
+## 🔐 Security Considerations
+
+> **Note:** This is an academic demo project using mock data. The considerations below outline what a production system would require.
+
+| Area | Demo Implementation | Production Requirement |
+|------|---------------------|------------------------|
+| **Authentication** | Basic session handling | JWT tokens, OAuth 2.0 |
+| **API Credentials** | Environment variables | Secret management (Vault, AWS Secrets) |
+| **Data Privacy** | Mock customer data only | Encryption at rest/transit, PII handling |
+| **Payment Data** | Simulated credit checks | PCI-DSS compliance, tokenization |
+
+---
+
+## 🧪 Testing Strategy
+
+### Test Pyramid
+
+```
+                    ┌─────────────┐
+                    │   E2E Tests │  ← Full scenario flows (Scenario 1-6)
+                    │    (10%)    │
+                    ├─────────────┤
+                    │ Integration │  ← Agent-to-Agent communication
+                    │    (30%)    │     API mock validation
+                    ├─────────────┤
+                    │    Unit     │  ← Individual agent logic
+                    │    (60%)    │     Intent classification
+                    └─────────────┘     Data extraction
+```
+
+### Testing by Layer
+
+| Layer | Test Type | Tools | Coverage Target |
+|-------|-----------|-------|-----------------|
+| **Agents** | Unit Tests | pytest, unittest.mock | 80%+ per agent |
+| **A2A Protocol** | Integration Tests | pytest-asyncio | All handshake paths |
+| **API Mocks** | Contract Tests | Pact/Schema validation | 100% of mock APIs |
+| **Full System** | E2E Scenarios | Playwright + pytest | All 6 scenarios |
+
+### Key Test Scenarios
+
+1. **Happy Path**: All 6 sales scenarios execute successfully
+2. **Agent Failure**: Super Agent handles downstream agent unavailability
+3. **Invalid Input**: Malformed addresses, non-existent products
+4. **Concurrent Users**: Multiple simultaneous conversations (load testing)
+5. **State Recovery**: Session resumption after connection drop
+
+---
+
+## ⚠️ Limitations & Scope
+
+### Current Limitations
+
+| Limitation | Rationale | Future Consideration |
+|------------|-----------|----------------------|
+| **Mock APIs Only** | Academic project scope | Production would integrate real CRM, GIS, Payment systems |
+| **Single LLM Provider** | Simplified implementation | Could add provider abstraction for failover |
+| **No Multi-language Support** | English-only for demo | i18n framework ready for extension |
+| **Limited Concurrent Users** | Not load-tested at scale | Horizontal scaling via Kubernetes |
+| **No Voice/Omnichannel** | Text chat only | Architecture supports future voice integration |
+
+### Out of Scope (Academic Project)
+
+- Real payment processing (PCI compliance)
+- Production CRM/ERP integrations
+- Mobile native applications
+- Multi-tenant SaaS deployment
+- Real-time inventory synchronization
+
+### Scalability Considerations
+
+For production deployment, consider:
+
+```
+    HORIZONTAL SCALING ARCHITECTURE
+    ═══════════════════════════════════════════════════════════════
+
+    Load Balancer
+         │
+         ├──► FastAPI Instance 1 ──► Agent Pool 1
+         ├──► FastAPI Instance 2 ──► Agent Pool 2
+         └──► FastAPI Instance N ──► Agent Pool N
+                      │
+                      ▼
+              Shared State (Redis)
+              Vector DB (ChromaDB Cluster)
+              Message Queue (RabbitMQ/Kafka)
+```
+
 ---
 
 ## 🛠️ Technology Stack
@@ -478,7 +602,7 @@ graph LR
 |------------|---------|
 | ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white) | Language |
 | ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) | Framework - WebSockets & REST endpoints |
-| ![ADK](https://img.shields.io/badge/Custom_ADK-Agent_Runtime-orange) | Agent Development Kit |
+| ![ADK](https://img.shields.io/badge/Google_ADK-Agent_Runtime-orange) | Google Agent Development Kit - Multi-agent orchestration framework |
 | **A2A Protocol** | JSON-RPC style messaging for inter-agent communication |
 | **MCP** | Model Context Protocol for connecting agents to local tools |
 | ![Poetry](https://img.shields.io/badge/Poetry-Environment_Mgmt-blue) | Dependency isolation |
@@ -503,7 +627,7 @@ graph TB
     
     subgraph BE[Backend]
         FastAPI[FastAPI]
-        ADK[Custom ADK]
+        ADK[Google ADK]
         Python[Python 3.12+]
     end
     
@@ -616,7 +740,7 @@ gantt
 #### Sprint 1-2: Infrastructure Setup
 - [x] Set up React Frontend + FastAPI Backend
 - [x] Implement WebSocket streaming
-- [x] Build the ADK (Base Class): Logging, Memory, and Tool definitions
+- [x] Configure Google ADK: Agent base classes, logging, memory, and tool definitions
 
 #### Sprint 3-4: The Super Agent & RAG
 - [ ] Deploy Super Agent with basic routing capabilities
