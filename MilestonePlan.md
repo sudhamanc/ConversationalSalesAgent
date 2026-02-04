@@ -22,6 +22,20 @@ This document outlines the sales scenarios and milestone plan for the B2B Conver
 | 💳 **Payment Agent** | Transactional | Mock credit checks |
 | 🔧 **Service Fulfillment Agent** | Deterministic | Address serviceability &amp; scheduling |
 
+
+## Agent Development Timeline
+
+| Agent | Winter Qtr | Spring Qtr |
+|-------|------------|------------|
+| 🧠 Super Agent | ✅ Basic routing | ✅ Full orchestration |
+| 👤 Prospect Agent | ✅ Complete | — |
+| 📊 Lead Gen Agent | ✅ Basic BANT | ✅ Enhanced scoring |
+| 📦 Product Agent | ✅ Complete | — |
+| 💰 Offer Mgmt Agent | ✅ Basic routing | ✅ Complete |
+| 🛒 Order Agent | ✅ Basic routing | ✅ Complete |
+| 💳 Payment Agent | ✅ Basic routing| ✅ Complete |
+| 🔧 Service Fulfillment Agent | ✅ Serviceability | ✅ Scheduling |
+
 ---
 
 ## Sales Scenarios (Expanded)
@@ -242,20 +256,6 @@ This document outlines the sales scenarios and milestone plan for the B2B Conver
 
 ---
 
-## Agent Development Timeline
-
-| Agent | Winter Qtr | Spring Qtr |
-|-------|------------|------------|
-| 🧠 Super Agent | ✅ Basic routing | ✅ Full orchestration |
-| 👤 Prospect Agent | ✅ Complete | — |
-| 📊 Lead Gen Agent | ✅ Basic BANT | ✅ Enhanced scoring |
-| 📦 Product Agent | ✅ Complete | — |
-| 💰 Offer Mgmt Agent | — | ✅ Complete |
-| 🛒 Order Agent | — | ✅ Complete |
-| 💳 Payment Agent | — | ✅ Complete |
-| 🔧 Service Fulfillment Agent | ✅ Serviceability | ✅ Scheduling |
-
----
 
 *Document prepared for Drexel University Senior Design Project*  
 *B2B Agentic Sales Orchestration System*
