@@ -38,6 +38,9 @@ This document outlines the sales scenarios and milestone plan for the B2B Conver
 
 ---
 
+<img width="791" height="206" alt="image" src="https://github.com/user-attachments/assets/7f9f41b9-fdd9-4197-b2dd-2b8b5ed58717" />
+
+
 ## Sales Scenarios (Expanded)
 
 ### Scenario 1: Address-Based Lookup (New Prospect)
