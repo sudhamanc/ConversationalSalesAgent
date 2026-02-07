@@ -4,17 +4,16 @@ POST /api/chat – SSE streaming chat endpoint.
 Flow:
 1. Authenticate the user session via Bearer token.
 2. Apply rate limits.
-3. Inject the system message into the conversation.
-4. Forward the request to the Gemini LLM via Google GenAI SDK (server-side).
+3. Inject the system message (baked into the ADK agent instruction).
+4. Forward the request through the ADK Runner (sub-agents + tools active).
 5. Stream response tokens back as Server-Sent Events.
 """
 
 import json
-import uuid
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
-from google import genai
+from google.genai import types
 
 from config import settings
 from middleware.auth import authenticator
@@ -24,45 +23,76 @@ from utils.logger import get_logger, session_id_var
 logger = get_logger(__name__)
 router = APIRouter()
 
-
-def _build_contents(
-    history: list[dict], user_message: str
-) -> list[dict]:
-    """Build the Gemini-compatible contents array with system context."""
-    contents: list[dict] = []
-
-    # Replay conversation history
-    for msg in history:
-        role = "user" if msg.get("role") == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-
-    # Append the new user message
-    contents.append({"role": "user", "parts": [{"text": user_message}]})
-    return contents
+# These are set at startup by main.py — avoids circular imports.
+_runner = None
+_session_service = None
+_app_name = None
 
 
-async def _stream_gemini(contents: list[dict]):
-    """Call the Gemini API with streaming and yield SSE-formatted chunks."""
-    client = genai.Client()
+def init_runner(runner, session_service, app_name: str):
+    """Called once from main.py at startup to inject the ADK runner."""
+    global _runner, _session_service, _app_name
+    _runner = runner
+    _session_service = session_service
+    _app_name = app_name
 
-    response = client.models.generate_content_stream(
-        model=settings.model.model_name,
-        contents=contents,
-        config=genai.types.GenerateContentConfig(
-            system_instruction=settings.agent.system_message,
-            temperature=settings.model.temperature,
-            top_p=settings.model.top_p,
-            top_k=settings.model.top_k,
-            max_output_tokens=settings.model.max_output_tokens,
-        ),
+
+async def _ensure_adk_session(user_id: str, session_id: str):
+    """Get or create an ADK session for this user."""
+    existing = await _session_service.get_session(
+        app_name=_app_name, user_id=user_id, session_id=session_id,
+    )
+    if existing:
+        return existing
+
+    return await _session_service.create_session(
+        app_name=_app_name, user_id=user_id, session_id=session_id,
     )
 
-    for chunk in response:
-        if chunk.text:
-            payload = json.dumps({"type": "token", "content": chunk.text})
+
+async def _stream_agent(user_id: str, session_id: str, user_message: str):
+    """Run the ADK agent with SSE streaming and yield formatted events."""
+    from google.adk.runners import RunConfig
+
+    await _ensure_adk_session(user_id, session_id)
+
+    new_message = types.Content(
+        role="user",
+        parts=[types.Part(text=user_message)],
+    )
+
+    run_config = RunConfig(streaming_mode="sse")
+
+    async for event in _runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=new_message,
+        run_config=run_config,
+    ):
+        # Emit text content from the agent (or sub-agents)
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                text = part.text if hasattr(part, "text") else None
+                if text:
+                    payload = json.dumps({
+                        "type": "token",
+                        "content": text,
+                        "author": event.author,
+                        "partial": bool(event.partial),
+                    })
+                    yield f"data: {payload}\n\n"
+
+        # Check for errors
+        if event.error_message:
+            payload = json.dumps({"type": "error", "content": event.error_message})
             yield f"data: {payload}\n\n"
 
-    # Signal completion
+        # Turn complete = done
+        if event.turn_complete:
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
+
+    # Safety: always signal done
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
@@ -74,7 +104,7 @@ async def chat(request: Request, authorization: str = Header(default="")):
     Request body:
         {
             "message": "user message text",
-            "history": [{"role": "user"|"assistant", "content": "..."}]
+            "history": []  (history is managed by ADK sessions, not the client)
         }
 
     Headers:
@@ -106,7 +136,6 @@ async def chat(request: Request, authorization: str = Header(default="")):
     # --- 3. Parse request body ---
     body = await request.json()
     user_message = body.get("message", "").strip()
-    history = body.get("history", [])
 
     if not user_message:
         return StreamingResponse(
@@ -115,17 +144,17 @@ async def chat(request: Request, authorization: str = Header(default="")):
             status_code=400,
         )
 
-    # Trim history to max configured length
-    max_history = settings.session.max_history_length
-    if len(history) > max_history:
-        history = history[-max_history:]
-
-    # --- 4 & 5. Build contents, call Gemini, stream SSE ---
-    contents = _build_contents(history, user_message)
-    logger.info(f"Streaming response for message: {user_message[:80]}...")
+    # --- 4 & 5. Run ADK agent and stream SSE ---
+    # Use the auth session_id as both ADK user_id and session_id.
+    # ADK sessions handle conversation history internally.
+    logger.info(f"Streaming ADK agent response for: {user_message[:80]}...")
 
     return StreamingResponse(
-        _stream_gemini(contents),
+        _stream_agent(
+            user_id=session.session_id,
+            session_id=session.session_id,
+            user_message=user_message,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

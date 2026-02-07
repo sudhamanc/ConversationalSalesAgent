@@ -1,12 +1,12 @@
 """
 SuperAgent FastAPI server entry point.
 
-Registers:
-  - CORS middleware
-  - /api/chat   (SSE streaming chat)
-  - /api/session (session management)
-  - /health     (health check)
-  - ADK agent   (optional, for ADK web UI)
+Initializes the ADK Runner + InMemorySessionService following the
+bootstrap agent framework pattern, then registers custom API routes
+for SSE streaming chat.
+
+The ADK agent (with sub-agents and tools) is the single LLM entry
+point — all chat requests flow through it.
 """
 
 import os
@@ -19,15 +19,37 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import settings
-from api.chat import router as chat_router
+from agent import get_agent
+from api.chat import router as chat_router, init_runner
 from api.session import router as session_router
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# ADK Runner setup (mirrors BootStrapAgent/main.py's get_fast_api_app usage
+# but gives us control over the HTTP layer for custom SSE streaming).
+# ---------------------------------------------------------------------------
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+
+APP_NAME = settings.agent.agent_name
+session_service = InMemorySessionService()
+runner = Runner(
+    agent=get_agent(),
+    app_name=APP_NAME,
+    session_service=session_service,
+)
+
+# Inject the runner into the chat module so it can invoke the agent.
+init_runner(runner, session_service, APP_NAME)
+
+# ---------------------------------------------------------------------------
+# FastAPI application
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title="SuperAgent API",
-    description="B2B Sales Super Agent with SSE streaming chat",
+    description="B2B Sales Super Agent with SSE streaming chat (ADK-backed)",
     version="1.0.0",
     debug=settings.server.debug,
 )
@@ -48,14 +70,16 @@ app.include_router(session_router, tags=["Session"])
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "agent": settings.agent.agent_name}
+    return {"status": "ok", "agent": settings.agent.agent_name, "model": settings.model.model_name}
 
 
 @app.on_event("startup")
 async def startup():
     logger.info(
-        f"SuperAgent server starting — model={settings.model.model_name}, "
-        f"port={settings.server.port}"
+        f"SuperAgent server starting — "
+        f"agent={APP_NAME}, model={settings.model.model_name}, "
+        f"port={settings.server.port}, "
+        f"sub_agents_enabled={settings.agent.enable_sub_agents}"
     )
 
 

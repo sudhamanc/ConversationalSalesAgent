@@ -2,6 +2,8 @@
  * API client for the SuperAgent backend.
  *
  * Handles session creation and SSE streaming for chat.
+ * Conversation history is managed server-side by the ADK session service,
+ * so the client only sends the current message.
  */
 
 const API_BASE = "/api";
@@ -30,15 +32,23 @@ export async function getToken() {
 }
 
 /**
+ * Reset the stored session so the next request creates a fresh one.
+ * Called when the user clears the chat.
+ */
+export function resetSession() {
+  _token = null;
+  _sessionId = null;
+}
+
+/**
  * Send a chat message and stream the response via SSE.
  *
  * @param {string} message - User message text.
- * @param {Array} history  - Conversation history array.
  * @param {function} onToken - Called with each streamed token string.
  * @param {function} onDone  - Called when streaming completes.
  * @param {function} onError - Called on error with error message.
  */
-export async function streamChat(message, history, onToken, onDone, onError) {
+export async function streamChat(message, onToken, onDone, onError) {
   const token = await getToken();
 
   try {
@@ -48,13 +58,13 @@ export async function streamChat(message, history, onToken, onDone, onError) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message }),
     });
 
     if (res.status === 401) {
       // Session expired – create a new one and retry once
       await createSession();
-      return streamChat(message, history, onToken, onDone, onError);
+      return streamChat(message, onToken, onDone, onError);
     }
 
     const reader = res.body.getReader();

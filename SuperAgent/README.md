@@ -1,15 +1,35 @@
 # SuperAgent – B2B Sales Chat with SSE Streaming
 
-A real-time conversational sales agent built on **Google ADK** and **Gemini 2.0 Flash**.
-The server handles all LLM communication; the React client consumes streamed tokens
-via Server-Sent Events (SSE) for a native typing effect.
+A real-time conversational sales agent built on the **BootStrap Agent framework**
+(Google ADK `Runner` + `InMemorySessionService`) with **Gemini 2.0 Flash**.
+All LLM calls flow through the ADK agent (sub-agents and tools included);
+the React client consumes streamed tokens via Server-Sent Events (SSE).
+
+## How It Uses the BootStrap Agent Framework
+
+The `BootStrapAgent/` template provides:
+- `google.adk.agents.Agent` with `sub_agents`, `tools`, and `generate_content_config`
+- `google.adk.cli.fast_api.get_fast_api_app()` for quick ADK-served apps
+
+SuperAgent builds on this pattern but replaces `get_fast_api_app()` with a
+**custom FastAPI app** that still uses the ADK's core runtime:
+
+```
+main.py
+  └─ Runner(agent=get_agent(), session_service=InMemorySessionService())
+       └─ runner.run_async(streaming_mode="sse")
+            └─ ADK orchestrator → sub-agents / tools → Gemini LLM
+```
+
+This gives us full control over HTTP (auth, rate limiting, custom SSE format)
+while keeping ADK's agent routing, tool dispatch, and session management.
 
 ## Architecture
 
 ```
 SuperAgent/
 ├── server/                    # Python / FastAPI backend
-│   ├── main.py                # Entry point – registers routes, CORS, startup
+│   ├── main.py                # Entry point – ADK Runner init, routes, CORS
 │   ├── config.py              # All configurable settings (single source of truth)
 │   ├── .env.example           # Environment variable template
 │   ├── requirements.txt       # Python dependencies
@@ -53,7 +73,9 @@ SuperAgent/
 | Concern | Approach |
 |---------|----------|
 | **LLM calls** | Server-side only – the client never touches the Gemini API |
-| **Streaming** | SSE via `StreamingResponse`; each token is a JSON `data:` event |
+| **Streaming** | ADK `Runner.run_async(streaming_mode="sse")` → SSE via `StreamingResponse` |
+| **Agent runtime** | ADK `Runner` + `InMemorySessionService` (same core as BootStrapAgent) |
+| **History** | Server-side via ADK sessions — client sends only the current message |
 | **Auth** | Session tokens issued by `POST /api/session`; validated on every chat request |
 | **Rate limiting** | In-memory token-bucket (per-minute + per-hour) per session |
 | **Config** | Single `config.py` with `@dataclass(frozen=True)` loaded from env vars |
@@ -110,18 +132,16 @@ Streams an LLM response via SSE.
 **Body:**
 ```json
 {
-  "message": "What internet plans do you offer?",
-  "history": [
-    { "role": "user", "content": "Hi" },
-    { "role": "assistant", "content": "Hello! How can I help?" }
-  ]
+  "message": "What internet plans do you offer?"
 }
 ```
+Note: conversation history is managed server-side by the ADK session service.
+The client only sends the current message.
 
 **SSE events:**
 ```
-data: {"type": "token", "content": "We offer"}
-data: {"type": "token", "content": " three fiber"}
+data: {"type": "token", "content": "We offer", "author": "super_sales_agent", "partial": true}
+data: {"type": "token", "content": " three fiber", "author": "product_agent", "partial": true}
 ...
 data: {"type": "done"}
 ```

@@ -1,8 +1,11 @@
 import { useState, useCallback, useRef } from "react";
-import { streamChat } from "../utils/api";
+import { streamChat, resetSession } from "../utils/api";
 
 /**
- * Custom hook encapsulating chat state and streaming logic.
+ * Custom hook encapsulating chat state and SSE streaming logic.
+ *
+ * Conversation history is managed server-side by the ADK session service.
+ * The client only tracks messages for display purposes.
  */
 export function useChat() {
   const [messages, setMessages] = useState([]);
@@ -18,19 +21,11 @@ export function useChat() {
       setIsStreaming(true);
       abortRef.current = false;
 
-      // Build history from current messages (before this new message)
-      const history = [...messages, userMsg].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
       // Placeholder for assistant response
-      const assistantIdx = messages.length + 1;
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
       await streamChat(
         text,
-        history,
         // onToken
         (token) => {
           if (abortRef.current) return;
@@ -65,13 +60,15 @@ export function useChat() {
         }
       );
     },
-    [messages, isStreaming]
+    [isStreaming]
   );
 
   const clearChat = useCallback(() => {
     setMessages([]);
     setIsStreaming(false);
     abortRef.current = true;
+    // Reset the server session so a fresh ADK session is created next time
+    resetSession();
   }, []);
 
   return { messages, isStreaming, sendMessage, clearChat };
