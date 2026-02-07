@@ -749,48 +749,662 @@ gcloud projects add-iam-policy-binding adk-b2b-sales \
 
 ---
 
+## 💎 Gemini API Usage Costs
+
+### 🎯 Critical Information: Gemini Costs Are Separate
+
+**Important:** Gemini API costs are **separate** from your deployment platform costs (Railway or GCP). You pay Google for Gemini API usage regardless of where you deploy.
+
+**However**, there are significant differences in pricing and free tiers depending on how you access Gemini.
+
+---
+
+### Two Ways to Access Gemini API
+
+#### Option 1: Google AI Studio (Free Tier) ⭐ **RECOMMENDED**
+**Access Method:** `generativelanguage.googleapis.com`  
+**Best for:** Development, testing, group projects  
+**Works with:** Railway, GCP, Azure, anywhere
+
+#### Option 2: Vertex AI (Pay-as-you-go)
+**Access Method:** Vertex AI on Google Cloud  
+**Best for:** Production, enterprise applications  
+**Works with:** GCP only
+
+---
+
+### Gemini 2.0 Flash Pricing
+
+#### Google AI Studio (Free Tier)
+
+| Feature | Free Tier | Paid Tier |
+|---------|-----------|-----------|
+| **Rate Limit** | 15 requests/minute | Higher limits |
+| **Daily Quota** | 1,500 requests/day | Unlimited |
+| | 1 million tokens/day | Unlimited |
+| **Monthly Limit** | **~37,500 requests FREE** | Unlimited |
+| **Cost** | **$0** ✅ | $0.075 per 1M input tokens |
+| | | $0.30 per 1M output tokens |
+
+**Free Tier Calculation:**
+```
+Daily limit:    1,500 requests
+Monthly limit:  ~37,500 requests (FREE)
+Token limit:    1M tokens/day = 30M tokens/month (FREE)
+
+Typical agent request:
+- Input:  ~500 tokens (user query + context)
+- Output: ~300 tokens (agent response)
+- Total:  ~800 tokens per request
+
+Free tier effectively covers:
+~37,500 requests/month = ~1,250 requests/day
+```
+
+#### Vertex AI (GCP Only - No Free Tier)
+
+| Model | Input Cost | Output Cost |
+|-------|-----------|-------------|
+| **Gemini 2.0 Flash** | $0.075 / 1M tokens | $0.30 / 1M tokens |
+| **Gemini 1.5 Flash** | $0.075 / 1M tokens | $0.30 / 1M tokens |
+| **Gemini 1.5 Pro** | $1.25 / 1M tokens | $5.00 / 1M tokens |
+
+**Cost Examples (Vertex AI):**
+
+```
+Light Development (1,000 requests/month):
+─────────────────────────────────────────
+Input:  500K tokens × $0.075 = $0.04
+Output: 300K tokens × $0.30  = $0.09
+Total: $0.13/month
+
+Moderate Usage (10,000 requests/month):
+─────────────────────────────────────────
+Input:  5M tokens × $0.075 = $0.38
+Output: 3M tokens × $0.30  = $0.90
+Total: $1.28/month
+
+Heavy Testing (50,000 requests/month):
+─────────────────────────────────────────
+Input:  25M tokens × $0.075 = $1.88
+Output: 15M tokens × $0.30  = $4.50
+Total: $6.38/month
+```
+
+---
+
+### 📊 Total Cost Comparison: Platform + Gemini
+
+#### Railway + Google AI Studio ⭐⭐
+
+**Infrastructure:**
+```
+Railway Hobby:          $5.00/month
+Railway credits:       -$5.00/month
+Net Railway cost:       $0.00 (if under $5 usage)
+```
+
+**AI Costs:**
+```
+Gemini (Free tier):     $0.00/month
+  - Up to 37,500 requests/month
+  - Up to 30M tokens/month
+```
+
+**Total: $0-5/month**
+- **Gemini is FREE**
+- Only pay for Railway if you exceed $5 usage credits
+
+---
+
+#### GCP Cloud Run + Google AI Studio ⭐⭐⭐ **BEST VALUE**
+
+**Infrastructure:**
+```
+Cloud Run (free tier):  $0.00/month
+  - 2M requests/month free
+  - Scales to zero when idle
+```
+
+**AI Costs:**
+```
+Gemini (Free tier):     $0.00/month
+  - Up to 37,500 requests/month
+```
+
+**Total: $0/month** 🎉
+- **Completely FREE for development**
+- Both Cloud Run and Gemini within free tiers
+
+---
+
+#### GCP Cloud Run + Vertex AI
+
+**Infrastructure:**
+```
+Cloud Run (free tier):  $0.00/month
+Beyond free tier:       ~$5-15/month
+```
+
+**AI Costs:**
+```
+Gemini via Vertex AI:   $1-13/month
+  (depends on usage)
+```
+
+**Total: $1-28/month**
+- **BUT: Covered by $300 GCP credits!**
+- Free for 3-4 months with new GCP account
+
+---
+
+### 💰 Updated Cost Comparison Table
+
+| Deployment | Platform Cost | Gemini Cost | **Total/Month** | Free Duration | Best For |
+|------------|---------------|-------------|-----------------|---------------|----------|
+| **GCP Run + AI Studio** ⭐⭐⭐ | $0 | **$0** | **$0** | Unlimited | **Development** |
+| **Railway + AI Studio** ⭐⭐ | $0-5 | **$0** | **$0-5** | Unlimited | **Easiest Setup** |
+| GCP Run + Vertex AI | $0-15 | $1-13 | $1-28 | 3-4 months* | Production |
+| Railway + Vertex AI | $0-5 | $1-13 | $1-18 | None | Not recommended |
+
+*With $300 GCP credits for new accounts
+
+---
+
+### 📈 Usage Estimation for Your Project
+
+#### Development Phase (3 months)
+
+**Team Usage:**
+- 5 team members
+- 50 tests per person per day
+- Total: 250 requests/day
+- Monthly: 7,500 requests
+
+**Cost with Google AI Studio (Free Tier):**
+```
+Your usage:       7,500 requests/month
+Free tier limit: 37,500 requests/month
+Usage percentage: 20%
+
+Gemini Cost: $0/month ✅
+```
+
+**You're using only 20% of the free tier!**
+
+```
+Your Usage vs Free Tier:
+┌─────────────────────────────────────┐
+│  7,500/month    ████░░░░░░░░░░ 20%  │
+│ 37,500/month    ████████████ 100%  │
+└─────────────────────────────────────┘
+```
+
+---
+
+#### Demo/Presentation Phase (1 month)
+
+**Heavy Testing:**
+- 500 requests/day
+- Monthly: 15,000 requests
+
+**Cost with Google AI Studio (Free Tier):**
+```
+Your usage:       15,000 requests/month
+Free tier limit:  37,500 requests/month
+Usage percentage: 40%
+
+Gemini Cost: $0/month ✅ (still well within free tier)
+```
+
+---
+
+### 🔧 Cost Optimization Strategies
+
+#### 1. Use Free Tier Efficiently
+
+**Stay within free limits with smart rate limiting:**
+
+```python
+class GeminiRateLimiter:
+    def __init__(self):
+        self.daily_requests = 0
+        self.daily_tokens = 0
+        self.daily_limit_requests = 1500  # Free tier limit
+        self.daily_limit_tokens = 1000000  # 1M tokens/day
+        
+    def can_make_request(self, estimated_tokens: int = 800) -> bool:
+        """Check if within free tier limits"""
+        if self.daily_requests >= self.daily_limit_requests:
+            return False
+        if self.daily_tokens + estimated_tokens > self.daily_limit_tokens:
+            return False
+        return True
+    
+    def track_request(self, input_tokens: int, output_tokens: int):
+        """Track request against daily limits"""
+        self.daily_requests += 1
+        self.daily_tokens += (input_tokens + output_tokens)
+```
+
+#### 2. Implement Request Caching
+
+```python
+import hashlib
+from datetime import datetime, timedelta
+
+cache = {}
+
+def cached_gemini_request(prompt: str, cache_duration_hours: int = 1):
+    """Cache responses to avoid duplicate API calls"""
+    
+    # Create cache key
+    cache_key = hashlib.md5(prompt.encode()).hexdigest()
+    
+    # Check cache
+    if cache_key in cache:
+        cached_time, response = cache[cache_key]
+        if datetime.now() - cached_time < timedelta(hours=cache_duration_hours):
+            return response  # Return cached, no API call
+    
+    # Make API call only if not cached
+    response = model.generate_content(prompt)
+    cache[cache_key] = (datetime.now(), response)
+    
+    return response
+```
+
+#### 3. Optimize Prompts (Reduce Tokens)
+
+```python
+# ❌ Bad: Long, inefficient prompt (500+ tokens)
+prompt = f"""
+Please analyze the following customer data and determine 
+if they are eligible for our premium service package.
+Here is all the customer information we have collected:
+Name: {name}
+Full Address: {address}
+Credit Score: {score}
+[... lots more text ...]
+"""
+
+# ✅ Good: Concise, focused prompt (50 tokens)
+prompt = f"Credit check: EIN {ein}, Score {score}. Approve if >650."
+```
+
+**Savings: 10x fewer tokens = 10x cheaper!**
+
+#### 4. Monitor Usage Daily
+
+```python
+import logging
+
+def tracked_gemini_request(prompt: str):
+    """Track token usage for monitoring"""
+    response = model.generate_content(prompt)
+    
+    # Log usage
+    input_tokens = response.usage_metadata.prompt_token_count
+    output_tokens = response.usage_metadata.candidates_token_count
+    
+    logging.info(f"Gemini: {input_tokens} in, {output_tokens} out")
+    
+    return response
+```
+
+---
+
+### 🔐 API Key Setup
+
+#### Google AI Studio (Free - No Credit Card)
+
+```bash
+# 1. Get free API key
+# Visit: https://aistudio.google.com/app/apikey
+
+# 2. Create API key (instant, no credit card needed)
+
+# 3. Add to your environment
+# Railway: Dashboard → Variables → Add Variable
+GOOGLE_AI_STUDIO_API_KEY=your_api_key_here
+
+# Or for local testing:
+export GOOGLE_AI_STUDIO_API_KEY=your_api_key_here
+```
+
+**Code Setup:**
+```python
+import os
+import google.generativeai as genai
+
+# Configure with free API key
+api_key = os.environ.get('GOOGLE_AI_STUDIO_API_KEY')
+genai.configure(api_key=api_key)
+
+# Use free tier model
+model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+# Make request
+response = model.generate_content('Your prompt here')
+print(response.text)
+```
+
+#### Vertex AI (GCP - Requires GCP Project)
+
+```bash
+# 1. Enable Vertex AI API
+gcloud services enable aiplatform.googleapis.com
+
+# 2. Set up authentication
+gcloud auth application-default login
+
+# 3. Set environment variables
+export GCP_PROJECT_ID=your-project-id
+export GCP_REGION=us-central1
+```
+
+**Code Setup:**
+```python
+import os
+from google.cloud import aiplatform
+from vertexai.preview.generative_models import GenerativeModel
+
+# Initialize Vertex AI
+aiplatform.init(
+    project=os.environ['GCP_PROJECT_ID'],
+    location=os.environ['GCP_REGION']
+)
+
+# Use Vertex AI model
+model = GenerativeModel('gemini-2.0-flash-001')
+
+# Make request
+response = model.generate_content('Your prompt here')
+print(response.text)
+```
+
+---
+
 ## 📝 Final Recommendations
 
-### For Your 5-Person Group Project
+### 🏆 BEST OPTION: GCP Cloud Run + Google AI Studio (Free Tier)
 
-**Best Overall Strategy:**
-
-```
-Phase 1: Development (Weeks 1-4)
-├── Platform: Railway Hobby ($5/month)
-├── Cost: $5-10 total
-├── Benefits: Easy setup, team-friendly
-└── Purpose: Build and test agents
-
-Phase 2: Production (Weeks 5-8)
-├── Platform: Google Cloud Platform
-├── Cost: $0 (using $300 free credits)
-├── Benefits: Enterprise-grade, impressive for presentations
-└── Purpose: Final deployment and demo
-
-Total Cost: $5-10 for entire project
-```
-
-**Alternative (If All Students):**
+**Total Cost: $0/month** ✅
 
 ```
-Entire Project:
-├── Platform: Azure (GitHub Student Pack)
-├── Cost: $0 (student credits)
-├── Benefits: Completely free
-└── Duration: Covers entire semester
+Platform: Google Cloud Run (Free Tier)
+├── Cost: $0/month
+├── Limits: 2M requests/month (more than enough)
+├── Features: Auto-scaling, HTTPS, zero when idle
+└── Setup time: 30 minutes
+
+Gemini AI: Google AI Studio (Free Tier)
+├── Cost: $0/month
+├── Limits: 37,500 requests/month (5x your needs)
+├── Features: Latest models, no credit card required
+└── Setup time: 5 minutes
+
+Total Monthly Cost: $0
+Free Duration: Unlimited (both have permanent free tiers)
 ```
 
-**Alternative (All Free):**
+**Perfect For:**
+- ✅ Maximum cost savings ($0 forever)
+- ✅ Development and testing
+- ✅ Group projects
+- ✅ Learning and experimentation
+- ✅ Demo presentations
+
+**Setup Steps:**
+```bash
+# 1. Create GCP account (get $300 credits as bonus)
+# 2. Get free Gemini API key from AI Studio
+# 3. Deploy to Cloud Run (free tier)
+# 4. Start building - everything is free!
+```
+
+---
+
+### 🥈 RUNNER-UP: Railway Hobby + Google AI Studio (Free Tier)
+
+**Total Cost: $5/month = $1 per person** ⭐
 
 ```
-Entire Project:
-├── Platform: Railway Free → GCP Free Credits
+Platform: Railway Hobby Tier
+├── Cost: $5/month ($1 per person)
+├── Credits: $5/month included
+├── Features: Auto-deploy, easy setup, team-friendly
+└── Setup time: 3 minutes
+
+Gemini AI: Google AI Studio (Free Tier)
+├── Cost: $0/month
+├── Limits: 37,500 requests/month
+├── Features: Same as GCP option
+└── Setup time: 5 minutes
+
+Total Monthly Cost: $5 ($1 per person)
+Free Duration: Gemini unlimited, Railway ongoing
+```
+
+**Perfect For:**
+- ✅ Fastest deployment (3 minutes)
+- ✅ Teams who want simplicity
+- ✅ Worth $1/person for zero DevOps
+- ✅ Quick demos and testing
+
+**Why Choose This:**
+- Easiest setup in the industry
+- Railway auto-deploys from GitHub
+- No infrastructure management
+- Gemini AI is still FREE
+
+---
+
+### 🥉 ENTERPRISE OPTION: GCP Full Stack (For Impressive Demos)
+
+**Total Cost: $0/month (using $300 credits)**
+
+```
+Platform: GCP Cloud Run
+├── Cost: $0-15/month (covered by credits)
+├── Free tier: 2M requests/month
+└── Setup time: 30 minutes
+
+Gemini AI: Vertex AI
+├── Cost: $1-13/month (covered by credits)
+├── Features: Enterprise-grade, higher limits
+└── Production-ready
+
+GCP Credits: $300 for new accounts
+├── Duration: 90 days or until credits run out
+├── Covers: 3-4 months of full usage
+└── Perfect for: Semester project
+
+Total Monthly Cost: $0 (for 3-4 months)
+Then: $12-28/month after credits
+```
+
+**Perfect For:**
+- ✅ Final project presentations
+- ✅ Production-quality demos
+- ✅ Resume-worthy deployments
+- ✅ When you want to impress
+
+---
+
+### 📊 Final Cost Summary for Your Group
+
+#### Option 1: GCP Run + AI Studio (Recommended) ⭐⭐⭐
+
+```
+Month 1:     $0 (free tiers)
+Month 2:     $0 (free tiers)
+Month 3:     $0 (free tiers)
+Month 4:     $0 (free tiers)
+────────────────────────────
+Semester:    $0 total 🎉
+
+Per person:  $0
+```
+
+**Why Recommended:**
+- Completely free forever
+- Professional infrastructure
+- Both platform and AI are free
+- Great for resumes
+
+---
+
+#### Option 2: Railway + AI Studio ⭐⭐
+
+```
+Month 1:     $0 (Railway free trial + free Gemini)
+Month 2:     $5 (Railway Hobby + free Gemini)
+Month 3:     $5 (Railway Hobby + free Gemini)
+Month 4:     $5 (Railway Hobby + free Gemini)
+────────────────────────────
+Semester:    $15 total
+
+Per person:  $3 total ($0.75/month)
+```
+
+**Why Good:**
+- Easiest setup (3 minutes)
+- Minimal cost ($0.75/person/month)
+- Gemini still FREE
+- Auto-deploy from GitHub
+
+---
+
+#### Option 3: GCP Full (Best for Final Demo)
+
+```
+Month 1:     $0 (using $300 credits)
+Month 2:     $0 (using $300 credits)
+Month 3:     $0 (using $300 credits)
+Month 4:     $0 (using $300 credits)
+────────────────────────────
+Semester:    $0 total 🎉
+
+After credits: $12-28/month
+```
+
+**Why For Demos:**
+- Enterprise-grade
+- Impressive for presentations
+- Production-ready
+- Free for full semester
+
+---
+
+### 🎯 Our Specific Recommendation for Your 5-Person Group
+
+**Start with Option 1 (GCP + AI Studio), fallback to Option 2 (Railway) if needed:**
+
+```
+Week 1-2: Setup Phase
+├── Platform: GCP Cloud Run (free)
+├── AI: Google AI Studio (free)
 ├── Cost: $0
-├── Month 1: Railway free trial
-├── Month 2-4: GCP $300 credits
-└── Total: $0 for 4 months
+└── Action: Get familiar with both services
+
+Week 3-8: Development Phase
+├── If GCP works well: Stay with it ($0)
+├── If team wants simpler: Switch to Railway ($5/month)
+├── AI: Keep using free AI Studio
+└── Cost: $0-5/month
+
+Week 9-12: Demo Phase
+├── Platform: Upgrade to GCP full stack if needed
+├── AI: Could switch to Vertex AI for demos
+├── Use $300 GCP credits
+└── Cost: Still $0 (credits cover it)
+
+Total Semester Cost: $0-15
+Per Person Cost: $0-3
 ```
+
+---
+
+### 💡 Pro Tips
+
+**1. Start Free, Upgrade if Needed**
+```
+Week 1: GCP free tier ($0)
+       ↓
+Week 4: Still free and working? Great!
+       ↓
+Week 8: Need easier deployment? 
+        Switch to Railway ($5/month)
+       ↓
+Week 12: Final demo?
+         GCP full stack (use $300 credits)
+```
+
+**2. Gemini Always Free**
+```
+Throughout entire project:
+└── Use Google AI Studio (free tier)
+    ├── 37,500 requests/month
+    ├── Your usage: ~7,500/month
+    └── Cost: $0 ✅
+```
+
+**3. Split Costs Fairly**
+```
+If using Railway ($5/month):
+- Month 1: Person A pays ($5)
+- Month 2: Person B pays ($5)
+- Month 3: Person C pays ($5)
+- Everyone contributes equally!
+```
+
+---
+
+### ✅ Final Decision Matrix
+
+**Choose GCP Run + AI Studio if:**
+- ✅ You want $0 cost forever
+- ✅ Team comfortable with 30-min setup
+- ✅ Want professional infrastructure
+- ✅ Building resume-worthy project
+
+**Choose Railway + AI Studio if:**
+- ✅ You want 3-minute deployment
+- ✅ $1/person/month is acceptable
+- ✅ Prefer simplicity over cost
+- ✅ Want zero DevOps headaches
+
+**Choose GCP Full Stack if:**
+- ✅ Final semester project
+- ✅ Want impressive demo
+- ✅ Need enterprise features
+- ✅ Have $300 GCP credits
+
+---
+
+### 🎓 Student Bonus Options
+
+**If ALL 5 members are students:**
+
+```
+Option A: GitHub Student Pack → Azure
+├── Get $100 Azure credits (renewable)
+├── Deploy to Azure Container Apps
+├── Use Google AI Studio for Gemini (free)
+└── Total cost: $0 for entire year
+
+Option B: Multiple GCP Accounts
+├── Each person creates GCP account
+├── Each gets $300 credits
+├── Total: $1,500 in credits for team!
+├── Deploy across multiple projects
+└── Free for entire semester + summer
+```
+
+---
+
+**Bottom Line: You can build and deploy your entire B2B sales agent system for $0-15 for the whole semester!** 🎉
 
 ---
 
