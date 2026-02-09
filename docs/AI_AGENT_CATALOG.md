@@ -256,8 +256,8 @@ class StatefulAgent:
 | ❓ FAQ Agent | None (stateless) | - | - |
 | 🆘 Escalation Agent | Handoff context summary | JSON | Ticket System |
 | 📅 Scheduling Agent | Pending appointments | JSON | Calendar DB |
-| 📧 Nurture Agent | Campaign state, touchpoint history | JSON | LangGraph Checkpointer (PostgreSQL) |
-| 🤝 Retention Agent | Negotiation state, offer history | JSON | LangGraph Checkpointer (PostgreSQL) |
+| 📧 Nurture Agent | Campaign state, touchpoint history | JSON | LangGraph Checkpointer (SQLite) |
+| 🤝 Retention Agent | Negotiation state, offer history | JSON | LangGraph Checkpointer (SQLite) |
 | 📊 Insights Agent | None (stateless) | - | - |
 
 ### A2A Protocol Message Format

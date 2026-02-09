@@ -96,7 +96,7 @@ graph TB
         GIS[(GIS/Coverage Map API)]
         RAG[(Vector DB<br/>ChromaDB)]
         PRICE[(Pricing Engine API)]
-        DB[(Order Database<br/>PostgreSQL)]
+        DB[(Order Database<br/>SQLite)]
         LOG[📊 Observability & Logging]
     end
 
@@ -602,7 +602,7 @@ The system implements defensive patterns to ensure graceful degradation:
 |------------|---------|
 | LLM Provider | Agnostic (Abstracted via API Wrapper) |
 | ChromaDB | RAG - Product Manuals |
-| SQLite / PostgreSQL | Transactional DB - Orders/Users |
+| SQLite | Transactional DB - Orders/Users |
 
 ### Technology Architecture
 
@@ -629,7 +629,7 @@ graph TB
     subgraph DATA[Data Layer]
         LLM2[LLM Provider]
         Chroma2[ChromaDB]
-        PG2[PostgreSQL]
+        PG2[SQLite]
     end
     
     FE -->|WebSocket| BE
