@@ -113,7 +113,7 @@ This document outlines the sales scenarios and milestone plan for the B2B Conver
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 🌐 Serviceability Agent (NEW)
+## 🌐 Serviceability Agent
 
 ### Purpose
 The **Serviceability Agent** is a deterministic agent responsible for:
