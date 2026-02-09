@@ -149,7 +149,7 @@ graph TB
     end
 
     subgraph Orchestration["🧠 ORCHESTRATION LAYER"]
-        SA[SUPER AGENT<br/>Intent Router | Guardrails | Context Manager]
+        SA[SUPER AGENT<br/>Intent Router • Guardrails • Context Manager]
     end
 
     subgraph Discovery["🔍 DISCOVERY AGENTS"]
