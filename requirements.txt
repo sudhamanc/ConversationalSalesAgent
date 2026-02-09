@@ -1,0 +1,60 @@
+# =============================================================================
+# Conversational Sales Agent - Combined Requirements
+# =============================================================================
+
+# --- Core Web Framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# --- Google AI / ADK ---
+google-genai>=1.0.0
+google-adk>=1.20.0
+google-adk[eval]>=1.20.0
+google-cloud-aiplatform>=1.125.0
+google-cloud-dialogflow-cx>=1.42.0
+google-cloud-logging>=3.12.1
+
+# --- Configuration & Environment ---
+python-dotenv>=1.1.1
+pydantic>=2.11.7
+
+# --- AWS & Cloud ---
+boto3>=1.40.35
+
+# --- Data Processing ---
+jsonpath-ng>=1.7.0
+cloudpickle==3.1.1
+openpyxl==3.1.5
+xlsxwriter==3.2.9
+
+# --- ML/AI Libraries ---
+model2vec==0.6.0
+openai>=1.107.1
+scipy>=1.16.2
+
+# --- OpenTelemetry (Observability) ---
+opentelemetry-api==1.37.0
+opentelemetry-sdk==1.37.0
+opentelemetry-semantic-conventions==0.58b0
+opentelemetry-instrumentation==0.58b0
+opentelemetry-exporter-gcp-logging==1.11.0a0
+opentelemetry-exporter-gcp-monitoring==1.11.0a0
+opentelemetry-instrumentation-google-genai==0.4b0
+opentelemetry-instrumentation-vertexai>=0.48.0,<0.49.0
+
+# --- Database ---
+psycopg2-binary>=2.9.11,<3.0
+
+# --- Utilities ---
+requests>=2.32.5
+tenacity>=9.1.2
+tqdm>=4.67.1
+ruamel-yaml>=0.18.15
+
+# --- Testing & Evaluation ---
+pytest>=8.4.1
+pytest-cov>=7.0.0
+pytest-asyncio>=1.1.0
+pytest-timeout>=2.4.0
+pytest-xdist>=3.3.1
+rouge-score>=0.1.2
