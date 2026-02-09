@@ -11,8 +11,8 @@
 
 This document outlines the sales scenarios and milestone plan for the B2B Conversational Sales Agent multi-agent system. The scope is designed for an academic senior design project demonstrating a functional Multi-Agent System (MAS) with the following **9 agents**:
 
-| Agent | Type | Purpose | Owner |
-|-------|------|---------|-------|
+| Agent | Type | Purpose 
+|-------|------|---------
 | 🧠 **Super Agent** | Orchestrator | Routes intents, manages conversation flow 
 | 👤 **Prospect Agent** | Operational | Extracts customer/company details 
 | 📊 **Lead Gen Agent** | Operational | BANT scoring & lead qualification 
