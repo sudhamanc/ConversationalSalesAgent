@@ -7,21 +7,22 @@
 
 > An autonomous, multi-agent system (MAS) designed to automate the complex lifecycle of B2B sales using cutting-edge AI orchestration.
 
+**Drexel University – Senior Design Project**
+**Winter Quarter (Jan – Mar 2026) | Spring Quarter (Apr – Jun 2026)**
+
 ---
 
 ## 📋 Table of Contents
 
 - [Executive Summary](#-executive-summary)
 - [System Architecture](#-system-architecture)
-  - [Component Architecture](#component-architecture)
-  - [Architecture Diagram](#architecture-diagram)
-  - [Data Flow & Lifecycle](#data-flow--lifecycle)
 - [Agent Catalog & Roles](#-agent-catalog--roles)
 - [Core Design Principles](#-core-design-principles)
-  - [Determinism vs. Autonomy](#determinism-vs-autonomy)
-  - [Observability & Steering](#observability--steering)
 - [Technology Stack](#-technology-stack)
-- [Project Roadmap](#-project-roadmap)
+- [Project Roadmap & Milestones](#-project-roadmap--milestones)
+- [Testing Strategy](#-testing-strategy)
+- [Security Considerations](#-security-considerations)
+- [Limitations & Scope](#-limitations--scope)
 - [Getting Started](#-getting-started)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -61,84 +62,6 @@ The system is divided into **four distinct layers**:
 | 2️⃣ | **Orchestration Layer** | Brain - Super Agent coordination |
 | 3️⃣ | **Agent Mesh** | Specialized sub-agents |
 | 4️⃣ | **Infrastructure Layer** | Data, tools & APIs |
-
-### Architecture Diagram
-
-```
-╔═════════════════════════════════════════════════════════════════════════════════╗
-║                       🖥️  CLIENT LAYER (React + WebSocket)                      ║
-║                                                                                 ║
-║              ┌─────────────────────────────────────────────┐                   ║
-║              │       B2B Chat Interface (React UI)         │                   ║
-║              │    • Real-time streaming responses          │                   ║
-║              │    • Session state management               │                   ║
-║              └────────────────────┬────────────────────────┘                   ║
-╚══════════════════════════════════╪══════════════════════════════════════════════╝
-                                   │ WebSocket (bidirectional)
-                                   ▼
-╔═════════════════════════════════════════════════════════════════════════════════╗
-║                    🧠  ORCHESTRATION LAYER (Super Agent)                        ║
-║                                                                                 ║
-║    ┌───────────────────────────────────────────────────────────────────┐       ║
-║    │                         🧠 SUPER AGENT                            │       ║
-║    │                                                                   │       ║
-║    │    • Intent Classification      • Context Management             │       ║
-║    │    • Agent Routing              • Response Synthesis             │       ║
-║    │    • Guardrails & Compliance    • Error Handling                 │       ║
-║    └───────────────────────────┬───────────────────────────────────────┘       ║
-╚════════════════════════════════╪═════════════════════════════════════════════════
-                                 │
-              ┌──────────────────┼──────────────────┐
-              │                  │                  │
-              ▼                  ▼                  ▼
-┏━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━┓  ┏━━━━━━━━━━━━━━━━━━━┓
-┃  🔍 DISCOVERY    ┃  ┃ ⚙️ CONFIGURATION  ┃  ┃  💰 TRANSACTION   ┃
-┃   AGENTS         ┃  ┃   AGENTS          ┃  ┃   AGENTS          ┃
-┃                  ┃  ┃                   ┃  ┃                   ┃
-┃ ┌──────────────┐ ┃  ┃ ┌───────────────┐ ┃  ┃ ┌───────────────┐ ┃
-┃ │ 👤 Prospect  │ ┃  ┃ │ 🌐 Serviceable│ ┃  ┃ │ 💳 Payment    │ ┃
-┃ │    Agent     │ ┃  ┃ │    Agent      │ ┃  ┃ │    Agent      │ ┃
-┃ │  (Intent &   │ ┃  ┃ │  (Address     │ ┃  ┃ │  (Credit      │ ┃
-┃ │   Details)   │ ┃  ┃ │   Validation) │ ┃  ┃ │   Checks)     │ ┃
-┃ └──────────────┘ ┃  ┃ └───────────────┘ ┃  ┃ └───────────────┘ ┃
-┃                  ┃  ┃                   ┃  ┃                   ┃
-┃ ┌──────────────┐ ┃  ┃ ┌───────────────┐ ┃  ┃ ┌───────────────┐ ┃
-┃ │ 📊 Lead Gen  │ ┃  ┃ │ 📦 Product    │ ┃  ┃ │ 🛒 Order      │ ┃
-┃ │    Agent     │ ┃  ┃ │    Agent      │ ┃  ┃ │    Agent      │ ┃
-┃ │  (BANT       │ ┃  ┃ │  (Tech Specs  │ ┃  ┃ │  (Contract    │ ┃
-┃ │   Scoring)   │ ┃  ┃ │   & RAG)      │ ┃  ┃ │   Generation) │ ┃
-┃ └──────────────┘ ┃  ┃ └───────────────┘ ┃  ┃ └───────────────┘ ┃
-┃                  ┃  ┃                   ┃  ┃                   ┃
-┃                  ┃  ┃ ┌───────────────┐ ┃  ┃ ┌───────────────┐ ┃
-┃                  ┃  ┃ │ 💰 Offer Mgmt │ ┃  ┃ │ 🔧 Service    │ ┃
-┃                  ┃  ┃ │    Agent      │ ┃  ┃ │  Fulfillment  │ ┃
-┃                  ┃  ┃ │  (Pricing &   │ ┃  ┃ │  (POST-Sale   │ ┃
-┃                  ┃  ┃ │   Bundles)    │ ┃  ┃ │  Scheduling)  │ ┃
-┃                  ┃  ┃ └───────────────┘ ┃  ┃ └───────────────┘ ┃
-┗━━━━━━━┯━━━━━━━━━━┛  ┗━━━━━━━┯━━━━━━━━━┛  ┗━━━━━━━━┯━━━━━━━━━━┛
-         │                     │                     │
-         └─────────────────────┼─────────────────────┘
-                               │ A2A Protocol (JSON-RPC)
-                               ▼
-╔═════════════════════════════════════════════════════════════════════════════════╗
-║                  ⚙️  INFRASTRUCTURE & DATA LAYER (ADK/MCP)                      ║
-║                                                                                 ║
-║  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  ┌─────────────┐          ║
-║  │ GIS/Coverage│  │   Vector DB │  │ Pricing APIs │  │  Order DB   │          ║
-║  │  Map APIs   │  │  (ChromaDB) │  │   Gateway    │  │ (PostgreSQL)│          ║
-║  │             │  │             │  │              │  │             │          ║
-║  │ • Address   │  │ • Product   │  │ • Dynamic    │  │ • Contracts │          ║
-║  │   Validation│  │   Manuals   │  │   Bundles    │  │ • State     │          ║
-║  │ • Service   │  │ • Tech      │  │ • Discounts  │  │ • History   │          ║
-║  │   Zones     │  │   Specs     │  │              │  │             │          ║
-║  └─────────────┘  └─────────────┘  └──────────────┘  └─────────────┘          ║
-║                                                                                 ║
-║  ┌────────────────────────────────────────────────────────────────────┐        ║
-║  │               📊 Observability & Logging Layer                     │        ║
-║  │         • Structured logs  • Agent traces  • Audit trail           │        ║
-║  └────────────────────────────────────────────────────────────────────┘        ║
-╚═════════════════════════════════════════════════════════════════════════════════╝
-```
 
 ### Mermaid Architecture Diagram
 
@@ -207,95 +130,6 @@ graph TB
     style LOG fill:#dfe4ea,stroke:#333,stroke-width:2px
 ```
 
----
-
-### Detailed System Flow
-
-```
-                                  COMPLETE B2B SALES FLOW
-    ═══════════════════════════════════════════════════════════════════════════════
-
-    👤 CUSTOMER              🧠 SUPER AGENT                   ⚙️ BACKEND SYSTEMS
-         │                        │                                    │
-         │  "I need fiber         │                                    │
-         │   internet for my      │                                    │
-         │   Philadelphia office" │                                    │
-         │ ─────────────────────► │                                    │
-         │                        │                                    │
-         │                        │  ╔═══════════════════════════╗    │
-         │                        │  ║  PHASE 1: DISCOVERY       ║    │
-         │                        │  ╠═══════════════════════════╣    │
-         │                        │  ║ 👤 Prospect Agent         ║    │
-         │                        │  ║    → Extract company name ║    │
-         │                        │  ║    → Extract address      ║    │
-         │                        │  ║    → Extract contact info ║    │
-         │                        │  ║                           ║    │
-         │                        │  ║ 📊 Lead Gen Agent         ║    │
-         │                        │  ║    → Budget validation    ║    │
-         │                        │  ║    → Authority check      ║    │
-         │                        │  ║    → Need confirmation    ║    │
-         │                        │  ║    → Timeline assessment  ║    │
-         │                        │  ║    → BANT Score: 85/100   ║    │
-         │                        │  ╚═══════════════════════════╝    │
-         │                        │            │                       │
-         │                        │            ▼                       │
-         │                        │  ╔═══════════════════════════╗    │
-         │                        │  ║  PHASE 2: CONFIGURATION   ║    │
-         │                        │  ╠═══════════════════════════╣    │
-         │                        │  ║ 🌐 Serviceability Agent   ║────┼───► GIS/Coverage API
-         │                        │  ║    → Validate address     ║◄───┼──── ✅ Valid Address
-         │                        │  ║    → Check service zones  ║────┼───► Coverage Map
-         │                        │  ║    → Get available tech   ║◄───┼──── ✅ Fiber Available
-         │                        │  ║    [PRE-SALE CHECK]       ║    │     [1G, 5G, 10G]
-         │                        │  ║                           ║    │
-         │                        │  ║ 📦 Product Agent          ║────┼───► Vector DB (RAG)
-         │                        │  ║    → Query for "Fiber 5G" ║◄───┼──── Product Specs
-         │                        │  ║    → Get tech specs       ║    │     Features, SLAs
-         │                        │  ║                           ║    │
-         │                        │  ║ 💰 Offer Mgmt Agent       ║────┼───► Pricing Engine
-         │                        │  ║    → Calculate base price ║◄───┼──── Base: $599/mo
-         │                        │  ║    → Apply bundles        ║    │     Discount: -10%
-         │                        │  ║    → Check promotions     ║◄───┼──── Final: $539/mo
-         │                        │  ╚═══════════════════════════╝    │
-         │                        │            │                       │
-         │  "Great news! Your     │            │                       │
-         │   office is serviceable│            │                       │
-         │   for Fiber 5G..."     │            │                       │
-         │ ◄───────────────────── │            │                       │
-         │                        │            │                       │
-         │  "I'll take it!"       │            │                       │
-         │ ─────────────────────► │            ▼                       │
-         │                        │  ╔═══════════════════════════╗    │
-         │                        │  ║  PHASE 3: TRANSACTION     ║    │
-         │                        │  ╠═══════════════════════════╣    │
-         │                        │  ║ 💳 Payment Agent          ║────┼───► Payment Gateway
-         │                        │  ║    → Run credit check     ║◄───┼──── ✅ Score: 720
-         │                        │  ║    → Verify payment method║◄───┼──── ✅ Approved
-         │                        │  ║                           ║    │
-         │                        │  ║ 🛒 Order Agent            ║────┼───► Order Database
-         │                        │  ║    → Generate contract    ║◄───┼──── Order #12345
-         │                        │  ║    → Terms & conditions   ║────┼───► Store Contract
-         │                        │  ║    → Create order record  ║    │
-         │                        │  ║                           ║    │
-         │                        │  ║ 🔧 Service Fulfillment    ║────┼───► Scheduler API
-         │                        │  ║    → Schedule install     ║◄───┼──── Available slots
-         │                        │  ║    → Assign technician    ║◄───┼──── Tech ID: T-456
-         │                        │  ║    [POST-SALE SCHEDULING] ║◄───┼──── Date: Feb 15
-         │                        │  ╚═══════════════════════════╝    │
-         │                        │                                    │
-         │  "Order confirmed!     │                                    │
-         │   Installation: Feb 15"│                                    │
-         │ ◄───────────────────── │                                    │
-         │                        │                                    │
-
-    ═══════════════════════════════════════════════════════════════════════════════
-                   📊 All agent interactions logged for compliance & auditability
-
-    KEY DISTINCTION:
-    🌐 Serviceability Agent: PRE-SALE address validation & coverage check
-    🔧 Service Fulfillment: POST-SALE installation scheduling & coordination
-```
-
 ### Mermaid Sequence Diagram
 
 ```mermaid
@@ -326,16 +160,16 @@ sequenceDiagram
     rect rgb(200, 230, 200)
         Note over P,L: PHASE 1: DISCOVERY
         S->>P: Extract customer details
-        P-->>S: Company: Acme Corp<br/>Address: 123 Market St
+        P-->>S: Company: Acme Corp, Address: 123 Market St
         S->>L: Qualify lead (BANT)
-        L-->>S: Score: 85/100 ✅ Qualified
+        L-->>S: Score: 85/100 Qualified
     end
 
     rect rgb(255, 250, 200)
         Note over SV,O: PHASE 2: CONFIGURATION
         S->>SV: Validate address & check coverage (PRE-SALE)
         SV->>GIS: Query coverage map
-        GIS-->>SV: ✅ Serviceable<br/>Available: Fiber 1G, 5G, 10G
+        GIS-->>SV: Serviceable - Available: Fiber 1G, 5G, 10G
         SV-->>S: Address valid + Product list
 
         S->>Pr: Get product specs for "Fiber 5G"
@@ -360,7 +194,7 @@ sequenceDiagram
         Note over Pay,SF: PHASE 3: TRANSACTION
         S->>Pay: Run credit check
         Pay->>PRICE: Query payment gateway
-        PRICE-->>Pay: ✅ Approved (Score: 720)
+        PRICE-->>Pay: Approved (Score: 720)
         Pay-->>S: Payment authorized
 
         S->>Ord: Generate contract & create order
@@ -374,10 +208,10 @@ sequenceDiagram
         SF-->>S: Install date confirmed
     end
 
-    S->>UI: Order #12345 confirmed<br/>Installation: Feb 15
+    S->>UI: Order #12345 confirmed, Installation: Feb 15
     UI->>C: Display confirmation
 
-    Note over C,SCHED: 🎉 Complete autonomous sale executed!
+    Note over C,SCHED: Complete autonomous sale executed!
 ```
 
 ### Agent Interaction Flow
@@ -388,17 +222,17 @@ flowchart LR
 
     subgraph DISC[🔍 DISCOVERY PHASE]
         direction TB
-        PA[👤 Prospect Agent<br/>Extract Details]
+        PA2[👤 Prospect Agent<br/>Extract Details]
         LG[📊 Lead Gen Agent<br/>BANT Scoring]
-        PA --> LG
+        PA2 --> LG
     end
 
     subgraph CONFIG[⚙️ CONFIGURATION PHASE]
         direction TB
-        SVA[🌐 Serviceability Agent<br/>Address Validation<br/>PRE-SALE]
+        SVA2[🌐 Serviceability Agent<br/>Address Validation<br/>PRE-SALE]
         PROD[📦 Product Agent<br/>Tech Specs]
         OFFER[💰 Offer Mgmt Agent<br/>Pricing & Bundles]
-        SVA --> PROD
+        SVA2 --> PROD
         PROD --> OFFER
     end
 
@@ -406,28 +240,28 @@ flowchart LR
         direction TB
         PAY[💳 Payment Agent<br/>Credit Check]
         ORD[🛒 Order Agent<br/>Contract Generation]
-        SF[🔧 Service Fulfillment<br/>Installation Scheduling<br/>POST-SALE]
+        SF2[🔧 Service Fulfillment<br/>Installation Scheduling<br/>POST-SALE]
         PAY --> ORD
-        ORD --> SF
+        ORD --> SF2
     end
 
-    END([✅ Confirmed Order<br/>Scheduled Install])
+    ENDNODE([✅ Confirmed Order<br/>Scheduled Install])
 
     START --> DISC
     DISC --> CONFIG
     CONFIG --> TRANS
-    TRANS --> END
+    TRANS --> ENDNODE
 
     style START fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style PA fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
+    style PA2 fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
     style LG fill:#c8e6c9,stroke:#388e3c,stroke-width:2px
-    style SVA fill:#ffd93d,stroke:#f57c00,stroke-width:3px
+    style SVA2 fill:#ffd93d,stroke:#f57c00,stroke-width:3px
     style PROD fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
     style OFFER fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
     style PAY fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px
     style ORD fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px
-    style SF fill:#a8e6cf,stroke:#00897b,stroke-width:3px
-    style END fill:#a5d6a7,stroke:#388e3c,stroke-width:2px
+    style SF2 fill:#a8e6cf,stroke:#00897b,stroke-width:3px
+    style ENDNODE fill:#a5d6a7,stroke:#388e3c,stroke-width:2px
     style DISC fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style CONFIG fill:#fff8e1,stroke:#ffc107,stroke-width:2px
     style TRANS fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
@@ -455,8 +289,8 @@ stateDiagram-v2
 |-------|-------------|---------|
 | **1. Ingest** | B2B Customer interacts via the React Chat Interface. Message sent via WebSocket to backend | User types query |
 | **2. Orchestration** | Super Agent analyzes the intent | *"I need internet for my new office in Philadelphia"* |
-| **3. Routing** | Super Agent identifies required agents for the request | Prospect Agent → Lead Gen → Serviceability Agent → Product Agent → Offer Agent |
-| **4. Agent Collaboration (A2A)** | Agents communicate via A2A protocol in sequence | Prospect Agent extracts data → Serviceability Agent validates address → Product Agent fetches specs → Offer Agent calculates price |
+| **3. Routing** | Super Agent identifies required agents for the request | Prospect Agent -> Lead Gen -> Serviceability Agent -> Product Agent -> Offer Agent |
+| **4. Agent Collaboration (A2A)** | Agents communicate via A2A protocol in sequence | Prospect Agent extracts data -> Serviceability Agent validates address -> Product Agent fetches specs -> Offer Agent calculates price |
 | **5. Synthesis** | Results returned to Super Agent for response formulation | Natural language response created with all details |
 | **6. Observability** | Every step, thought process, API call, and tool output logged | Full auditability and replay capability |
 
@@ -479,6 +313,20 @@ All agents are developed using **Google's ADK (Agent Development Kit)**, providi
 | 💳 **Payment Agent** | Handles credit checks, payment authorization, and financial validation | `Transactional` | Payment Gateway | Transaction |
 | 🛒 **Order Agent** | Manages cart, contract generation, order creation, and final checkout | `Transactional` | Order DB | Transaction |
 | 🔧 **Service Fulfillment Agent** | **POST-SALE**: Schedules installation appointments and coordinates technician dispatch | `Transactional` | Scheduler API | Transaction |
+
+### Agent Development Timeline
+
+| Agent | Winter Qtr | Spring Qtr | Owner |
+|-------|------------|------------|-------|
+| 🧠 Super Agent | ✅ Basic routing | ✅ Full orchestration | Sudhaman |
+| 👤 Prospect Agent | ✅ Complete | — | Aubin |
+| 📊 Lead Gen Agent | ✅ Basic BANT | ✅ Enhanced scoring | Aubin |
+| 📦 Product Agent | ✅ Complete | — | Raja |
+| 💰 Offer Mgmt Agent | ✅ Basic routing | ✅ Complete | Sudhaman |
+| 🛒 Order Agent | ✅ Basic routing | ✅ Complete | Raja |
+| 💳 Payment Agent | ✅ Basic routing | ✅ Complete | Arun |
+| 🌐 Serviceability Agent | ✅ Basic routing | ✅ Complete | Raja |
+| 🔧 Service Fulfillment Agent | ✅ Basic routing | ✅ Scheduling | Arun |
 
 ### Key Agent Distinction
 
@@ -505,6 +353,38 @@ pie showData
     "Transactional" : 3
 ```
 
+### Agent Interaction Map
+
+```mermaid
+graph TB
+    SA3[🧠 Super Agent] --> PA3[👤 Prospect Agent]
+    SA3 --> LA3[📊 Lead Gen Agent]
+    SA3 --> ProdA3[📦 Product Agent]
+    SA3 --> SrvA3[🌐 Serviceability Agent]
+    SA3 --> OA3[💰 Offer Agent]
+    SA3 --> PayA3[💳 Payment Agent]
+    SA3 --> OrdA3[🛒 Order Agent]
+    SA3 --> SFA3[🔧 Service Fulfillment]
+
+    PA3 -.-> SrvA3
+    SrvA3 -.-> ProdA3
+    ProdA3 -.-> OA3
+    OA3 -.-> PayA3
+    PayA3 -.-> OrdA3
+    OrdA3 -.-> SFA3
+
+    SrvA3 --> GIS3[(GIS API)]
+    ProdA3 --> VDB3[(Vector DB)]
+    OA3 --> PE3[(Pricing Engine)]
+    PayA3 --> PG3[(Payment Gateway)]
+    OrdA3 --> DB3[(Order DB)]
+    SFA3 --> SCH3[(Scheduler)]
+
+    style SA3 fill:#ff6b6b,stroke:#333,stroke-width:3px,color:#fff
+    style SrvA3 fill:#4ecdc4,stroke:#333,stroke-width:3px
+    style GIS3 fill:#95e1d3,stroke:#333
+```
+
 ### Spotlight: The Serviceability Agent 🌐
 
 The **Serviceability Agent** is a critical PRE-SALE deterministic agent that prevents wasted effort by validating address eligibility BEFORE any quote is generated.
@@ -518,14 +398,14 @@ In B2B telecommunications sales, not all addresses can receive all services. The
 3. **Technology Availability**: Returns which specific products (Fiber 1G, 5G, 10G, Coax, etc.) are available at that address
 4. **Zone Classification**: Identifies service zones for routing to appropriate regional teams
 
-#### Workflow Position
+#### Key Responsibilities
 
-```
-Customer Intent → Prospect Agent → Lead Gen → 🌐 SERVICEABILITY AGENT → Product Agent → Offer Agent
-                                                         ↓
-                                               ❌ NOT SERVICEABLE
-                                               (End conversation gracefully)
-```
+| Function | Description | Data Source |
+|----------|-------------|-------------|
+| **Address Validation** | Parses and validates street address, city, state, ZIP | GIS/Address API |
+| **Coverage Check** | Determines if address is within serviceable territory | Coverage Map API |
+| **Technology Assessment** | Identifies infrastructure type (FTTP, HFC, DOCSIS 3.1) | Network Inventory |
+| **Product Filtering** | Returns only products available for that location/technology | Product Catalog + Coverage DB |
 
 #### Technical Implementation
 
@@ -545,27 +425,26 @@ Customer: "I need internet for 123 Market Street, Philadelphia, PA 19107"
 
 Prospect Agent: Extracts address
 Lead Gen Agent: Qualifies lead (BANT: 85/100)
-🌐 Serviceability Agent:
-    → Query GIS API with address
-    ← Response: {
+
+Serviceability Agent:
+    -> Query GIS API with address
+    <- Response: {
         serviceable: true,
         availableProducts: ["Fiber 1G", "Fiber 5G", "Fiber 10G"],
         serviceZone: "Metro-East-PA"
       }
-
-✅ Result: Proceed to Product Agent for "Fiber 5G" specs
+    Result: Proceed to Product Agent for "Fiber 5G" specs
 
 --- ALTERNATIVE SCENARIO ---
 
-🌐 Serviceability Agent:
-    → Query GIS API with address
-    ← Response: {
+Serviceability Agent:
+    -> Query GIS API with address
+    <- Response: {
         serviceable: false,
         reason: "No fiber infrastructure at location"
       }
-
-❌ Result: "I apologize, but we don't currently service that address.
-           Would you like us to notify you when coverage expands to your area?"
+    Result: "I apologize, but we don't currently service that address.
+             Would you like us to notify you when coverage expands to your area?"
 ```
 
 #### Business Impact
@@ -582,36 +461,6 @@ Lead Gen Agent: Qualifies lead (BANT: 85/100)
 ### Determinism vs. Autonomy
 
 To prevent **"hallucinations"** in critical business areas, we separate concerns:
-
-```
-    ┌────────────────────────────────────────────────────────────────────────┐
-    │                    HYBRID COGNITIVE MODEL                              │
-    ├────────────────────────────────────────────────────────────────────────┤
-    │                                                                        │
-    │   🤖 LLM FLOWS (Autonomous)          🔒 DETERMINISTIC FLOWS           │
-    │   ─────────────────────────          ─────────────────────────        │
-    │                                                                        │
-    │   ┌─────────────────────┐            ┌─────────────────────┐          │
-    │   │ • Conversation      │            │ • Pricing           │          │
-    │   │ • Summarization     │ ────────►  │ • Inventory         │          │
-    │   │ • Data Extraction   │  Context   │ • Serviceability    │          │
-    │   │ • Intent Analysis   │  & Intent  │ • Credit Checks     │          │
-    │   └─────────────────────┘            └──────────┬──────────┘          │
-    │                                                 │                      │
-    │           Creative & Flexible                   │ Fetch Only           │
-    │                                                 ▼                      │
-    │                                      ┌─────────────────────┐          │
-    │                                      │  📊 SOURCES OF      │          │
-    │                                      │     TRUTH           │          │
-    │                                      │                     │          │
-    │                                      │  • APIs             │          │
-    │                                      │  • Databases        │          │
-    │                                      │  • External Systems │          │
-    │                                      └─────────────────────┘          │
-    │                                                                        │
-    │   ⚠️  Agents are "tool users" - they FETCH data, never INVENT it      │
-    └────────────────────────────────────────────────────────────────────────┘
-```
 
 ```mermaid
 graph LR
@@ -665,27 +514,6 @@ The system implements defensive patterns to ensure graceful degradation:
 | **Timeout Management** | Configurable per-agent timeouts | Prevents hung conversations from blocking resources |
 | **Dead Letter Queue** | Failed transactions logged for retry | Ensures no orders are lost due to transient failures |
 
-```
-    ERROR HANDLING FLOW
-    ═══════════════════════════════════════════════════════════════
-
-    Agent Request → [Circuit Breaker] → External API
-                          │
-                    ┌─────┴─────┐
-                    │  CLOSED   │ ← Normal operation
-                    └─────┬─────┘
-                          │ Failures exceed threshold
-                          ▼
-                    ┌───────────┐
-                    │   OPEN    │ ← Fast-fail, no API calls
-                    └─────┬─────┘
-                          │ After cooldown period
-                          ▼
-                    ┌───────────┐
-                    │ HALF-OPEN │ ← Test with single request
-                    └───────────┘
-```
-
 ---
 
 ## 🔐 Security Considerations
@@ -703,21 +531,6 @@ The system implements defensive patterns to ensure graceful degradation:
 
 ## 🧪 Testing Strategy
 
-### Test Pyramid
-
-```
-                    ┌─────────────┐
-                    │   E2E Tests │  ← Full scenario flows (Scenario 1-6)
-                    │    (10%)    │
-                    ├─────────────┤
-                    │ Integration │  ← Agent-to-Agent communication
-                    │    (30%)    │     API mock validation
-                    ├─────────────┤
-                    │    Unit     │  ← Individual agent logic
-                    │    (60%)    │     Intent classification
-                    └─────────────┘     Data extraction
-```
-
 ### Testing by Layer
 
 | Layer | Test Type | Tools | Coverage Target |
@@ -734,6 +547,8 @@ The system implements defensive patterns to ensure graceful degradation:
 3. **Invalid Input**: Malformed addresses, non-existent products
 4. **Concurrent Users**: Multiple simultaneous conversations (load testing)
 5. **State Recovery**: Session resumption after connection drop
+
+> 📄 For comprehensive positive and negative test cases for each agent, see [Scenarios.md](Scenarios.md).
 
 ---
 
@@ -757,26 +572,6 @@ The system implements defensive patterns to ensure graceful degradation:
 - Multi-tenant SaaS deployment
 - Real-time inventory synchronization
 
-### Scalability Considerations
-
-For production deployment, consider:
-
-```
-    HORIZONTAL SCALING ARCHITECTURE
-    ═══════════════════════════════════════════════════════════════
-
-    Load Balancer
-         │
-         ├──► FastAPI Instance 1 ──► Agent Pool 1
-         ├──► FastAPI Instance 2 ──► Agent Pool 2
-         └──► FastAPI Instance N ──► Agent Pool N
-                      │
-                      ▼
-              Shared State (Redis)
-              Vector DB (ChromaDB Cluster)
-              Message Queue (RabbitMQ/Kafka)
-```
-
 ---
 
 ## 🛠️ Technology Stack
@@ -785,29 +580,29 @@ For production deployment, consider:
 
 | Technology | Purpose |
 |------------|---------|
-| ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white) | Framework - Functional Components, Hooks |
-| ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-38B2AC?logo=tailwind-css&logoColor=white) | Styling - Rapid, clean UI |
-| ![Context API](https://img.shields.io/badge/Context_API-State-purple) | State Management - Chat history |
-| ![Socket.io](https://img.shields.io/badge/Socket.io-Client-black?logo=socket.io) | Communication - Real-time streaming |
+| React 19 | Framework - Functional Components, Hooks |
+| Tailwind CSS | Styling - Rapid, clean UI |
+| Context API | State Management - Chat history |
+| Socket.io | Communication - Real-time streaming |
 
 ### Backend & Agents
 
 | Technology | Purpose |
 |------------|---------|
-| ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white) | Language |
-| ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) | Framework - WebSockets & REST endpoints |
-| ![ADK](https://img.shields.io/badge/Google_ADK-Agent_Runtime-orange) | Google Agent Development Kit - Multi-agent orchestration framework |
-| **A2A Protocol** | JSON-RPC style messaging for inter-agent communication |
-| **MCP** | Model Context Protocol for connecting agents to local tools |
-| ![Poetry](https://img.shields.io/badge/Poetry-Environment_Mgmt-blue) | Dependency isolation |
+| Python 3.12+ | Language |
+| FastAPI | Framework - WebSockets & REST endpoints |
+| Google ADK | Agent Development Kit - Multi-agent orchestration framework |
+| A2A Protocol | JSON-RPC style messaging for inter-agent communication |
+| MCP | Model Context Protocol for connecting agents to local tools |
+| Poetry | Dependency isolation |
 
 ### Data & Infrastructure
 
 | Technology | Purpose |
 |------------|---------|
-| **LLM Provider** | Agnostic (Abstracted via API Wrapper) |
-| ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_DB-green) | RAG - Product Manuals |
-| ![SQLite](https://img.shields.io/badge/SQLite-Dev-blue?logo=sqlite) / ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Prod-336791?logo=postgresql&logoColor=white) | Transactional DB - Orders/Users |
+| LLM Provider | Agnostic (Abstracted via API Wrapper) |
+| ChromaDB | RAG - Product Manuals |
+| SQLite / PostgreSQL | Transactional DB - Orders/Users |
 
 ### Technology Architecture
 
@@ -820,21 +615,21 @@ graph TB
     end
     
     subgraph BE[Backend]
-        FastAPI[FastAPI]
-        ADK[Google ADK]
-        Python[Python 3.12+]
+        FastAPI2[FastAPI]
+        ADK2[Google ADK]
+        Python2[Python 3.12+]
     end
     
     subgraph PROTO[Protocols]
-        A2A[A2A JSON-RPC]
-        MCP[MCP Protocol]
-        REST[REST APIs]
+        A2A2[A2A JSON-RPC]
+        MCP2[MCP Protocol]
+        REST2[REST APIs]
     end
     
     subgraph DATA[Data Layer]
-        LLM[LLM Provider]
-        Chroma[ChromaDB]
-        PG[PostgreSQL]
+        LLM2[LLM Provider]
+        Chroma2[ChromaDB]
+        PG2[PostgreSQL]
     end
     
     FE -->|WebSocket| BE
@@ -849,65 +644,9 @@ graph TB
 
 ---
 
-## 📅 Project Roadmap
+## 📅 Project Roadmap & Milestones
 
 ### Timeline Overview (2 Quarters)
-
-```
-    2025 DEVELOPMENT ROADMAP
-    ════════════════════════════════════════════════════════════════════════════
-    
-    Q1: FOUNDATION PHASE                    Q2: TRANSACTION PHASE
-    ─────────────────────                   ───────────────────────
-    
-    Jan     Feb     Mar     Apr     May     Jun
-    │       │       │       │       │       │
-    ├───────┴───────┤       │       │       │
-    │ Sprint 1-2    │       │       │       │
-    │ Infrastructure│       │       │       │
-    │ • React + FastAPI     │       │       │
-    │ • WebSocket   │       │       │       │
-    │ • ADK Base    │       │       │       │
-    │               ├───────┴───────┤       │
-    │               │ Sprint 3-4    │       │
-    │               │ Super Agent   │       │
-    │               │ • Routing     │       │
-    │               │ • RAG Setup   │       │
-    │               │ • Product Agent       │
-    │               │               ├───────┴───────┤
-    │               │               │ Sprint 5-6    │
-    │               │               │ Discovery     │
-    │               │               │ • Prospect    │
-    │               │               │ • Svc Fulfill │
-    │               │               │               │
-    ▼               ▼               ▼               │
-    ════════════════════════════════╪═══════════════╪═══════════════════════════
-                              Q1 DELIVERABLE        │
-                              Chat UI with          │
-                              Product Q&A &         │
-                              Serviceability        │
-                                                    │       │       │
-                                                    ├───────┴───────┤
-                                                    │ Sprint 1-2    │
-                                                    │ Deterministic │
-                                                    │ • Offer Mgmt  │
-                                                    │ • Payment     │
-                                                    │               ├───────┴───────┐
-                                                    │               │ Sprint 3-4    │
-                                                    │               │ A2A Protocol  │
-                                                    │               │ • Handshakes  │
-                                                    │               │ • Inter-agent │
-                                                    │               │               ├───────┐
-                                                    │               │               │ Sprint│
-                                                    │               │               │ 5-6   │
-                                                    │               │               │ Order │
-                                                    │               │               │ Telemetry
-                                                    ▼               ▼               ▼
-                                                    ═════════════════════════════════
-                                                                        Q2 DELIVERABLE
-                                                                        Full Autonomous
-                                                                        Sales Demo
-```
 
 ```mermaid
 gantt
@@ -915,7 +654,7 @@ gantt
     dateFormat YYYY-MM-DD
     
     section Q1 Foundation
-    Infrastructure Setup    :a1, 2025-01-01, 4w
+    Infrastructure Setup    :a1, 2026-01-01, 4w
     Super Agent & RAG       :a2, after a1, 4w
     Discovery Agents        :a3, after a2, 4w
     Q1 Deliverable          :milestone, m1, after a3, 0d
@@ -926,6 +665,108 @@ gantt
     Order & Observability   :b3, after b2, 4w
     Q2 Deliverable          :milestone, m2, after b3, 0d
 ```
+
+### WINTER QUARTER (January - March 2026)
+**Focus: Foundation & Core Agent Development**
+
+#### Weeks 1-3: Infrastructure & Setup
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Set up React Frontend with chat interface | Working chat UI | Sudhaman |
+| Set up FastAPI Backend with SSE | Real-time message streaming | Sudhaman |
+| Implement ADK Base Class | Logging, memory, tool framework | Sudhaman |
+| Set up ChromaDB for RAG | Vector database initialized | Sudhaman |
+| Create mock APIs (CRM, GIS) | JSON-based mock data services | Sudhaman |
+
+#### Weeks 4-6: Core Agents (Phase 1)
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Build **Super Agent** with basic routing | Intent classification working | Sudhaman |
+| Build **Prospect Agent** | Address/name extraction functional | Sudhaman |
+| Build **Product Agent** with RAG | Can answer product questions | Sudhaman |
+| Ingest sample product PDFs into ChromaDB | Product Q&A working | Sudhaman |
+
+#### Weeks 7-9: Discovery & Serviceability Agents
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Build **Serviceability Agent** | Address validation & product availability | Raja |
+| Build **Service Fulfillment Agent** | Mock installation scheduling | Sudhaman |
+| Build **Lead Gen Agent** | Basic BANT scoring logic | Sudhaman |
+| Implement Scenario 1 (Address lookup - new) | End-to-end flow functional | All |
+| Implement Scenario 5 (Product inquiry) | Product Q&A demo ready | Sudhaman |
+
+#### Week 10: Winter Quarter Deliverable
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Integration testing | All Q1 agents working together | All |
+| Demo preparation | Scenario 1 & 5 fully functional | All |
+| Documentation | Technical documentation updated | All |
+
+**Winter Quarter Demo:**
+*A functional Chat UI where a sales agent can:*
+- *Ask product questions and get RAG-powered answers*
+- *Enter an address and check serviceability with product availability*
+- *See available products for serviceable addresses*
+
+---
+
+### SPRING QUARTER (April - June 2026)
+**Focus: Transaction Agents & Full Orchestration**
+
+#### Weeks 1-3: Deterministic Agents
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Build **Offer Mgmt Agent** | Pricing/bundle logic working | Sudhaman |
+| Build **Payment Agent** | Mock credit check functional | Sudhaman |
+| Enhance **Serviceability Agent** | Multi-location support | Raja |
+| Implement Scenario 2 (Existing customer address) | Upsell flow working | All |
+| Implement Scenario 4 (Existing customer by name) | Customer lookup working | All |
+
+#### Weeks 4-6: Transaction & Orchestration
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Build **Order Agent** | JSON contract generation | Sudhaman |
+| Implement A2A Protocol handshakes | Agents communicate without user input | Sudhaman |
+| Implement Scenario 3 (New business by name) | Full qualification flow | All |
+| Enable inter-agent communication | Offer Agent <-> Payment Agent working | Sudhaman |
+
+#### Weeks 7-9: Integration & Observability
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Implement Scenario 6 (End-to-end order) | Complete sales cycle demo | All |
+| Build basic logging/telemetry dashboard | Agent decision chain visible | Sudhaman |
+| Full system integration testing | All 9 agents orchestrated | All |
+| Edge case handling | Error handling & guardrails | All |
+
+#### Week 10: Spring Quarter Final Deliverable
+| Task | Deliverable | Owner |
+|------|-------------|-------|
+| Final integration & bug fixes | Production-ready demo | All |
+| Final demo preparation | All 6 scenarios functional | All |
+| Final documentation | Complete project documentation | All |
+| Presentation preparation | Senior design presentation | All |
+
+**Spring Quarter Final Demo:**
+*A fully autonomous demo showcasing:*
+- *All 6 sales scenarios working end-to-end*
+- *All 9 agents collaborating via A2A protocol*
+- *Complete sales cycle: inquiry -> serviceability -> quote -> order*
+- *Basic observability showing agent decision chains*
+
+### Scenarios by Quarter
+
+| Scenario | Description | Quarter | Key Agents |
+|----------|-------------|---------|------------|
+| **1** | Address lookup (new prospect) -> Serviceability -> Offer | Winter | Serviceability, Product, Offer |
+| **5** | Product information query (RAG) | Winter | Product |
+| **2** | Address lookup (existing customer) -> Upsell | Spring | Serviceability, Product, Offer |
+| **3** | Business name lookup (new) -> Full qualification | Spring | Serviceability, Lead Gen, Product |
+| **4** | Business name lookup (existing) -> Upsell | Spring | Serviceability, Product, Offer |
+| **6** | End-to-end order flow (all agents) | Spring | ALL 9 AGENTS |
+
+> 📄 For comprehensive scenario details including positive and negative test cases, see [Scenarios.md](Scenarios.md).
+
+---
 
 ### Quarter 1: Foundation & Discovery Phase
 
@@ -946,7 +787,7 @@ gantt
 - [ ] Build Lead Gen Agent (BANT qualification logic)
 - [ ] Build Serviceability Agent (Mock GIS API for *"Is this address serviceable?"*)
 
-#### 🎯 Q1 Deliverable
+#### Q1 Deliverable
 > A functional Chat UI where a user can ask about products, get qualified as a lead, and check if their address is eligible for service with specific product availability.
 
 ---
@@ -960,15 +801,14 @@ gantt
 - [ ] Build Payment Agent (Mock credit check)
 
 #### Sprint 3-4: Advanced Orchestration (A2A)
-- [ ] Implement the "Handshake": `Prospect Agent → Lead Gen → Offer Agent`
+- [ ] Implement the "Handshake": Prospect Agent -> Lead Gen -> Offer Agent
 - [ ] Enable agents to "talk" without user input
-  - *Example: Offer Agent asking Payment Agent if customer has good credit before showing a price*
 
 #### Sprint 5-6: Order Finalization & Observability
 - [ ] Build Order Agent to generate a JSON contract
 - [ ] Build the Telemetry Dashboard to visualize agent logic chains
 
-#### 🎯 Q2 Deliverable
+#### Q2 Deliverable
 > A fully autonomous demo where a user enters an address, gets a validated offer, negotiates (within limits), and places a confirmed order.
 
 ---
@@ -992,61 +832,64 @@ pip install poetry
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-org/b2b-agentic-sales.git
-   cd b2b-agentic-sales
+   git clone https://github.com/sudhamanc/ConversationalSalesAgent.git
+   cd ConversationalSalesAgent
    ```
 
 2. **Backend Setup**
    ```bash
-   cd backend
-   poetry install
-   poetry run uvicorn main:app --reload
+   cd SuperAgent/server
+   pip install -r requirements.txt
+   cp .env.example .env
+   # Configure your LLM API keys and database connections
+   uvicorn main:app --reload
    ```
 
 3. **Frontend Setup**
    ```bash
-   cd frontend
+   cd SuperAgent/client
    npm install
    npm run dev
-   ```
-
-4. **Environment Variables**
-   ```bash
-   cp .env.example .env
-   # Configure your LLM API keys and database connections
    ```
 
 ### Project Structure
 
 ```
-b2b-agentic-sales/
-├── 📁 frontend/
-│   ├── 📁 src/
-│   │   ├── 📁 components/
-│   │   ├── 📁 hooks/
-│   │   └── 📁 context/
-│   └── package.json
-├── 📁 backend/
-│   ├── 📁 agents/
-│   │   ├── super_agent.py              # 🧠 Orchestrator
-│   │   ├── prospect_agent.py           # 👤 Discovery Phase
-│   │   ├── lead_gen_agent.py           # 📊 Discovery Phase
-│   │   ├── serviceability_agent.py     # 🌐 Configuration Phase (PRE-SALE)
-│   │   ├── product_agent.py            # 📦 Configuration Phase
-│   │   ├── offer_mgmt_agent.py         # 💰 Configuration Phase
-│   │   ├── payment_agent.py            # 💳 Transaction Phase
-│   │   ├── order_agent.py              # 🛒 Transaction Phase
-│   │   └── service_fulfillment_agent.py # 🔧 Transaction Phase (POST-SALE)
-│   ├── 📁 adk/
-│   │   └── base_agent.py
-│   ├── 📁 tools/
-│   │   ├── gis_api.py                  # Coverage map integration
-│   │   ├── pricing_engine.py           # Pricing calculations
-│   │   └── scheduler_api.py            # Installation scheduling
-│   └── main.py
-├── 📁 data/
-│   └── 📁 vector_db/
-├── 📁 docs/
+ConversationalSalesAgent/
+├── SuperAgent/
+│   ├── client/                          # React Frontend
+│   │   ├── src/
+│   │   │   ├── components/
+│   │   │   ├── hooks/
+│   │   │   └── utils/
+│   │   └── package.json
+│   └── server/                          # FastAPI Backend
+│       ├── agent/
+│       │   ├── agent.py                 # Super Agent
+│       │   ├── prompts.py
+│       │   ├── sub_agents/
+│       │   │   ├── greeting_agent.py
+│       │   │   ├── faq_agent.py
+│       │   │   └── product_agent.py
+│       │   └── tools/
+│       │       └── sales_tools.py
+│       ├── api/
+│       │   ├── chat.py
+│       │   └── session.py
+│       ├── middleware/
+│       │   ├── auth.py
+│       │   └── rate_limiter.py
+│       ├── utils/
+│       │   └── logger.py
+│       ├── config.py
+│       ├── main.py
+│       └── requirements.txt
+├── BootStrapAgent/                      # Bootstrap/Template Agent
+├── docs/
+│   ├── AI_AGENT_CATALOG.md
+│   └── Sales Scenarios.txt
+├── MilestonePlan.md
+├── Scenarios.md                         # Test scenarios (positive & negative)
 └── README.md
 ```
 
@@ -1078,10 +921,4 @@ For questions or support, please open an issue or contact the team.
 
 <p align="center">
   <strong>Built with ❤️ for the future of B2B Sales</strong>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/AI-Powered-purple?style=for-the-badge" alt="AI Powered">
-  <img src="https://img.shields.io/badge/Multi--Agent-System-blue?style=for-the-badge" alt="Multi-Agent">
-  <img src="https://img.shields.io/badge/Zero-Hallucination-green?style=for-the-badge" alt="Zero Hallucination">
 </p>
