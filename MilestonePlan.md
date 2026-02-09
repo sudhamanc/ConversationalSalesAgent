@@ -24,8 +24,28 @@
 | Service Fulfillment Agent | Basic routing | Scheduling | Arun |
 
 ---
+## 📅 Project Roadmap & Milestones
 
+### Timeline Overview (2 Quarters)
 
+```mermaid
+gantt
+    title B2B Agentic Sales System Roadmap
+    dateFormat YYYY-MM-DD
+
+    section Winter Quarter
+    Infrastructure & Setup (Wk 1-3)              :a1, 2026-01-05, 3w
+    Core & Transaction Agents Phase 1 (Wk 4-6)   :a2, after a1, 3w
+    Discovery & Serviceability (Wk 7-9)           :a3, after a2, 3w
+    Winter Deliverable (Wk 10)                    :milestone, m1, after a3, 0d
+
+    section Spring Quarter
+    Transaction Agents Phase 2 (Wk 1-3)          :b1, 2026-04-06, 3w
+    Orchestration & A2A (Wk 4-6)                  :b2, after b1, 3w
+    Integration & Observability (Wk 7-9)          :b3, after b2, 3w
+    Spring Final Deliverable (Wk 10)              :milestone, m2, after b3, 0d
+```
+---
 ## Academic Milestone Plan
 
 ### WINTER QUARTER (January - March 2026)
