@@ -61,7 +61,8 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         parts=[types.Part(text=user_message)],
     )
 
-    run_config = RunConfig(streaming_mode="sse")
+    run_config = RunConfig()  # Default streaming mode
+    sent_text = ""  # Track sent text to avoid duplication
 
     async for event in _runner.run_async(
         user_id=user_id,
@@ -69,23 +70,30 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         new_message=new_message,
         run_config=run_config,
     ):
-        # Emit text content from the agent (or sub-agents)
-        if event.content and event.content.parts:
+        # Extract text from event content parts
+        text_content = None
+        if event.content and hasattr(event.content, 'parts') and event.content.parts:
             for part in event.content.parts:
-                text = part.text if hasattr(part, "text") else None
-                if text:
-                    payload = json.dumps({
-                        "type": "token",
-                        "content": text,
-                        "author": event.author,
-                        "partial": bool(event.partial),
-                    })
-                    yield f"data: {payload}\n\n"
+                if hasattr(part, 'text') and part.text:
+                    text_content = part.text
+                    break
 
-        # Check for errors
+        # Stream new text tokens (delta-based to avoid duplication)
+        if text_content and len(text_content) > len(sent_text):
+            delta = text_content[len(sent_text):]
+            sent_text = text_content
+            payload = json.dumps({
+                "type": "token",
+                "content": delta,
+                "author": event.author,
+            })
+            yield f"data: {payload}\n\n"
+
+        # Handle errors
         if event.error_message:
             payload = json.dumps({"type": "error", "content": event.error_message})
             yield f"data: {payload}\n\n"
+            return
 
         # Turn complete = done
         if event.turn_complete:

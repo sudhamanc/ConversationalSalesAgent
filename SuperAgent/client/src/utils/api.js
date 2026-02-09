@@ -95,8 +95,8 @@ export async function streamChat(message, onToken, onDone, onError) {
             onError(payload.content);
             return;
           }
-        } catch {
-          // Skip malformed JSON lines
+        } catch (e) {
+          console.error("Failed to parse SSE event:", jsonStr, e);
         }
       }
     }
