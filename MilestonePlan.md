@@ -13,15 +13,15 @@ This document outlines the sales scenarios and milestone plan for the B2B Conver
 
 | Agent | Type | Purpose | Owner |
 |-------|------|---------|-------|
-| 🧠 **Super Agent** | Orchestrator | Routes intents, manages conversation flow | Sudhaman |
-| 👤 **Prospect Agent** | Operational | Extracts customer/company details | Sudhaman |
-| 📊 **Lead Gen Agent** | Operational | BANT scoring & lead qualification | Sudhaman |
-| 📦 **Product Agent** | Info/RAG | Retrieves product specs from vector DB | Sudhaman |
-| 💰 **Offer Mgmt Agent** | Deterministic | Calculates pricing & bundles | Sudhaman |
-| 🛒 **Order Agent** | Transactional | Manages cart & contract generation | Sudhaman |
-| 💳 **Payment Agent** | Transactional | Mock credit checks | Sudhaman |
-| 🌐 **Serviceability Agent** | Deterministic | **Address validation & product availability by location** | **Raja** |
-| 🔧 **Service Fulfillment Agent** | Deterministic | Installation scheduling & provisioning | Sudhaman |
+| 🧠 **Super Agent** | Orchestrator | Routes intents, manages conversation flow 
+| 👤 **Prospect Agent** | Operational | Extracts customer/company details 
+| 📊 **Lead Gen Agent** | Operational | BANT scoring & lead qualification 
+| 📦 **Product Agent** | Info/RAG | Retrieves product specs from vector DB 
+| 💰 **Offer Mgmt Agent** | Deterministic | Calculates pricing & bundles 
+| 🛒 **Order Agent** | Transactional | Manages cart & contract generation
+| 💳 **Payment Agent** | Transactional | Mock credit checks
+| 🌐 **Serviceability Agent** | Deterministic | Address validation & product availability by location
+| 🔧 **Service Fulfillment Agent** | Deterministic | Installation scheduling & provisioning 
 
 
 ## Agent Development Timeline
