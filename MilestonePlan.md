@@ -422,6 +422,3 @@ graph TB
 
 ---
 
-*Document prepared for Drexel University Senior Design Project*
-*B2B Agentic Sales Orchestration System*
-*Raja - Serviceability Agent Owner*
