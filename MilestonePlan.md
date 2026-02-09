@@ -29,18 +29,16 @@ This document outlines the sales scenarios and milestone plan for the B2B Conver
 | Agent | Winter Qtr | Spring Qtr | Owner |
 |-------|------------|------------|-------|
 | 🧠 Super Agent | ✅ Basic routing | ✅ Full orchestration | Sudhaman |
-| 👤 Prospect Agent | ✅ Complete | — | Sudhaman |
-| 📊 Lead Gen Agent | ✅ Basic BANT | ✅ Enhanced scoring | Sudhaman |
-| 📦 Product Agent | ✅ Complete | — | Sudhaman |
+| 👤 Prospect Agent | ✅ Complete | — | Aubin |
+| 📊 Lead Gen Agent | ✅ Basic BANT | ✅ Enhanced scoring | Aubin |
+| 📦 Product Agent | ✅ Complete | — | Raja |
 | 💰 Offer Mgmt Agent | ✅ Basic routing | ✅ Complete | Sudhaman |
-| 🛒 Order Agent | ✅ Basic routing | ✅ Complete | Sudhaman |
-| 💳 Payment Agent | ✅ Basic routing| ✅ Complete | Sudhaman |
-| 🌐 **Serviceability Agent** | ✅ **Serviceability** | ✅ **Product availability** | **Raja** |
-| 🔧 Service Fulfillment Agent | ✅ Basic routing | ✅ Scheduling | Sudhaman |
+| 🛒 Order Agent | ✅ Basic routing | ✅ Complete | Raja |
+| 💳 Payment Agent | ✅ Basic routing| ✅ Complete | Arun |
+| 🌐 Serviceability Agent | ✅ Basic routing| ✅ Complete | Raja |
+| 🔧 Service Fulfillment Agent | ✅ Basic routing | ✅ Scheduling | Arun |
 
 ---
-
-<img width="791" height="206" alt="image" src="https://github.com/user-attachments/assets/7f9f41b9-fdd9-4197-b2dd-2b8b5ed58717" />
 
 
 ## System Architecture Overview
