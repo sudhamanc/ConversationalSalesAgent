@@ -22,7 +22,7 @@
 | Payment Agent | Basic routing | Complete | Arun |
 | Serviceability Agent | Basic routing | Complete | Raja |
 | Service Fulfillment Agent | Basic routing | Scheduling | Arun |
-| Customer Comms Agent | Basic notifications | Complete | TBD |
+| Customer Comms Agent | Basic notifications | Complete | Raja |
 
 ---
 ## 📅 Project Roadmap & Milestones
