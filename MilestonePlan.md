@@ -22,6 +22,7 @@
 | Payment Agent | Basic routing | Complete | Arun |
 | Serviceability Agent | Basic routing | Complete | Raja |
 | Service Fulfillment Agent | Basic routing | Scheduling | Arun |
+| Customer Comms Agent | Basic notifications | Complete | TBD |
 
 ---
 ## 📅 Project Roadmap & Milestones
@@ -101,6 +102,7 @@ gantt
 |------|-------------
 | Enhance **Offer Mgmt Agent** | Pricing/bundle logic working 
 | Build **Payment Agent** | Mock credit check functional 
+| Build **Customer Comms Agent** | Basic email/SMS notifications 
 | Enhance **Serviceability Agent** | Multi-location support 
 | Implement Scenario 2 (Existing customer address) | Upsell flow working 
 | Implement Scenario 4 (Existing customer by name) | Customer lookup working 
@@ -109,6 +111,7 @@ gantt
 | Task | Deliverable 
 |------|-------------
 | Build **Order Agent** | JSON contract generation 
+| Enhance **Customer Comms Agent** | Order, payment, and installation notifications 
 | Implement A2A Protocol handshakes | Agents communicate without user input 
 | Implement Scenario 3 (New business by name) | Full qualification flow 
 | Enable inter-agent communication | Offer Agent <-> Payment Agent working 
@@ -118,7 +121,7 @@ gantt
 |------|-------------
 | Implement Scenario 6 (End-to-end order) | Complete sales cycle demo 
 | Build basic logging/telemetry dashboard | Agent decision chain visible 
-| Full system integration testing | All 9 agents orchestrated 
+| Full system integration testing | All 10 agents orchestrated 
 | Edge case handling | Error handling & guardrails 
 
 #### Week 10: Spring Quarter Final Deliverable
@@ -132,8 +135,8 @@ gantt
 **Spring Quarter Final Demo:**
 *A fully autonomous demo showcasing:*
 - *All 6 sales scenarios working end-to-end*
-- *All 9 agents collaborating via A2A protocol*
-- *Complete sales cycle: inquiry -> serviceability -> quote -> order*
+- *All 10 agents collaborating via A2A protocol*
+- *Complete sales cycle: inquiry -> serviceability -> quote -> order -> notifications*
 - *Basic observability showing agent decision chains*
 
 ---

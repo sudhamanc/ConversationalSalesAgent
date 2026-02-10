@@ -58,6 +58,7 @@
 |---|------------|------|------|-----------------|----------------|--------|
 | 7 | **💳 Payment Agent** | Handles credit checks, payment method validation, billing setup | `Transactional` | Payment Gateway, Credit Bureau API | **ADK** (Custom) | Existing |
 | 8 | **🛒 Order Agent** | Manages cart, generates contracts, processes final checkout, creates order records | `Transactional` | Order Database | **ADK** (Custom) | Existing |
+| 9 | **📧 Customer Comms Agent** | Sends automated notifications for order placement, payment status, installation reminders, abandoned cart recovery, delivery updates | `Operational` | Notification Service, Email/SMS Gateway, Order Database | **ADK** (Custom) | Recommended |
 
 ---
 
@@ -65,12 +66,12 @@
 
 | # | Agent Name | Role | Type | Source of Truth | Implementation | Status |
 |---|------------|------|------|-----------------|----------------|--------|
-| 9 | **❓ FAQ Agent** | Handles common pre-sales/post-sales questions; deflects routine queries from sales flow | `Info/RAG` | Knowledge Base Vector DB, FAQ Database | **ADK** (Custom) | Recommended |
-| 10 | **🆘 Escalation Agent** | Detects escalation triggers; summarizes conversation context; transfers to human agents | `Orchestrator` | Agent Availability System, Ticket Queue | **ADK** (Custom) | Recommended |
-| 11 | **📅 Scheduling Agent** | Books demos, consultations, site surveys, installations; manages calendar availability | `Transactional` | Calendar API (Google, Microsoft 365, Calendly) | **ADK** (Custom) | Recommended |
-| 12 | **📧 Nurture Agent** | Manages automated follow-ups for stalled deals, quote reminders, lead warming campaigns | `Operational` | CRM, Email Gateway, SMS API, Quote Database | **LangGraph** | Recommended |
-| 13 | **🤝 Retention Agent** | Proactive renewal handling, churn prevention, upsell recommendations based on usage | `Operational` | CRM, Usage Analytics, Billing System | **LangGraph** | Recommended |
-| 14 | **📊 Insights Agent** | Provides usage analytics, ROI summaries, optimization recommendations | `Info/RAG` | Analytics Platform, Billing API, Usage Database | **ADK** (Custom) | Recommended |
+| 10 | **❓ FAQ Agent** | Handles common pre-sales/post-sales questions; deflects routine queries from sales flow | `Info/RAG` | Knowledge Base Vector DB, FAQ Database | **ADK** (Custom) | Recommended |
+| 11 | **🆘 Escalation Agent** | Detects escalation triggers; summarizes conversation context; transfers to human agents | `Orchestrator` | Agent Availability System, Ticket Queue | **ADK** (Custom) | Recommended |
+| 12 | **📅 Scheduling Agent** | Books demos, consultations, site surveys, installations; manages calendar availability | `Transactional` | Calendar API (Google, Microsoft 365, Calendly) | **ADK** (Custom) | Recommended |
+| 13 | **📧 Nurture Agent** | Manages automated follow-ups for stalled deals, quote reminders, lead warming campaigns | `Operational` | CRM, Email Gateway, SMS API, Quote Database | **LangGraph** | Recommended |
+| 14 | **🤝 Retention Agent** | Proactive renewal handling, churn prevention, upsell recommendations based on usage | `Operational` | CRM, Usage Analytics, Billing System | **LangGraph** | Recommended |
+| 15 | **📊 Insights Agent** | Provides usage analytics, ROI summaries, optimization recommendations | `Info/RAG` | Analytics Platform, Billing API, Usage Database | **ADK** (Custom) | Recommended |
 
 ---
 
@@ -95,28 +96,29 @@
 ├─────────────────┤ ├─────────────┤ ├─────────────────┤ ├─────────────────┤ ├─────────────┤ ├─────────────────┤
 │ 👤 Prospect     │ │ 📦 Product  │ │ 💳 Payment      │ │ ❓ FAQ          │ │ 📧 Nurture  │ │ 📊 Insights     │
 │ 📊 Lead Gen     │ │ 💰 Offer Mgmt│ │ 🛒 Order        │ │ 🆘 Escalation   │ │ 🤝 Retention│ │                 │
-│                 │ │ 🔧 Svc Fulfill│ │                │ │ 📅 Scheduling   │ │             │ │                 │
+│                 │ │ 🔧 Svc Fulfill│ │ 📧 Cust Comms  │ │ 📅 Scheduling   │ │             │ │                 │
 └─────────────────┘ └─────────────┘ └─────────────────┘ └─────────────────┘ └─────────────┘ └─────────────────┘
 ```
 
 ### Agent Communication Matrix
 
-| From \ To | Super | Prospect | Lead Gen | Product | Offer Mgmt | Svc Fulfill | Payment | Order | FAQ | Escalation | Scheduling | Nurture | Retention | Insights |
-|-----------|:-----:|:--------:|:--------:|:-------:|:----------:|:-----------:|:-------:|:-----:|:---:|:----------:|:----------:|:-------:|:---------:|:--------:|
-| **Super Agent** | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Prospect** | ✅ | - | ✅ | - | - | - | - | - | - | ✅ | ✅ | ✅ | - | - |
-| **Lead Gen** | ✅ | ✅ | - | - | ✅ | - | - | - | - | ✅ | - | ✅ | - | - |
-| **Product** | ✅ | - | - | - | ✅ | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ |
-| **Offer Mgmt** | ✅ | - | ✅ | ✅ | - | ✅ | ✅ | ✅ | - | ✅ | - | ✅ | ✅ | - |
-| **Svc Fulfill** | ✅ | ✅ | - | ✅ | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - | - |
-| **Payment** | ✅ | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | - | ✅ | - |
-| **Order** | ✅ | - | - | - | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | - | ✅ | ✅ |
-| **FAQ** | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - |
-| **Escalation** | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| **Scheduling** | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ | - | - | - | - |
-| **Nurture** | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | ✅ | ✅ | - | - | - |
-| **Retention** | ✅ | - | - | - | ✅ | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ |
-| **Insights** | ✅ | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | - | - | - |
+| From \ To | Super | Prospect | Lead Gen | Product | Offer Mgmt | Svc Fulfill | Payment | Order | Cust Comms | FAQ | Escalation | Scheduling | Nurture | Retention | Insights |
+|-----------|:-----:|:--------:|:--------:|:-------:|:----------:|:-----------:|:-------:|:-----:|:----------:|:---:|:----------:|:----------:|:-------:|:---------:|:--------:|
+| **Super Agent** | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Prospect** | ✅ | - | ✅ | - | - | - | - | - | - | - | ✅ | ✅ | ✅ | - | - |
+| **Lead Gen** | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Product** | ✅ | - | - | - | ✅ | ✅ | - | - | - | ✅ | ✅ | - | - | - | ✅ |
+| **Offer Mgmt** | ✅ | - | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | ✅ | ✅ | - |
+| **Svc Fulfill** | ✅ | ✅ | - | ✅ | ✅ | - | - | ✅ | ✅ | - | ✅ | ✅ | - | - | - |
+| **Payment** | ✅ | - | - | - | ✅ | - | - | ✅ | ✅ | - | ✅ | - | - | ✅ | - |
+| **Order** | ✅ | - | - | - | ✅ | ✅ | ✅ | - | ✅ | - | ✅ | ✅ | - | ✅ | ✅ |
+| **Cust Comms** | ✅ | - | - | - | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | - | - | - | - |
+| **FAQ** | ✅ | - | - | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - |
+| **Escalation** | ✅ | - | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **Scheduling** | ✅ | ✅ | - | - | - | ✅ | - | - | ✅ | - | ✅ | - | - | - | - |
+| **Nurture** | ✅ | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | ✅ | ✅ | - | - | - |
+| **Retention** | ✅ | - | - | - | ✅ | - | ✅ | ✅ | ✅ | - | ✅ | - | - | - | ✅ |
+| **Insights** | ✅ | - | - | ✅ | - | - | - | ✅ | - | - | ✅ | - | - | - | - |
 
 ---
 
@@ -176,9 +178,9 @@
 |-------------|----------------|-------------------|----------------|
 | **1. Awareness** | ❓ FAQ Agent | 🆘 Escalation | Customer lands on chat, asks general questions |
 | **2. Discovery** | 👤 Prospect Agent, 📊 Lead Gen Agent | 📅 Scheduling Agent | Customer expresses interest, provides business context |
-| **3. Configuration** | 📦 Product Agent, 💰 Offer Mgmt Agent, 🔧 Service Fulfillment Agent | ❓ FAQ Agent | Customer asks about products, requests quote, address check |
-| **4. Transaction** | 💳 Payment Agent, 🛒 Order Agent | 🆘 Escalation Agent | Customer ready to purchase, credit check, contract generation |
-| **5. Fulfillment** | 🔧 Service Fulfillment Agent, 📅 Scheduling Agent | 🛒 Order Agent | Order confirmed, installation scheduling |
+| **3. Configuration** | 📦 Product Agent, 💰 Offer Mgmt Agent, 🔧 Service Fulfillment Agent | ❓ FAQ Agent, 📧 Customer Comms Agent | Customer asks about products, requests quote, address check |
+| **4. Transaction** | 💳 Payment Agent, 🛒 Order Agent | 🆘 Escalation Agent, 📧 Customer Comms Agent | Customer ready to purchase, credit check, contract generation |
+| **5. Fulfillment** | 🔧 Service Fulfillment Agent, 📅 Scheduling Agent | 🛒 Order Agent, 📧 Customer Comms Agent | Order confirmed, installation scheduling, notifications sent |
 | **6. Retention** | 🤝 Retention Agent, 📊 Insights Agent | 💰 Offer Mgmt Agent | Contract nearing expiry, usage patterns, upsell triggers |
 | **Parallel (Always Active)** | 📧 Nurture Agent | 📊 Lead Gen Agent, 💰 Offer Mgmt | Quote sent but no response, lead gone cold |
 
@@ -198,6 +200,7 @@
 | 🔧 Service Fulfillment Agent | **ADK** (Custom) | Deterministic GIS/scheduler API calls |
 | 💳 Payment Agent | **ADK** (Custom) | Deterministic payment gateway integration |
 | 🛒 Order Agent | **ADK** (Custom) | Transactional database operations; tool-centric |
+| 📧 Customer Comms Agent | **ADK** (Custom) | Event-driven notification delivery via email/SMS tools |
 | ❓ FAQ Agent | **ADK** (Custom) | RAG-based retrieval; simple request-response |
 | 🆘 Escalation Agent | **ADK** (Custom) | State handoff; integrates with Super Agent |
 | 📅 Scheduling Agent | **ADK** (Custom) | Calendar API tool calls; deterministic |
@@ -253,6 +256,7 @@ class StatefulAgent:
 | 🔧 Service Fulfillment Agent | Serviceability cache | JSON | TTL Cache |
 | 💳 Payment Agent | Credit check result, payment method | JSON | Session |
 | 🛒 Order Agent | Cart, contract draft | JSON | Order DB |
+| 📧 Customer Comms Agent | Notification queue, delivery status | JSON | Notification Service |
 | ❓ FAQ Agent | None (stateless) | - | - |
 | 🆘 Escalation Agent | Handoff context summary | JSON | Ticket System |
 | 📅 Scheduling Agent | Pending appointments | JSON | Calendar DB |
@@ -321,6 +325,7 @@ class StatefulAgent:
 | 🔧 Service Fulfillment Agent | `check_serviceability`, `get_install_slots`, `schedule_install` |
 | 💳 Payment Agent | `run_credit_check`, `validate_payment_method`, `setup_billing` |
 | 🛒 Order Agent | `add_to_cart`, `generate_contract`, `submit_order`, `get_order_status` |
+| 📧 Customer Comms Agent | `send_email`, `send_sms`, `send_order_confirmation`, `send_payment_notification`, `send_installation_reminder`, `send_abandoned_cart_reminder`, `get_notification_status` |
 | ❓ FAQ Agent | `search_knowledge_base`, `get_faq_answer` |
 | 🆘 Escalation Agent | `summarize_context`, `check_agent_availability`, `create_ticket`, `transfer_session` |
 | 📅 Scheduling Agent | `get_availability`, `book_appointment`, `send_confirmation`, `reschedule` |

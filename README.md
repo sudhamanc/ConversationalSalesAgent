@@ -31,7 +31,7 @@
 
 ## 📌 Executive Summary
 
-This project aims to build an **autonomous, multi-agent system (MAS)** designed to automate the complex lifecycle of B2B sales. Unlike traditional linear chatbots, this system utilizes a **Super Agent** to orchestrate a mesh of **9 specialized sub-agents**. These agents collaborate to handle:
+This project aims to build an **autonomous, multi-agent system (MAS)** designed to automate the complex lifecycle of B2B sales. Unlike traditional linear chatbots, this system utilizes a **Super Agent** to orchestrate a mesh of **10 specialized sub-agents**. These agents collaborate to handle:
 
 - 🔍 **Prospect Discovery & Qualification**
 - 🌐 **Address Validation & Serviceability**
@@ -90,6 +90,7 @@ graph TB
         PayA[💳 Payment Agent<br/>Credit Checks]
         OrdA[🛒 Order Agent<br/>Contract Generation]
         SFA[🔧 Service Fulfillment<br/>Installation Scheduling<br/>POST-SALE]
+        CommA[📧 Customer Comms Agent<br/>Notifications & Updates]
     end
 
     subgraph Infrastructure["⚙️ INFRASTRUCTURE LAYER"]
@@ -114,8 +115,7 @@ graph TB
 
     PayA -->|Credit Check| PRICE
     OrdA -->|Store Order| DB
-    SFA -->|Schedule Install| GIS
-
+    SFA -->|Schedule Install| GIS    CommA -.->|Send Notifications| DB
     Discovery -.->|Logs| LOG
     Configuration -.->|Logs| LOG
     Transaction -.->|Logs| LOG
@@ -146,6 +146,7 @@ sequenceDiagram
     participant Pay as 💳 Payment
     participant Ord as 🛒 Order
     participant SF as 🔧 Fulfillment
+    participant Comm as 📧 Customer Comms
     participant GIS as GIS API
     participant RAG as Vector DB
     participant PRICE as Pricing API
@@ -206,12 +207,16 @@ sequenceDiagram
         SF->>SCHED: Query available slots
         SCHED-->>SF: Available: Feb 15, 9 AM
         SF-->>S: Install date confirmed
+        
+        S->>Comm: Send order confirmation
+        Comm-->>C: Email/SMS: Order #12345 confirmed
+        Comm-->>C: Email/SMS: Installation scheduled Feb 15, 9 AM
     end
 
     S->>UI: Order #12345 confirmed, Installation: Feb 15
     UI->>C: Display confirmation
 
-    Note over C,SCHED: Complete autonomous sale executed!
+    Note over C,Comm: Complete autonomous sale with notifications executed!
 ```
 
 ### Agent Interaction Flow
@@ -300,7 +305,7 @@ stateDiagram-v2
 
 All agents are developed using **Google's ADK (Agent Development Kit)**, providing standardized agent lifecycle management, tool integration, memory persistence, and structured logging.
 
-### Complete Agent Roster (9 Agents)
+### Complete Agent Roster (10 Agents)
 
 | Agent Name | Role | Type | Source of Truth | Phase |
 |------------|------|------|-----------------|-------|
@@ -313,6 +318,7 @@ All agents are developed using **Google's ADK (Agent Development Kit)**, providi
 | 💳 **Payment Agent** | Handles credit checks, payment authorization, and financial validation | `Transactional` | Payment Gateway | Transaction |
 | 🛒 **Order Agent** | Manages cart, contract generation, order creation, and final checkout | `Transactional` | Order DB | Transaction |
 | 🔧 **Service Fulfillment Agent** | **POST-SALE**: Schedules installation appointments and coordinates technician dispatch | `Transactional` | Scheduler API | Transaction |
+| 📧 **Customer Comms Agent** | Sends automated notifications for order placement, payment status, installation reminders, abandoned cart, and delivery updates | `Operational` | Notification Service, Email/SMS Gateway | Transaction |
 
 ### Agent Development Timeline
 
@@ -327,6 +333,7 @@ All agents are developed using **Google's ADK (Agent Development Kit)**, providi
 | 💳 Payment Agent | ✅ Basic routing | ✅ Complete | Arun |
 | 🌐 Serviceability Agent | ✅ Basic routing | ✅ Complete | Raja |
 | 🔧 Service Fulfillment Agent | ✅ Basic routing | ✅ Scheduling | Arun |
+| 📧 Customer Comms Agent | ⏳ Basic notifications | ⏳ Complete | TBD |
 
 ### Key Agent Distinction
 
@@ -345,9 +352,9 @@ All agents are developed using **Google's ADK (Agent Development Kit)**, providi
 
 ```mermaid
 pie showData
-    title Agent Types Distribution (9 Total Agents)
+    title Agent Types Distribution (10 Total Agents)
     "Orchestrator" : 1
-    "Operational" : 2
+    "Operational" : 3
     "Info/RAG" : 1
     "Deterministic" : 2
     "Transactional" : 3
@@ -365,6 +372,7 @@ graph TB
     SA3 --> PayA3[💳 Payment Agent]
     SA3 --> OrdA3[🛒 Order Agent]
     SA3 --> SFA3[🔧 Service Fulfillment]
+    SA3 --> CommA3[📧 Customer Comms]
 
     PA3 -.-> SrvA3
     SrvA3 -.-> ProdA3
@@ -379,6 +387,7 @@ graph TB
     PayA3 --> PG3[(Payment Gateway)]
     OrdA3 --> DB3[(Order DB)]
     SFA3 --> SCH3[(Scheduler)]
+    CommA3 --> NOTIF3[(Email/SMS Gateway)]
 
     style SA3 fill:#ff6b6b,stroke:#333,stroke-width:3px,color:#fff
     style SrvA3 fill:#4ecdc4,stroke:#333,stroke-width:3px

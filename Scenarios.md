@@ -16,6 +16,7 @@
   - [Payment Agent](#7--payment-agent)
   - [Order Agent](#8--order-agent)
   - [Service Fulfillment Agent](#9--service-fulfillment-agent)
+  - [Customer Communications Agent](#10--customer-communications-agent)
 - [End-to-End (E2E) Scenarios](#end-to-end-e2e-scenarios)
   - [Scenario 1: Address Lookup — New Prospect](#scenario-1-address-lookup--new-prospect)
   - [Scenario 2: Address Lookup — Existing Customer](#scenario-2-address-lookup--existing-customer)
@@ -269,6 +270,40 @@
 
 ---
 
+### 10. 📧 Customer Communications Agent
+
+**Role:** Sends automated notifications for order placement, payment status, installation reminders, abandoned cart, and delivery updates.
+
+#### Positive Cases
+
+| # | Test Case | Input | Expected Outcome |
+|---|-----------|-------|------------------|
+| 10.1 | Order confirmation notification | Order #12345 created | Email & SMS sent: "Your order #12345 has been confirmed" |
+| 10.2 | Payment success notification | Payment approved for Order #12345 | Email & SMS sent: "Payment of $539.00 processed successfully" |
+| 10.3 | Installation reminder | Installation scheduled 24h out | Email & SMS sent: "Reminder: Installation tomorrow at 9 AM" |
+| 10.4 | Abandoned cart recovery | Quote generated but not ordered after 24h | Email sent: "Complete your order! Your quote is waiting" |
+| 10.5 | Installation confirmation | Installation scheduled for Feb 15 | Email & SMS sent: "Installation confirmed for Feb 15, 9 AM - Tech ID: T-456" |
+| 10.6 | Payment failure notification | Payment declined | Email & SMS sent: "Payment failed - please update payment method" |
+| 10.7 | Order status update | Order status changed to "In Progress" | Email sent: "Your order is now being processed" |
+| 10.8 | Multi-channel delivery | Customer has email + phone | Both email and SMS notifications delivered |
+
+#### Negative Cases
+
+| # | Test Case | Input | Expected Outcome |
+|---|-----------|-------|------------------|
+| 10.9 | Missing contact info | Customer has no email or phone | Logs warning, notifies Super Agent to request contact info |
+| 10.10 | Email gateway failure | SMTP service down | Retries with exponential backoff, logs failure |
+| 10.11 | SMS gateway failure | SMS API returns error | Falls back to email only, logs SMS failure |
+| 10.12 | Invalid email address | Email format validation fails | Logs error, requests valid email from customer |
+| 10.13 | Invalid phone number | Phone format validation fails | Logs error, requests valid phone from customer |
+| 10.14 | Duplicate notification | Same notification triggered twice within 5 min | Deduplicates, sends only once |
+| 10.15 | Unsubscribe request | Customer opted out of notifications | Respects opt-out, logs preference |
+| 10.16 | Rate limiting | Too many notifications in short time | Throttles notifications, queues for later delivery |
+| 10.17 | Notification delivery failure | Email bounces back | Logs bounce, marks email as invalid |
+| 10.18 | No order context | Notification triggered without order ID | Validation error, notification not sent |
+
+---
+
 ## End-to-End (E2E) Scenarios
 
 ### Scenario 1: Address Lookup — New Prospect
@@ -449,7 +484,7 @@ Result: "We don't currently offer a quantum internet service.
 ---
 
 ### Scenario 6: End-to-End Order Flow
-**Quarter:** Spring | **Key Agents:** ALL 9 AGENTS
+**Quarter:** Spring | **Key Agents:** ALL 10 AGENTS
 
 #### Happy Path (Complete Sales Cycle)
 
@@ -470,14 +505,20 @@ PHASE 2: CONFIGURATION
 
 PHASE 3: TRANSACTION
   7. Payment Agent -> Credit check: Score 720, APPROVED
-  8. Order Agent -> Contract generated, Order #12345 created
-  9. Service Fulfillment -> Installation scheduled: Feb 15, 9 AM, Tech T-456
+  8. Customer Comms Agent -> Sends payment success notification via email/SMS
+  9. Order Agent -> Contract generated, Order #12345 created
+  10. Customer Comms Agent -> Sends order confirmation via email/SMS
+  11. Service Fulfillment -> Installation scheduled: Feb 15, 9 AM, Tech T-456
+  12. Customer Comms Agent -> Sends installation confirmation via email/SMS
 
 Result: "Order #12345 confirmed! 
         - Product: Fiber 5G ($539/mo)
         - Installation: February 15, 9:00 AM
         - Technician will arrive with all necessary equipment
-        - Order confirmation has been saved to your account"
+        - Confirmation sent to your email and phone"
+
+FOLLOW-UP (24h before installation):
+  13. Customer Comms Agent -> Sends installation reminder: "Your installation is tomorrow at 9 AM"
 ```
 
 #### Negative Path (Failure at Various Stages)
@@ -489,11 +530,14 @@ FAILURE AT SERVICEABILITY:
 
 FAILURE AT PAYMENT:
   User passes serviceability + product selection -> Credit check FAILS
+  Customer Comms Agent -> Sends payment failure notification
   Result: "Unfortunately we could not approve credit at this time. 
            Options: (1) Prepaid plan, (2) Co-signer, (3) Contact billing"
+           Notification sent: "Payment authorization failed - please contact us"
 
 FAILURE AT SCHEDULING:
   Order created but no install slots available
+  Customer Comms Agent -> Sends order confirmation only (no installation date yet)
   Result: Order still valid. "Our scheduling team will contact you within 
            24 hours to arrange installation."
 
