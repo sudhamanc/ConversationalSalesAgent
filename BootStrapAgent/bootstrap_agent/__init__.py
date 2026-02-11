@@ -1,6 +1,9 @@
-from .agent import root_agent
-
-__all__ = ["root_agent"]
+try:
+    from .agent import root_agent
+    __all__ = ["root_agent"]
+except (ModuleNotFoundError, ImportError):
+    # Handle missing dependencies (vertexai, google-adk) for testing
+    __all__ = []
 
 
 def get_agent():
