@@ -22,10 +22,37 @@ The **Product Agent** is a specialized AI agent built on Google's Agent Developm
 - 🚀 **24-Hour Caching**: Reduces redundant queries with intelligent caching
 - 🔒 **Zero Hallucination**: All data from vector DB or product catalog
 - 🛠️ **Tool-Based**: 11 specialized tools for different query types
+- 🌐 **Infrastructure-Aware**: Filters products based on network infrastructure availability (Fiber/Coax, speed limits, symmetrical requirements)
 
 ---
 
-## 🏗️ Architecture
+## � Infrastructure-Aware Filtering
+
+The Product Agent intelligently filters product recommendations based on network infrastructure availability information provided by the ServiceabilityAgent. When infrastructure context is included in queries, the agent:
+
+- **Matches Technology Type**: Only recommends Fiber products for Fiber infrastructure, Coax/Cable products for Coax/HFC infrastructure
+- **Respects Speed Limits**: Filters out products exceeding the maximum supported speed at the location
+- **Handles Symmetrical Requirements**: For Fiber infrastructure with symmetrical speeds, only recommends products with symmetrical upload/download
+- **Provides Explanations**: Clearly explains why certain products are or aren't available based on infrastructure constraints
+
+### Infrastructure Context Format
+
+Infrastructure information can be passed in natural language format:
+
+```
+[INFRASTRUCTURE AVAILABILITY]
+Location: 123 Main St, Philadelphia, PA 19103
+Network Type: Fiber
+Speed Capability: 10 Gbps (max download), 10 Gbps (max upload)
+Connection Type: Symmetrical
+Service Class: Business
+```
+
+The agent automatically recognizes this context and applies appropriate filtering to all product recommendations and comparisons.
+
+---
+
+## �🏗️ Architecture
 
 ### Agent Type Classification
 
@@ -293,6 +320,23 @@ Response: "Yes, Business Fiber 5G includes 5 static IP addresses at no additiona
 User: "Is there a cheaper fiber option?"
 Agent: [Uses suggest_alternatives with criteria="cheaper"]
 Response: "Yes, Business Fiber 1 Gbps is available at $249/month..."
+```
+
+### Scenario 5: Infrastructure-Aware Filtering (New!)
+```
+User: "What internet plans are available?" 
+[With infrastructure context from ServiceabilityAgent]
+
+Context: [INFRASTRUCTURE AVAILABILITY]
+Network Type: Fiber
+Speed Capability: 5000 Mbps (max)
+Connection Type: Symmetrical
+
+Agent: [Applies infrastructure-aware filtering]
+Response: "Based on the fiber infrastructure at your location with 5 Gbps capacity, 
+I recommend Business Fiber 1G ($249/month) or Business Fiber 5G ($799/month). 
+Both offer symmetrical speeds up to your infrastructure's maximum capacity..."
+[Automatically excludes 10G and all Coax products]
 ```
 
 ---

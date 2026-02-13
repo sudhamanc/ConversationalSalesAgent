@@ -44,6 +44,15 @@ The Product Agent is an Info/RAG-based AI agent that provides accurate product i
 - **Hit Rate Target**: >70%
 - **Rationale**: Reduces redundant RAG queries and improves response time
 
+#### 5. Infrastructure-Aware Filtering (Added: Feb 2026)
+- **Context-Enhanced Approach**: Agent understands infrastructure constraints passed in natural language
+- **Filtering Rules**: 
+  - Technology matching (Fiber→Fiber products, Coax→Coax/Cable products)
+  - Speed limit enforcement (only products ≤ max_speed_mbps)
+  - Symmetrical requirement handling (Fiber with symmetrical speeds)
+- **Integration**: Works seamlessly with ServiceabilityAgent outputs
+- **Rationale**: Prevents recommending products that cannot be physically provisioned at customer location
+
 ---
 
 ## Code Structure
@@ -74,7 +83,7 @@ product_agent/
 product_agent = Agent(
     name="product_agent",
     model="gemini-2.0-flash",
-    instruction=PRODUCT_AGENT_INSTRUCTION,
+    instruction=PRODUCT_AGENT_INSTRUCTION,  # Includes infrastructure-aware filtering rules
     tools=[...11 tools...],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.1,
@@ -374,6 +383,7 @@ The agent instruction (~800 lines) includes:
 ✅ Similar documentation structure  
 ✅ Consistent logging format  
 ✅ Same error handling patterns  
+✅ Infrastructure-aware integration (context-based filtering)
 
 ### Key Differences
 
@@ -382,8 +392,9 @@ The agent instruction (~800 lines) includes:
 | **Temperature** | 0.0 | 0.1 |
 | **Data Source** | GIS API | Vector DB + Catalog |
 | **Tools Count** | 6 | 11 |
-| **Primary Output** | Boolean + list | Natural language |
+| **Primary Output** | Infrastructure details | Natural language responses |
 | **Caching Focus** | Address results | Query results |
+| **Integration Role** | Provides infrastructure context | Consumes infrastructure context |
 
 ---
 

@@ -107,6 +107,19 @@ curl -X POST http://localhost:8003/query \
   }'
 ```
 
+### Test 5: Infrastructure-Aware Query (New!)
+Test the infrastructure-aware filtering capability:
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_session_002",
+    "message": "[INFRASTRUCTURE AVAILABILITY]\nLocation: 123 Main St, Philadelphia, PA 19103\nNetwork Type: Fiber\nSpeed Capability: 5000 Mbps (max download), 5000 Mbps (max upload)\nConnection Type: Symmetrical\nService Class: Business\n\nCustomer Question: What internet plans are available for my office?"
+  }'
+```
+**Expected:** Agent will recommend only Fiber products up to 5 Gbps with symmetrical speeds (excludes 10G, excludes all Coax products)
+
 ---
 
 ## API Documentation

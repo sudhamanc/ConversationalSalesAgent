@@ -244,7 +244,7 @@ class TestProductData:
     """Test product data structure and consistency"""
     
     def test_product_structure(self):
-        """Test that products have required fields"""
+        """Test that infrastructure has required fields"""
         address = {
             "street": "123 Market Street",
             "city": "Philadelphia",
@@ -253,15 +253,24 @@ class TestProductData:
         }
         result = check_service_availability(address)
         
-        for product in result["available_products"]:
-            assert "product_id" in product
-            assert "product_name" in product
-            assert "technology" in product
-            assert "speeds" in product
-            assert "available" in product
+        # Check infrastructure structure instead of products
+        assert "infrastructure" in result
+        infrastructure = result["infrastructure"]
+        assert "type" in infrastructure  # Infrastructure type (Fiber, Coax, etc.)
+        assert "network_element" in infrastructure  # Singular, not plural
+        assert "speed_capability" in infrastructure
+        assert "service_class" in infrastructure
+        assert "redundancy_available" in infrastructure
+        
+        # Check network element structure
+        network_element = infrastructure["network_element"]
+        assert isinstance(network_element, dict)
+        # At least one identifier should be present
+        identifiers = ["switch_id", "cabinet_id", "node_id", "cmts_id"]
+        assert any(key in network_element for key in identifiers)
     
     def test_multiple_speed_tiers(self):
-        """Test that fiber locations have multiple speed tiers"""
+        """Test that fiber locations have speed capability details"""
         address = {
             "street": "123 Market Street",
             "city": "Philadelphia",
@@ -270,8 +279,14 @@ class TestProductData:
         }
         result = check_service_availability(address)
         
-        # Philadelphia downtown should have multiple fiber tiers
-        assert len(result["available_products"]) >= 2
+        # Philadelphia downtown should have infrastructure with speed capabilities
+        assert "infrastructure" in result
+        infrastructure = result["infrastructure"]
+        assert "speed_capability" in infrastructure
+        speed_cap = infrastructure["speed_capability"]
+        assert "min_speed_mbps" in speed_cap
+        assert "max_speed_mbps" in speed_cap
+        assert speed_cap["max_speed_mbps"] >= speed_cap["min_speed_mbps"]
 
 
 if __name__ == "__main__":

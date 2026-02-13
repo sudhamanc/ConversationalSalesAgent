@@ -117,6 +117,67 @@ context = {
 }
 ```
 
+### Infrastructure-Aware Query Pattern (Recommended)
+
+When Super Agent has infrastructure information from ServiceabilityAgent, embed it in natural language queries:
+
+```python
+def query_with_infrastructure_context(customer_query: str, infrastructure: dict):
+    """
+    Enhance customer query with infrastructure context from ServiceabilityAgent.
+    
+    Args:
+        customer_query: Original customer question
+        infrastructure: Infrastructure details from ServiceabilityAgent
+    
+    Returns:
+        Enhanced query string with infrastructure context
+    """
+    # Format infrastructure context
+    context_block = f"""
+[INFRASTRUCTURE AVAILABILITY]
+Location: {infrastructure['address']}
+Network Type: {infrastructure['network_type']}  # Fiber, Coax/HFC, DSL
+Speed Capability: {infrastructure['max_speed_mbps']} Mbps (max download), {infrastructure['max_upload_mbps']} Mbps (max upload)
+Connection Type: {infrastructure['connection_type']}  # Symmetrical or Asymmetrical
+Service Class: {infrastructure['service_class']}  # Business, Residential
+"""
+    
+    # Combine with customer query
+    enhanced_query = f"{context_block}\n\nCustomer Question: {customer_query}"
+    
+    # Query Product Agent
+    response = product_agent.process(
+        user_input=enhanced_query,
+        context={"user_id": user_id, "session_id": session_id}
+    )
+    
+    return response
+```
+
+**Example Usage:**
+
+```python
+# Step 1: Super Agent gets infrastructure from ServiceabilityAgent
+infrastructure = serviceability_agent.check_availability("123 Main St, Philadelphia, PA 19103")
+# Returns: {network_type: "Fiber", max_speed_mbps: 10000, max_upload_mbps: 10000, connection_type: "Symmetrical"}
+
+# Step 2: Customer asks about products
+customer_query = "What internet plans are available for a 30-employee office?"
+
+# Step 3: Super Agent queries Product Agent with infrastructure context
+response = query_with_infrastructure_context(customer_query, infrastructure)
+
+# Product Agent automatically filters to only Fiber products ≤ 10 Gbps with symmetrical speeds
+# Returns recommendations: Business Fiber 1G, 5G, 10G (excludes Cable products, asymmetrical products)
+```
+
+**Benefits:**
+- No new API endpoints or tools required
+- Natural language integration
+- LLM-based intelligent filtering
+- Automatic explanation of infrastructure constraints
+
 ---
 
 ## Routing Logic
@@ -130,6 +191,7 @@ Super Agent should route to Product Agent when user queries include:
 3. **Product comparisons**: "compare X vs Y"
 4. **Product recommendations**: "best product for...", "cheapest option"
 5. **Technical questions**: "does it include static IPs?", "what's the uptime?"
+6. **Infrastructure-aware queries**: When infrastructure information is available, always pass it as context to enable intelligent product filtering
 
 ### Example Routing
 
@@ -472,13 +534,141 @@ print(get_cache_stats())
 
 ---
 
-## Example: Complete Integration
+## Example: Complete Integration with Infrastructure-Aware Filtering
 
-See [ServiceabilityAgent/INTEGRATION_GUIDE.md](../ServiceabilityAgent/INTEGRATION_GUIDE.md) for a complete integration example that can be adapted for Product Agent.
+This example shows how to integrate ProductAgent with ServiceabilityAgent using infrastructure-aware filtering:
+
+```python
+from product_agent import get_agent as get_product_agent
+from serviceability_agent import get_agent as get_serviceability_agent
+
+class SuperAgentOrchestrator:
+    def __init__(self):
+        self.product_agent = get_product_agent()
+        self.serviceability_agent = get_serviceability_agent()
+    
+    def handle_customer_query(self, customer_query: str, address: str):
+        """
+        Complete workflow: Check serviceability, then query products with infrastructure context.
+        """
+        # Step 1: Check infrastructure availability
+        serviceability_result = self.serviceability_agent.process(
+            user_input=f"Check service availability for {address}",
+            context={"user_id": "customer123", "session_id": "session456"}
+        )
+        
+        # Extract infrastructure details from ServiceabilityAgent response
+        infrastructure = self._parse_infrastructure(serviceability_result)
+        
+        if not infrastructure["serviceable"]:
+            return "Service is not available at this location."
+        
+        # Step 2: Build infrastructure context block
+        context_block = f"""
+[INFRASTRUCTURE AVAILABILITY]
+Location: {infrastructure['address']}
+Network Type: {infrastructure['network_type']}
+Speed Capability: {infrastructure['max_speed_mbps']} Mbps (max download), {infrastructure['max_upload_mbps']} Mbps (max upload)
+Connection Type: {infrastructure['connection_type']}
+Service Class: {infrastructure['service_class']}
+"""
+        
+        # Step 3: Query ProductAgent with infrastructure context
+        enhanced_query = f"{context_block}\\n\\nCustomer Question: {customer_query}"
+        
+        product_response = self.product_agent.process(
+            user_input=enhanced_query,
+            context={"user_id": "customer123", "session_id": "session456"}
+        )
+        
+        return product_response
+    
+    def _parse_infrastructure(self, serviceability_response):
+        """
+        Parse ServiceabilityAgent response to extract infrastructure details.
+        
+        Expected response format:
+        {
+            "serviceable": true,
+            "infrastructure": {
+                "network_type": "Fiber",
+                "max_speed_mbps": 10000,
+                "max_upload_mbps": 10000,
+                "connection_type": "Symmetrical",
+                "service_class": "Business",
+                ...
+            }
+        }
+        """
+        # Parse the serviceability response
+        # Implementation depends on ServiceabilityAgent's response format
+        return {
+            "serviceable": True,  # or False
+            "address": "123 Main St, Philadelphia, PA 19103",
+            "network_type": "Fiber",  # or "Coax/HFC", "DSL"
+            "max_speed_mbps": 10000,
+            "max_upload_mbps": 10000,
+            "connection_type": "Symmetrical",  # or "Asymmetrical"
+            "service_class": "Business"
+        }
+
+# Example usage
+orchestrator = SuperAgentOrchestrator()
+
+response = orchestrator.handle_customer_query(
+    customer_query="What internet plans are available for a 30-employee office?",
+    address="123 Main St, Philadelphia, PA 19103"
+)
+
+print(response)
+# Output: "Based on the fiber infrastructure at your location with 10 Gbps capacity, 
+#          I recommend Business Fiber 1G ($249/month), Business Fiber 5G ($799/month), 
+#          or Business Fiber 10G ($1,499/month)..."
+# (Only Fiber products are recommended, Coax products are automatically filtered out)
+```
+
+### Integration Flow Diagram
+
+```
+Customer Query + Address
+         │
+         ▼
+  ┌──────────────────────┐
+  │ ServiceabilityAgent  │
+  │ "Check availability" │
+  └──────┬───────────────┘
+         │
+         ▼
+    Infrastructure Details
+    - Network Type: Fiber
+    - Max Speed: 10 Gbps
+    - Symmetrical: Yes
+         │
+         ▼
+  ┌──────────────────────┐
+  │  Format Context      │
+  │  [INFRASTRUCTURE...] │
+  └──────┬───────────────┘
+         │
+         ▼
+  Enhanced Query with Context
+         │
+         ▼
+  ┌──────────────────────┐
+  │   ProductAgent       │
+  │ "Infrastructure-     │
+  │  Aware Filtering"    │
+  └──────┬───────────────┘
+         │
+         ▼
+  Filtered Product Recommendations
+  (Only compatible products)
+```
 
 ---
 
 **Next Steps:**
 - Review [README.md](README.md) for full documentation
 - Check [../Scenarios.md](../Scenarios.md) for test scenarios
+- See [TEST_SCENARIOS.md](TEST_SCENARIOS.md) for infrastructure-aware test cases (TC-17 to TC-22)
 - See Super Agent documentation for orchestration details

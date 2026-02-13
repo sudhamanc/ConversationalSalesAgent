@@ -338,6 +338,82 @@ curl -X POST http://localhost:8003/query \
 
 ---
 
+## Infrastructure-Aware Filtering Tests (Added: Feb 2026)
+
+### TC-17: Fiber Infrastructure with Speed Limit
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_infra_fiber_5g",
+    "message": "[INFRASTRUCTURE AVAILABILITY]\nLocation: 123 Main St, Philadelphia, PA 19103\nNetwork Type: Fiber\nSpeed Capability: 5000 Mbps (max download), 5000 Mbps (max upload)\nConnection Type: Symmetrical\nService Class: Business\n\nCustomer Question: What internet plans are available for a 30-employee office?"
+  }'
+```
+**Expected:** Recommends only Fiber products up to 5 Gbps (1G, 5G) with symmetrical speeds. Excludes 10G Fiber and all Coax products.
+
+### TC-18: Coax Infrastructure with Asymmetrical Speeds
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_infra_coax",
+    "message": "[INFRASTRUCTURE AVAILABILITY]\nLocation: 456 Oak Ave, Philadelphia, PA 19104\nNetwork Type: Coax/HFC\nSpeed Capability: 500 Mbps (max download), 50 Mbps (max upload)\nConnection Type: Asymmetrical\nService Class: Business\n\nCustomer Question: Show me available business internet options"
+  }'
+```
+**Expected:** Recommends only Coax/Cable products up to 500 Mbps (200M, 500M). Excludes all Fiber products and 1G Coax (if exceeds speed).
+
+### TC-19: Product Comparison with Infrastructure Context
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_infra_compare",
+    "message": "[INFRASTRUCTURE AVAILABILITY]\nNetwork Type: Fiber\nSpeed Capability: 10000 Mbps (max download), 10000 Mbps (max upload)\nConnection Type: Symmetrical\n\nCompare all available fiber plans"
+  }'
+```
+**Expected:** Compares Fiber 1G, 5G, and 10G. Does not include Coax products in comparison.
+
+### TC-20: Query Without Infrastructure Context (Baseline)
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_no_infra",
+    "message": "What are your best business internet options?"
+  }'
+```
+**Expected:** Recommends all products across Fiber and Coax without filtering. Should present full catalog.
+
+### TC-21: Infrastructure Context with Speed Exceeding All Products
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_infra_high_speed",
+    "message": "[INFRASTRUCTURE AVAILABILITY]\nNetwork Type: Fiber\nSpeed Capability: 100000 Mbps (max download), 100000 Mbps (max upload)\nConnection Type: Symmetrical\n\nWhat are my options?"
+  }'
+```
+**Expected:** Recommends all Fiber products (1G, 5G, 10G) since infrastructure supports higher speeds.
+
+### TC-22: Infrastructure Context with Low Speed Limit
+```bash
+curl -X POST http://localhost:8003/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "test_user",
+    "session_id": "test_infra_low_speed",
+    "message": "[INFRASTRUCTURE AVAILABILITY]\nNetwork Type: Fiber\nSpeed Capability: 1000 Mbps (max download), 1000 Mbps (max upload)\nConnection Type: Symmetrical\n\nWhat business fiber plans are available?"
+  }'
+```
+**Expected:** Recommends only Fiber 1G product. Excludes 5G and 10G due to speed constraints.
+
+---
+
 ## Automated Test Suite
 
 Run all tests:
@@ -369,8 +445,13 @@ pytest tests/test_tools.py::TestProductTools::test_get_product_by_id_success -v
 - [ ] Health check returns correct status
 - [ ] Statistics endpoint works
 - [ ] Concurrent requests handled
+- [ ] Infrastructure-aware filtering works (TC-17 to TC-22)
+- [ ] Fiber infrastructure filters correctly
+- [ ] Coax infrastructure filters correctly
+- [ ] Speed limits are respected
+- [ ] Symmetrical requirements handled properly
 
 ---
 
-**Last Updated**: February 10, 2026  
+**Last Updated**: February 13, 2026  
 **Test Coverage**: 80%+

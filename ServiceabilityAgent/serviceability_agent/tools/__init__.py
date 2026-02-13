@@ -10,7 +10,7 @@ from .address_tools import (
 
 from .gis_tools import (
     check_service_availability,
-    get_products_by_technology,
+    get_infrastructure_by_technology,
     get_coverage_zones,
 )
 
@@ -19,6 +19,6 @@ __all__ = [
     "normalize_address",
     "extract_zip_code",
     "check_service_availability",
-    "get_products_by_technology",
+    "get_infrastructure_by_technology",
     "get_coverage_zones",
 ]
