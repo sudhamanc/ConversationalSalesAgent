@@ -10,7 +10,7 @@ from serviceability_agent.tools.address_tools import (
 )
 from serviceability_agent.tools.gis_tools import (
     check_service_availability,
-    get_products_by_technology,
+    get_infrastructure_by_technology,
     get_coverage_zones,
 )
 
@@ -133,10 +133,20 @@ class TestGISTools:
         result = check_service_availability(address)
         
         assert result["serviceable"] is True
-        assert len(result["available_products"]) > 0
+        assert "infrastructure" in result
+        assert result["infrastructure"] is not None
         assert result["service_zone"] == "Metro-East-PA"
         assert result["infrastructure_type"] == "FTTP"
         assert result["estimated_install_days"] == 5
+        
+        # Check infrastructure details
+        infra = result["infrastructure"]
+        assert infra["type"] == "Fiber"
+        assert "network_element" in infra
+        assert "speed_capability" in infra
+        assert infra["speed_capability"]["min_speed_mbps"] == 100
+        assert infra["speed_capability"]["max_speed_mbps"] == 10000
+        assert infra["speed_capability"]["symmetrical"] is True
     
     def test_serviceable_address_rural(self):
         """Test serviceable address in rural area"""
@@ -150,9 +160,13 @@ class TestGISTools:
         
         assert result["serviceable"] is True
         assert result["infrastructure_type"] == "HFC"
-        # Rural areas should have coax products
-        product_names = [p["product_name"] for p in result["available_products"]]
-        assert any("Coax" in name for name in product_names)
+        
+        # Check infrastructure details for HFC
+        infra = result["infrastructure"]
+        assert infra["type"] == "Coax/HFC"
+        assert infra["speed_capability"]["min_speed_mbps"] == 50
+        assert infra["speed_capability"]["max_speed_mbps"] == 500
+        assert infra["speed_capability"]["symmetrical"] is False
     
     def test_non_serviceable_address(self):
         """Test non-serviceable address"""
@@ -165,31 +179,39 @@ class TestGISTools:
         result = check_service_availability(address)
         
         assert result["serviceable"] is False
-        assert len(result["available_products"]) == 0
+        assert result.get("infrastructure") is None
         assert "reason" in result
         assert result["reason"] is not None
     
-    def test_products_by_technology_fttp(self):
-        """Test product lookup by technology - FTTP"""
-        products = get_products_by_technology("FTTP")
+    def test_infrastructure_by_technology_fttp(self):
+        """Test infrastructure lookup by technology - FTTP"""
+        infrastructure_list = get_infrastructure_by_technology("FTTP")
         
-        assert len(products) > 0
-        assert all(p["speed"] in ["1 Gbps", "5 Gbps", "10 Gbps"] for p in products)
+        assert len(infrastructure_list) > 0
+        infra = infrastructure_list[0]
+        assert infra["technology"] == "Fiber to the Premises (FTTP)"
+        assert infra["min_speed_mbps"] == 100
+        assert infra["max_speed_mbps"] == 10000
+        assert infra["symmetrical"] is True
     
-    def test_products_by_technology_hfc(self):
-        """Test product lookup by technology - HFC"""
-        products = get_products_by_technology("HFC")
+    def test_infrastructure_by_technology_hfc(self):
+        """Test infrastructure lookup by technology - HFC"""
+        infrastructure_list = get_infrastructure_by_technology("HFC")
         
-        assert len(products) > 0
-        assert all("Coax" in p["name"] for p in products)
+        assert len(infrastructure_list) > 0
+        infra = infrastructure_list[0]
+        assert "HFC" in infra["technology"]
+        assert infra["symmetrical"] is False
     
-    def test_products_by_technology_alias(self):
-        """Test product lookup with technology alias"""
-        fiber_products = get_products_by_technology("Fiber")
-        fttp_products = get_products_by_technology("FTTP")
+    def test_infrastructure_by_technology_alias(self):
+        """Test infrastructure lookup with technology alias"""
+        fiber_infra = get_infrastructure_by_technology("Fiber")
+        fttp_infra = get_infrastructure_by_technology("FTTP")
         
-        # Should return same products
-        assert len(fiber_products) == len(fttp_products)
+        # Should return same infrastructure
+        assert len(fiber_infra) == len(fttp_infra)
+        if len(fiber_infra) > 0:
+            assert fiber_infra[0]["min_speed_mbps"] == fttp_infra[0]["min_speed_mbps"]
     
     def test_coverage_zones(self):
         """Test coverage zone retrieval"""

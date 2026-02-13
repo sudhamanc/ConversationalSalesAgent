@@ -19,184 +19,200 @@ MOCK_COVERAGE_DATA = {
     "19107": {  # Philadelphia downtown - full fiber
         "serviceable": True,
         "technology": "FTTP",
-        "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "PHI-SW-001",
+                "switch_location": "123 Market St CO",
+                "cabinet_id": "PHI-CAB-015",
+                "fiber_pairs_available": 48,
+                "splice_point": "SP-19107-MKT",
+                "olt_chassis": "CISCO-ASR9K-001",
+                "olt_port": "1/1/5"
             },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$599/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 10000,
+                "symmetrical": True
             },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$999/mo"
-            },
-        ],
+            "service_class": "Enterprise",
+            "redundancy_available": True
+        },
         "zone": "Metro-East-PA",
         "install_days": 5
     },
     "19103": {  # Philadelphia city center - full fiber
         "serviceable": True,
         "technology": "FTTP",
-        "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "PHI-SW-002",
+                "switch_location": "456 Broad St CO",
+                "cabinet_id": "PHI-CAB-023",
+                "fiber_pairs_available": 36,
+                "splice_point": "SP-19103-BRD",
+                "olt_chassis": "CISCO-ASR9K-002",
+                "olt_port": "1/2/3"
             },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$599/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 5000,
+                "symmetrical": True
             },
-        ],
+            "service_class": "Business",
+            "redundancy_available": True
+        },
         "zone": "Metro-Center-PA",
         "install_days": 5
     },
     "18000": {  # Rural Pennsylvania - limited coax
         "serviceable": True,
         "technology": "HFC",
-        "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
+        "infrastructure": {
+            "type": "Coax/HFC",
+            "network_element": {
+                "node_id": "PA-NODE-185",
+                "node_location": "Rural Rd Tap",
+                "cmts_id": "CMTS-RURAL-001",
+                "cmts_port": "5/1",
+                "cable_pairs_available": 12,
+                "amplifier_cascade": 3,
+                "last_mile_type": "RG-6 Coax"
             },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
+            "speed_capability": {
+                "min_speed_mbps": 50,
+                "max_speed_mbps": 500,
+                "symmetrical": False
             },
-        ],
+            "service_class": "Standard",
+            "redundancy_available": False
+        },
         "zone": "Rural-PA",
         "install_days": 10
     },
     "10001": {  # New York City - full fiber
         "serviceable": True,
         "technology": "FTTP",
-        "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$299/mo"
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "NYC-SW-101",
+                "switch_location": "Manhattan CO-1",
+                "cabinet_id": "NYC-CAB-450",
+                "fiber_pairs_available": 72,
+                "splice_point": "SP-10001-5AV",
+                "olt_chassis": "JUNIPER-MX960-101",
+                "olt_port": "2/1/8"
             },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$699/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 10000,
+                "symmetrical": True
             },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1099/mo"
-            },
-        ],
+            "service_class": "Enterprise",
+            "redundancy_available": True
+        },
         "zone": "Metro-NYC",
         "install_days": 7
     },
     "90001": {  # Los Angeles - hybrid
         "serviceable": True,
         "technology": "DOCSIS 3.1",
-        "products": [
-            {
-                "id": "COAX-500M",
-                "name": "Business Internet 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
+        "infrastructure": {
+            "type": "Coax/DOCSIS 3.1",
+            "network_element": {
+                "node_id": "LA-NODE-901",
+                "node_location": "LA Downtown Hub",
+                "cmts_id": "CMTS-LA-050",
+                "cmts_port": "3/2",
+                "cable_pairs_available": 24,
+                "docsis_version": "3.1",
+                "channel_bonding": "32x8"
             },
-            {
-                "id": "COAX-1G",
-                "name": "Business Internet 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 1000,
+                "symmetrical": False
             },
-        ],
+            "service_class": "Business",
+            "redundancy_available": False
+        },
         "zone": "Metro-LA",
         "install_days": 7
     },
     "60601": {  # Chicago downtown - full fiber
         "serviceable": True,
         "technology": "FTTP",
-        "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$279/mo"
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "CHI-SW-201",
+                "switch_location": "Chicago Loop CO",
+                "cabinet_id": "CHI-CAB-310",
+                "fiber_pairs_available": 60,
+                "splice_point": "SP-60601-LOOP",
+                "olt_chassis": "CISCO-ASR9K-201",
+                "olt_port": "1/3/4"
             },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$649/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 10000,
+                "symmetrical": True
             },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1049/mo"
-            },
-        ],
+            "service_class": "Enterprise",
+            "redundancy_available": True
+        },
         "zone": "Metro-Chicago-Loop",
         "install_days": 5
     },
     "94102": {  # San Francisco - full fiber
         "serviceable": True,
         "technology": "FTTP",
-        "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$299/mo"
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "SF-SW-301",
+                "switch_location": "SF Downtown CO",
+                "cabinet_id": "SF-CAB-501",
+                "fiber_pairs_available": 54,
+                "splice_point": "SP-94102-MKT",
+                "olt_chassis": "JUNIPER-MX480-301",
+                "olt_port": "1/4/2"
             },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$699/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 5000,
+                "symmetrical": True
             },
-        ],
+            "service_class": "Business",
+            "redundancy_available": True
+        },
         "zone": "Metro-SF-Downtown",
         "install_days": 6
     },
     "02101": {  # Boston - full fiber
         "serviceable": True,
         "technology": "FTTP",
-        "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$269/mo"
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "BOS-SW-401",
+                "switch_location": "Boston Downtown CO",
+                "cabinet_id": "BOS-CAB-620",
+                "fiber_pairs_available": 48,
+                "splice_point": "SP-02101-DTN",
+                "olt_chassis": "CISCO-ASR9K-401",
+                "olt_port": "1/5/6"
             },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$629/mo"
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 10000,
+                "symmetrical": True
             },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1029/mo"
-            },
-        ],
+            "service_class": "Enterprise",
+            "redundancy_available": True
+        },
         "zone": "Metro-Boston-Downtown",
         "install_days": 5
     },
@@ -760,7 +776,7 @@ def check_service_availability(address: Dict[str, str]) -> Dict[str, Any]:
     Checks if telecom services are available at the given address.
     
     This is the MAIN deterministic tool for the Serviceability Agent.
-    Queries GIS/Coverage Map API to determine service availability.
+    Queries GIS/Coverage Map API to determine service availability and network infrastructure details.
     
     CRITICAL: This function NEVER invents data. All serviceability information
     comes from the GIS API (or mock data in development).
@@ -769,7 +785,8 @@ def check_service_availability(address: Dict[str, str]) -> Dict[str, Any]:
         address: Dict with street, city, state, zip_code keys
         
     Returns:
-        ServiceabilityResult dict with availability status and products
+        ServiceabilityResult dict with availability status, infrastructure details,
+        network elements (switch, cable pairs), and speed capabilities
         
     Example:
         >>> check_service_availability({
@@ -781,7 +798,11 @@ def check_service_availability(address: Dict[str, str]) -> Dict[str, Any]:
         {
             "serviceable": True,
             "address": {...},
-            "available_products": [...],
+            "infrastructure": {
+                "type": "Fiber",
+                "network_element": {"switch_id": "PHI-SW-001", ...},
+                "speed_capability": {"min_speed_mbps": 100, "max_speed_mbps": 10000}
+            },
             "service_zone": "Metro-East-PA"
         }
     """
@@ -815,7 +836,8 @@ def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:
     """
     Mock GIS lookup for development and testing.
     
-    This simulates a GIS API response based on ZIP code.
+    This simulates a GIS API response based on ZIP code, returning
+    infrastructure and network resource details instead of product plans.
     """
     zip_code = address['zip_code']
     
@@ -825,7 +847,7 @@ def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:
         return {
             "serviceable": False,
             "address": address,
-            "available_products": [],
+            "infrastructure": None,
             "reason": "No infrastructure at location. We're constantly expanding our network."
         }
     
@@ -835,27 +857,15 @@ def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:
         return {
             "serviceable": False,
             "address": address,
-            "available_products": [],
+            "infrastructure": None,
             "reason": coverage.get("reason", "Service not available at this location")
         }
     
-    # Build product list
-    products = [
-        {
-            "product_id": p["id"],
-            "product_name": p["name"],
-            "technology": coverage["technology"],
-            "speeds": p["speeds"],
-            "available": True,
-            "price": p.get("price")
-        }
-        for p in coverage["products"]
-    ]
-    
+    # Return infrastructure details instead of products
     return {
         "serviceable": True,
         "address": address,
-        "available_products": products,
+        "infrastructure": coverage["infrastructure"],
         "service_zone": coverage["zone"],
         "estimated_install_days": coverage["install_days"],
         "infrastructure_type": coverage["technology"]
@@ -867,6 +877,7 @@ def _call_real_gis_api(address: Dict[str, str]) -> Dict[str, Any]:
     Real GIS API integration for production use.
     
     This would connect to an actual GIS/serviceability API.
+    Returns infrastructure and network resource details.
     Implement when production API is available.
     """
     import requests
@@ -879,27 +890,31 @@ def _call_real_gis_api(address: Dict[str, str]) -> Dict[str, Any]:
         return {
             "serviceable": False,
             "address": address,
-            "available_products": [],
+            "infrastructure": None,
             "reason": "Unable to verify serviceability at this time. Please contact our sales team."
         }
     
     try:
-        # Make API request
+        # Make API call to real GIS service
         response = requests.post(
             f"{api_url}/serviceability/check",
-            json={"address": address},
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=5  # 5 second timeout
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json=address,
+            timeout=10
         )
+        
         response.raise_for_status()
         
         data = response.json()
         
-        # Transform API response to our schema
+        # Transform API response to our schema (infrastructure-focused)
         return {
             "serviceable": data.get("available", False),
             "address": address,
-            "available_products": data.get("products", []),
+            "infrastructure": data.get("infrastructure"),  # Expects infrastructure object from API
             "service_zone": data.get("zone"),
             "estimated_install_days": data.get("install_days"),
             "infrastructure_type": data.get("technology"),
@@ -911,7 +926,7 @@ def _call_real_gis_api(address: Dict[str, str]) -> Dict[str, Any]:
         return {
             "serviceable": False,
             "address": address,
-            "available_products": [],
+            "infrastructure": None,
             "reason": "Service check timed out. Please try again or contact our sales team."
         }
     except requests.RequestException as e:
@@ -919,48 +934,69 @@ def _call_real_gis_api(address: Dict[str, str]) -> Dict[str, Any]:
         return {
             "serviceable": False,
             "address": address,
-            "available_products": [],
+            "infrastructure": None,
             "reason": "Unable to verify serviceability at this time. Please contact our sales team."
         }
 
 
-def get_products_by_technology(technology: str, zone: str = "all") -> List[Dict[str, Any]]:
+def get_infrastructure_by_technology(technology: str, zone: str = "all") -> List[Dict[str, Any]]:
     """
-    Returns available products filtered by infrastructure technology.
+    Returns infrastructure capabilities filtered by technology type.
     
-    This is a supplementary tool for product catalog queries.
+    This tool returns network infrastructure capabilities and speed ranges
+    for different technology types, NOT specific product plans or pricing.
     
     Args:
         technology: Technology type - "Fiber", "Coax", "HFC", "FTTP", "DOCSIS"
         zone: Service zone identifier (optional)
         
     Returns:
-        List of product dicts matching criteria
+        List of infrastructure capability dicts matching criteria
         
     Example:
-        >>> get_products_by_technology("FTTP")
+        >>> get_infrastructure_by_technology("FTTP")
         [
-            {"id": "FIB-1G", "name": "Business Fiber 1G", "speed": "1 Gbps", ...},
+            {
+                "technology": "FTTP",
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 10000,
+                "symmetrical": True,
+                "service_classes": ["Enterprise", "Business"]
+            },
             ...
         ]
     """
-    logger.info(f"Fetching products for technology: {technology}, zone: {zone}")
+    logger.info(f"Fetching infrastructure capabilities for technology: {technology}, zone: {zone}")
     
-    # Mock product catalog by technology
-    product_catalog = {
-        "FTTP": [
-            {"id": "FIB-1G", "name": "Business Fiber 1G", "speed": "1 Gbps", "price": "$249/mo"},
-            {"id": "FIB-5G", "name": "Business Fiber 5G", "speed": "5 Gbps", "price": "$599/mo"},
-            {"id": "FIB-10G", "name": "Business Fiber 10G", "speed": "10 Gbps", "price": "$999/mo"},
-        ],
-        "HFC": [
-            {"id": "COAX-200M", "name": "Business Coax 200M", "speed": "200 Mbps", "price": "$79/mo"},
-            {"id": "COAX-500M", "name": "Business Coax 500M", "speed": "500 Mbps", "price": "$149/mo"},
-        ],
-        "DOCSIS 3.1": [
-            {"id": "COAX-500M", "name": "Business Internet 500M", "speed": "500 Mbps", "price": "$149/mo"},
-            {"id": "COAX-1G", "name": "Business Internet 1G", "speed": "1 Gbps", "price": "$249/mo"},
-        ],
+    # Infrastructure capabilities by technology type
+    infrastructure_catalog = {
+        "FTTP": {
+            "technology": "Fiber to the Premises (FTTP)",
+            "min_speed_mbps": 100,
+            "max_speed_mbps": 10000,
+            "symmetrical": True,
+            "service_classes": ["Enterprise", "Business"],
+            "typical_equipment": ["OLT", "ONT", "Fiber Optic Cable"],
+            "redundancy_capable": True
+        },
+        "HFC": {
+            "technology": "Hybrid Fiber-Coax (HFC)",
+            "min_speed_mbps": 50,
+            "max_speed_mbps": 1000,
+            "symmetrical": False,
+            "service_classes": ["Business", "Standard"],
+            "typical_equipment": ["CMTS", "Cable Modem", "Coax Cable"],
+            "redundancy_capable": False
+        },
+        "DOCSIS 3.1": {
+            "technology": "DOCSIS 3.1",
+            "min_speed_mbps": 100,
+            "max_speed_mbps": 1000,
+            "symmetrical": False,
+            "service_classes": ["Business", "Standard"],
+            "typical_equipment": ["CMTS", "DOCSIS 3.1 Modem", "Coax Cable"],
+            "redundancy_capable": False
+        },
     }
     
     # Normalize technology name
@@ -975,10 +1011,14 @@ def get_products_by_technology(technology: str, zone: str = "all") -> List[Dict[
     
     tech_normalized = tech_aliases.get(tech_normalized, tech_normalized)
     
-    products = product_catalog.get(tech_normalized, [])
+    infrastructure = infrastructure_catalog.get(tech_normalized)
     
-    logger.info(f"Found {len(products)} products for technology {tech_normalized}")
-    return products
+    if infrastructure:
+        logger.info(f"Found infrastructure capabilities for technology {tech_normalized}")
+        return [infrastructure]
+    else:
+        logger.warning(f"No infrastructure data for technology {tech_normalized}")
+        return []
 
 
 def get_coverage_zones() -> List[str]:

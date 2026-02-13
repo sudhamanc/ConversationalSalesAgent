@@ -1,10 +1,10 @@
 """
-Serviceability Agent - PRE-SALE address validation & coverage verification.
+Serviceability Agent - PRE-SALE address validation & network infrastructure verification.
 
 This agent is a deterministic, tool-based agent that:
 1. Validates customer addresses
-2. Checks GIS/Coverage Map for service availability
-3. Returns available products for serviceable locations
+2. Checks GIS/Coverage Map for network infrastructure availability
+3. Returns infrastructure details, network elements, and speed capabilities (NOT product plans/pricing)
 
 It is designed to be integrated into the Super Agent orchestration system
 as a sub-agent for the Configuration cluster.
@@ -23,7 +23,7 @@ from .tools.address_tools import (
 )
 from .tools.gis_tools import (
     check_service_availability,
-    get_products_by_technology,
+    get_infrastructure_by_technology,
     get_coverage_zones,
 )
 from .utils.logger import get_logger
@@ -51,9 +51,9 @@ serviceability_agent = Agent(
         validate_and_parse_address,
         normalize_address,
         extract_zip_code,
-        # GIS/Coverage tools
+        # GIS/Coverage tools - return infrastructure details, not products
         check_service_availability,
-        get_products_by_technology,
+        get_infrastructure_by_technology,
         get_coverage_zones,
     ],
     generate_content_config=types.GenerateContentConfig(

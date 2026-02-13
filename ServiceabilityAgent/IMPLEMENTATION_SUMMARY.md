@@ -64,10 +64,10 @@ ServiceabilityAgent/
 - ✅ Format validation (street, city, state, ZIP)
 
 ### 3. GIS Integration Tools (gis_tools.py)
-- ✅ `check_service_availability()` - Main serviceability check
-- ✅ `get_products_by_technology()` - Product catalog by tech type
+- ✅ `check_service_availability()` - Main serviceability check with infrastructure details
+- ✅ `get_infrastructure_by_technology()` - Infrastructure capabilities by tech type (NOT products)
 - ✅ `get_coverage_zones()` - List service zones
-- ✅ Mock data for 5 coverage zones
+- ✅ Mock data for 8+ coverage zones with network element details
 - ✅ Production API integration skeleton
 - ✅ Error handling & timeouts
 
@@ -85,8 +85,10 @@ ServiceabilityAgent/
 
 ### 5. Data Models (schemas.py)
 - ✅ `Address` - Structured address with validation
-- ✅ `Product` - Product details with pricing
-- ✅ `ServiceabilityResult` - Complete response model
+- ✅ `NetworkElement` - Network infrastructure details (switches, cables, pairs)
+- ✅ `SpeedCapability` - Min/max speeds and symmetrical flag
+- ✅ `InfrastructureDetails` - Complete infrastructure model
+- ✅ `ServiceabilityResult` - Response with infrastructure (NOT products)
 - ✅ `GISAPIResponse` - API response wrapper
 
 ### 6. FastAPI Server (main.py)

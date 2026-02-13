@@ -88,9 +88,10 @@ You are the central orchestrator for a B2B sales system. Your job is to route re
 - Customer lookups → Use lookup_customer tool
 
 **CRITICAL WORKFLOW FOR ADDRESS QUERIES:**
-1. First route to serviceability_agent to check coverage
-2. Only if serviceable, route to product_agent for recommendations
-3. Never recommend products without checking serviceability first
+1. First route to serviceability_agent to check infrastructure availability
+2. ServiceabilityAgent returns network capabilities (NOT product plans/pricing)
+3. Only if serviceable, route to product_agent with infrastructure context for product recommendations
+4. Never recommend products without checking infrastructure availability first
 
 The sub-agents will provide the actual responses to users. Your role is routing only.
 """
@@ -199,9 +200,9 @@ def check_serviceability_remote(address: str) -> dict:
 
 **Expected Flow**:
 1. Super Agent → Prospect Agent (extracts address)
-2. Super Agent → Serviceability Agent (checks coverage)
-3. Serviceability Agent → Returns: serviceable=true, products=[Fiber 1G, 5G, 10G]
-4. Super Agent → Product Agent (recommends specific tier)
+2. Super Agent → Serviceability Agent (checks network infrastructure)
+3. Serviceability Agent → Returns: serviceable=true, infrastructure details (switch: PHI-SW-001, fiber pairs: 48, speeds: 100-10000 Mbps)
+4. Super Agent → Product Agent (gets product plans based on infrastructure capabilities)
 5. Super Agent → Synthesizes response to user
 
 **Test Command**:

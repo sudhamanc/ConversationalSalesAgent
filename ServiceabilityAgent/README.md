@@ -10,13 +10,14 @@
 
 ## 📋 Overview
 
-The **Serviceability Agent** is a specialized AI agent built on Google's Agent Development Kit (ADK) that validates customer addresses and determines service availability **before** any quotes are generated. It integrates with GIS/Coverage Map APIs to provide authoritative, zero-hallucination responses about product availability at specific locations.
+The **Serviceability Agent** is a specialized AI agent built on Google's Agent Development Kit (ADK) that validates customer addresses and determines **network infrastructure availability** **before** any product quotes are generated. It integrates with GIS/Coverage Map APIs to provide authoritative, zero-hallucination responses about infrastructure capabilities, network elements, and speed ranges at specific locations.
 
 ### Key Features
 
 - ✅ **Address Validation**: Parse and validate physical addresses with format checking
-- 🗺️ **GIS Integration**: Query coverage maps to determine service availability
-- 📦 **Product Filtering**: Return only products available for specific locations
+- 🗺️ **GIS Integration**: Query coverage maps to determine network infrastructure availability
+- 🔌 **Infrastructure Details**: Return network elements (switches, cable pairs, fiber resources)
+- ⚡ **Speed Capabilities**: Provide min/max speed ranges supported at each location
 - 🚀 **24-Hour Caching**: Reduce API calls with intelligent result caching
 - 🔒 **Deterministic**: Temperature = 0 ensures consistent, factual responses
 - 🛠️ **Tool-Based**: All data comes from APIs, never invented by the LLM
@@ -30,11 +31,12 @@ The **Serviceability Agent** is a specialized AI agent built on Google's Agent D
 | Attribute | Value |
 |-----------|-------|
 | **Type** | Deterministic Configuration Agent |
-| **Purpose** | PRE-SALE address validation & coverage verification |
+| **Purpose** | PRE-SALE address validation & network infrastructure verification |
 | **Framework** | Google ADK (Agent Development Kit) |
 | **Source of Truth** | GIS/Coverage Map API |
 | **Temperature** | 0.0 (fully deterministic) |
 | **Cluster** | Configuration Agents |
+| **Output** | Infrastructure details, NOT product plans/pricing |
 
 ### Component Structure
 
@@ -145,15 +147,8 @@ The agent uses **6 deterministic tools**:
 | `validate_and_parse_address` | Parse and validate address format |
 | `normalize_address` | Standardize address formatting |
 | `extract_zip_code` | Quick ZIP code extraction |
-| `check_service_availability` | **MAIN TOOL** - Query GIS for coverage |
-| `get_products_by_technology` | Get products by infrastructure type |
-| `get_coverage_zones` | List all service zones |
-
----
-
-## 🛠️ Usage
-
-### Standalone API
+| `check_service_availability` | **MAIN TOOL** - Query GIS for infrastructure & speed capabilities |
+| `get_infrastructure_by_technology` | Get infrastructure capabilities by technology type |
 
 The agent can run as a standalone service:
 
@@ -198,12 +193,8 @@ root_agent = Agent(
 
 | Scenario | Input | Expected Output |
 |----------|-------|-----------------|
-| Serviceable fiber address | "123 Market St, Philadelphia, PA 19107" | `serviceable: true`, Fiber products listed |
-| Serviceable coax only | "456 Rural Rd, Smalltown, PA 18000" | `serviceable: true`, Coax products listed |
-| Address normalization | "123 market st phila pa 19107" | Normalizes and validates successfully |
-
-### Negative Test Cases
-
+| Serviceable fiber address | "123 Market St, Philadelphia, PA 19107" | `serviceable: true`, Fiber infrastructure details (switch, pairs, 100-10000 Mbps) |
+| Serviceable coax only | "456 Rural Rd, Smalltown, PA 18000" | `serviceable: true`, Coax/HFC infrastructure (node, CMTS, 50-500 Mbps) |
 | Scenario | Input | Expected Output |
 |----------|-------|-----------------|
 | Non-serviceable | "789 Remote Rd, Nowhere, AK 99999" | `serviceable: false`, reason provided |

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from serviceability_agent.tools.address_tools import validate_and_parse_address
 from serviceability_agent.tools.gis_tools import (
     check_service_availability,
-    get_products_by_technology,
+    get_infrastructure_by_technology,
     get_coverage_zones
 )
 from serviceability_agent.utils.cache import get_cache_stats, clear_cache
@@ -80,9 +80,30 @@ def test_serviceability_checks():
         print(f"   Infrastructure: {result['infrastructure_type']}")
         print(f"   Service Zone: {result['service_zone']}")
         print(f"   Install Time: {result['estimated_install_days']} days")
-        print(f"   Available Products: {len(result['available_products'])}")
-        for product in result['available_products']:
-            print(f"      • {product['product_name']} - {product['speeds'][0]} ({product.get('price', 'N/A')})")
+        
+        if 'infrastructure' in result and result['infrastructure']:
+            infra = result['infrastructure']
+            print(f"   Infrastructure Type: {infra['type']}")
+            print(f"   Service Class: {infra['service_class']}")
+            
+            # Network element details
+            if 'network_element' in infra:
+                ne = infra['network_element']
+                print(f"   Network Elements:")
+                if 'switch_id' in ne:
+                    print(f"      Switch ID: {ne['switch_id']}")
+                if 'fiber_pairs_available' in ne:
+                    print(f"      Fiber Pairs: {ne['fiber_pairs_available']}")
+                if 'cable_pairs_available' in ne:
+                    print(f"      Cable Pairs: {ne['cable_pairs_available']}")
+            
+            # Speed capabilities
+            if 'speed_capability' in infra:
+                speed = infra['speed_capability']
+                print(f"   Speed Capabilities:")
+                print(f"      Min: {speed['min_speed_mbps']} Mbps")
+                print(f"      Max: {speed['max_speed_mbps']} Mbps")
+                print(f"      Symmetrical: {speed['symmetrical']}")
     else:
         print(f"❌ Address not serviceable: {result.get('reason')}")
     
@@ -102,16 +123,19 @@ def test_serviceability_checks():
     else:
         print("❌ This address should not be serviceable")
 
-def test_product_catalog():
-    """Test product catalog retrieval"""
-    print_section("TEST 3: Product Catalog")
+def test_infrastructure_catalog():
+    """Test infrastructure catalog retrieval"""
+    print_section("TEST 3: Infrastructure Catalog")
     
     technologies = ['FTTP', 'HFC', 'DOCSIS 3.1']
     for tech in technologies:
-        products = get_products_by_technology(tech)
-        print(f"\n📦 {tech} Products: {len(products)} available")
-        for product in products:
-            print(f"   • {product['name']} - {product['speed']}")
+        infrastructure_list = get_infrastructure_by_technology(tech)
+        print(f"\n🔧 {tech} Infrastructure: {len(infrastructure_list)} type(s)")
+        for infra in infrastructure_list:
+            print(f"   • Technology: {infra['technology']}")
+            print(f"     Speed Range: {infra['min_speed_mbps']}-{infra['max_speed_mbps']} Mbps")
+            print(f"     Symmetrical: {infra['symmetrical']}")
+            print(f"     Service Classes: {', '.join(infra['service_classes'])}")
 
 def test_coverage_zones():
     """Test coverage zone retrieval"""
@@ -200,7 +224,7 @@ def main():
     try:
         test_address_validation()
         test_serviceability_checks()
-        test_product_catalog()
+        test_infrastructure_catalog()
         test_coverage_zones()
         test_caching()
         test_agent_initialization()
