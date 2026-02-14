@@ -22,6 +22,7 @@ The **Discovery Agent** is a sales intelligence system powered by Google's Gemin
 
 ```
 DiscoveryAgent/
+├── main.py                     # Main FastAPI application entry point
 ├── main_server.py              # FastAPI REST API server
 ├── prospect_chat.py            # Natural language chat interface
 ├── bootstrap_agent/
