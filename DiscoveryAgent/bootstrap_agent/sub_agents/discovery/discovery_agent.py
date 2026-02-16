@@ -2,6 +2,7 @@
 
 
 import os
+import json
 import logging
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
@@ -43,23 +44,27 @@ def search_companies(
     results = db.search_companies(company_name, industry, region, customer_status)
     
     if not results:
-        return "No companies found matching the search criteria."
+        return json.dumps({"found": 0, "companies": []})
     
-    output = f"Found {len(results)} companies:\n\n"
+    companies = []
     for company in results:
-        output += f"Company: {company['Company Name']}\n"
-        output += f"  Industry: {company['Industry']}\n"
-        output += f"  Region: {company['Territory/Region']}\n"
-        output += f"  Location: {company.get('Street', 'N/A')}, {company.get('City', 'N/A')}, {company.get('State', 'N/A')}\n"
-        output += f"  Website: {company['Website']}\n"
-        output += f"  Status: {'Existing Customer' if company.get('Existing Customer') == 'Y' else 'Prospect'}\n"
-        if company.get('Current Products'):
-            output += f"  Current Products: {company['Current Products']}\n"
-        if company.get('Products of Interest'):
-            output += f"  Products of Interest: {company['Products of Interest']}\n"
-        output += "\n"
+        companies.append({
+            "company_name": company['Company Name'],
+            "industry": company['Industry'],
+            "region": company['Territory/Region'],
+            "address": {
+                "street": company.get('Street', 'N/A'),
+                "city": company.get('City', 'N/A'),
+                "state": company.get('State', 'N/A'),
+                "zip_code": company.get('zip_code', 'N/A')
+            },
+            "website": company['Website'],
+            "customer_status": "Existing Customer" if company.get('Existing Customer') == 'Y' else "Prospect",
+            "current_products": company.get('Current Products'),
+            "products_of_interest": company.get('Products of Interest')
+        })
     
-    return output
+    return json.dumps({"found": len(companies), "companies": companies}, indent=2)
 
 
 def get_company_profile(company_name: str) -> str:
@@ -76,35 +81,38 @@ def get_company_profile(company_name: str) -> str:
     company = db.get_company_details(company_name)
     
     if not company:
-        return f"Company '{company_name}' not found in database."
+        return json.dumps({"error": f"Company '{company_name}' not found in database."})
     
-    output = f"=== Company Profile: {company['Company Name']} ===\n\n"
-    output += f"Industry: {company['Industry']}\n"
-    output += f"Region: {company['Territory/Region']}\n"
-    output += f"Location: {company.get('Street', 'N/A')}, {company.get('City', 'N/A')}, {company.get('State', 'N/A')}\n"
-    output += f"Website: {company['Website']}\n"
-    output += f"\n--- Customer Information ---\n"
-    output += f"Status: {'Existing Customer' if company.get('Existing Customer') == 'Y' else 'Prospect'}\n"
-    
-    if company.get('Current Products'):
-        output += f"Current Products: {company['Current Products']}\n"
-    
-    if company.get('Products of Interest'):
-        output += f"Products of Interest: {company['Products of Interest']}\n"
+    profile = {
+        "company_name": company['Company Name'],
+        "industry": company['Industry'],
+        "region": company['Territory/Region'],
+        "address": {
+            "street": company.get('Street', 'N/A'),
+            "city": company.get('City', 'N/A'),
+            "state": company.get('State', 'N/A'),
+            "zip_code": company.get('zip_code', 'N/A')
+        },
+        "website": company['Website'],
+        "customer_status": "Existing Customer" if company.get('Existing Customer') == 'Y' else "Prospect",
+        "current_products": company.get('Current Products'),
+        "products_of_interest": company.get('Products of Interest')
+    }
     
     if company.get('Estimated Annual Spend'):
-        output += f"\n--- Advertising Spend ---\n"
-        output += f"Estimated Annual Spend: ${company['Estimated Annual Spend']:,}\n"
-        output += f"  Digital: ${company.get('Digital', 0):,}\n"
-        output += f"  Programmatic: ${company.get('Programmatic', 0):,}\n"
-        output += f"  TV: ${company.get('TV', 0):,}\n"
-        output += f"  Audio: ${company.get('Audio', 0):,}\n"
-        output += f"  OOH: ${company.get('OOH', 0):,}\n"
-        output += f"  Search: ${company.get('Search', 0):,}\n"
-        output += f"  Social: ${company.get('Social', 0):,}\n"
-        output += f"Primary Agency: {company.get('Primary Agency', 'Unknown')}\n"
+        profile["advertising_spend"] = {
+            "total": company['Estimated Annual Spend'],
+            "digital": company.get('Digital', 0),
+            "programmatic": company.get('Programmatic', 0),
+            "tv": company.get('TV', 0),
+            "audio": company.get('Audio', 0),
+            "ooh": company.get('OOH', 0),
+            "search": company.get('Search', 0),
+            "social": company.get('Social', 0),
+            "primary_agency": company.get('Primary Agency', 'Unknown')
+        }
     
-    return output
+    return json.dumps(profile, indent=2)
 
 
 def get_contact_personas(company_name: str) -> str:
@@ -122,9 +130,7 @@ def get_contact_personas(company_name: str) -> str:
     contacts = db.get_contacts_for_company(company_name)
     
     if not contacts:
-        return f"No contacts found for company '{company_name}'."
-    
-    output = f"=== Contacts for {company_name} ===\n\n"
+        return json.dumps({"company_name": company_name, "contacts": []})
     
     # Group by role
     buyers = [c for c in contacts if c.get('Role in Decision Making') == 'Economic Buyer']
@@ -133,43 +139,16 @@ def get_contact_personas(company_name: str) -> str:
     influencers = [c for c in contacts if c.get('Role in Decision Making') == 'Influencer']
     users = [c for c in contacts if c.get('Role in Decision Making') == 'End User']
     
-    if buyers:
-        output += "--- Economic Buyers (Final Decision Authority) ---\n"
-        for contact in buyers:
-            output += f"  • {contact['Name']} - {contact['Title']}\n"
-            output += f"    Email: {contact.get('Email', 'N/A')} | Phone: {contact.get('Phone', 'N/A')}\n"
-            if contact.get('Notes'):
-                output += f"    Notes: {contact['Notes']}\n"
-        output += "\n"
+    contact_data = {
+        "company_name": company_name,
+        "economic_buyers": [{"name": c['Name'], "title": c['Title'], "email": c.get('Email', 'N/A'), "phone": c.get('Phone', 'N/A'), "notes": c.get('Notes')} for c in buyers],
+        "technical_buyers": [{"name": c['Name'], "title": c['Title'], "email": c.get('Email', 'N/A'), "phone": c.get('Phone', 'N/A')} for c in tech_buyers],
+        "champions": [{"name": c['Name'], "title": c['Title'], "email": c.get('Email', 'N/A'), "phone": c.get('Phone', 'N/A')} for c in champions],
+        "influencers": [{"name": c['Name'], "title": c['Title'], "email": c.get('Email', 'N/A')} for c in influencers],
+        "end_users": [{"name": c['Name'], "title": c['Title']} for c in users]
+    }
     
-    if tech_buyers:
-        output += "--- Technical Buyers (Technical Evaluation) ---\n"
-        for contact in tech_buyers:
-            output += f"  • {contact['Name']} - {contact['Title']}\n"
-            output += f"    Email: {contact.get('Email', 'N/A')} | Phone: {contact.get('Phone', 'N/A')}\n"
-        output += "\n"
-    
-    if champions:
-        output += "--- Champions (Internal Advocates) ---\n"
-        for contact in champions:
-            output += f"  • {contact['Name']} - {contact['Title']}\n"
-            output += f"    Email: {contact.get('Email', 'N/A')} | Phone: {contact.get('Phone', 'N/A')}\n"
-        output += "\n"
-    
-    if influencers:
-        output += "--- Influencers ---\n"
-        for contact in influencers:
-            output += f"  • {contact['Name']} - {contact['Title']}\n"
-            output += f"    Email: {contact.get('Email', 'N/A')}\n"
-        output += "\n"
-    
-    if users:
-        output += "--- End Users ---\n"
-        for contact in users:
-            output += f"  • {contact['Name']} - {contact['Title']}\n"
-        output += "\n"
-    
-    return output
+    return json.dumps(contact_data, indent=2)
 
 
 def get_customer_intent(company_name: str) -> str:
@@ -188,43 +167,42 @@ def get_customer_intent(company_name: str) -> str:
     actions = db.get_actions_for_company(company_name)
     
     if not insights and not opportunities:
-        return f"No intent data found for company '{company_name}'."
+        return json.dumps({"company_name": company_name, "error": "No intent data found"})
     
-    output = f"=== Customer Intent Analysis: {company_name} ===\n\n"
+    intent_data = {"company_name": company_name}
     
     if insights:
-        output += "--- Buying Signals ---\n"
-        output += f"{insights.get('Buying Signals', 'None identified')}\n\n"
-        
-        output += "--- Pain Points ---\n"
-        output += f"{insights.get('Pain Points', 'None identified')}\n\n"
-        
-        output += "--- Recommended Positioning ---\n"
-        output += f"{insights.get('Recommended Positioning', 'None specified')}\n\n"
+        intent_data["buying_signals"] = insights.get('Buying Signals', 'None identified')
+        intent_data["pain_points"] = insights.get('Pain Points', 'None identified')
+        intent_data["recommended_positioning"] = insights.get('Recommended Positioning', 'None specified')
     
     if opportunities:
-        output += f"--- Active Opportunities ({len(opportunities)}) ---\n"
-        for opp in opportunities[:5]:  # Show top 5
-            output += f"\n• {opp['Opportunity Name']}\n"
-            output += f"  Stage: {opp['Stage']}\n"
-            output += f"  Est. MRC: ${opp.get('Total MRC (Est)', 0):,}\n"
-            output += f"  BANT Score: {opp.get('BANT_Score_0to100', 0):.1f}/100 ({opp.get('BANT_Priority_Bucket', 'N/A')})\n"
-            output += f"  Budget Status: {opp.get('Budget', 'Unknown')}\n"
-            output += f"  Authority: {opp.get('Authority', 'Unknown')}\n"
-            output += f"  Need Level: {opp.get('Need', 'Unknown')}\n"
-            output += f"  Timeline: {opp.get('Timeline (days)', 'N/A')} days (Target: {opp.get('Target Close Date', 'N/A')})\n"
-            output += f"  Next Step: {opp.get('Next Step', 'N/A')}\n"
-            if opp.get('BANT_Data_Gaps'):
-                output += f"  ⚠️ Data Gaps: {opp['BANT_Data_Gaps']}\n"
+        intent_data["opportunities"] = []
+        for opp in opportunities[:5]:  # Top 5
+            intent_data["opportunities"].append({
+                "name": opp['Opportunity Name'],
+                "stage": opp['Stage'],
+                "mrc_estimate": opp.get('Total MRC (Est)', 0),
+                "bant_score": opp.get('BANT_Score_0to100', 0),
+                "bant_priority": opp.get('BANT_Priority_Bucket', 'N/A'),
+                "budget": opp.get('Budget', 'Unknown'),
+                "authority": opp.get('Authority', 'Unknown'),
+                "need": opp.get('Need', 'Unknown'),
+                "timeline_days": opp.get('Timeline (days)', 'N/A'),
+                "target_close_date": opp.get('Target Close Date', 'N/A'),
+                "next_step": opp.get('Next Step', 'N/A'),
+                "data_gaps": opp.get('BANT_Data_Gaps')
+            })
     
     if actions:
-        output += f"\n--- Recommended Actions ---\n"
-        output += f"Owner: {actions.get('Owner', 'Unassigned')}\n"
-        output += f"Priority: {actions.get('Priority', 'Unknown')}\n"
-        output += f"Initial Outreach: {actions.get('Initial Outreach Date', 'Not scheduled')}\n"
-        output += f"Follow-Up: {actions.get('Follow-Up Cadence', 'Not defined')}\n"
+        intent_data["recommended_actions"] = {
+            "owner": actions.get('Owner', 'Unassigned'),
+            "priority": actions.get('Priority', 'Unknown'),
+            "initial_outreach": actions.get('Initial Outreach Date', 'Not scheduled'),
+            "follow_up_cadence": actions.get('Follow-Up Cadence', 'Not defined')
+        }
     
-    return output
+    return json.dumps(intent_data, indent=2)
 
 
 def search_by_intent_signals(keyword: str) -> str:
@@ -241,17 +219,20 @@ def search_by_intent_signals(keyword: str) -> str:
     results = db.search_by_intent_signals(keyword)
     
     if not results:
-        return f"No companies found with intent signals matching '{keyword}'."
+        return json.dumps({"keyword": keyword, "found": 0, "companies": []})
     
-    output = f"Found {len(results)} companies with '{keyword}' signals:\n\n"
+    companies = []
     for company in results:
-        output += f"Company: {company['Company Name']}\n"
-        output += f"  Industry: {company['Industry']} | Region: {company['Territory/Region']}\n"
-        output += f"  Buying Signals: {company.get('Buying Signals', 'N/A')}\n"
-        output += f"  Pain Points: {company.get('Pain Points', 'N/A')}\n"
-        output += f"  Positioning: {company.get('Recommended Positioning', 'N/A')}\n\n"
+        companies.append({
+            "company_name": company['Company Name'],
+            "industry": company['Industry'],
+            "region": company['Territory/Region'],
+            "buying_signals": company.get('Buying Signals', 'N/A'),
+            "pain_points": company.get('Pain Points', 'N/A'),
+            "recommended_positioning": company.get('Recommended Positioning', 'N/A')
+        })
     
-    return output
+    return json.dumps({"keyword": keyword, "found": len(companies), "companies": companies}, indent=2)
 
 
 def get_high_priority_opportunities(limit: int = 10) -> str:
@@ -268,16 +249,21 @@ def get_high_priority_opportunities(limit: int = 10) -> str:
     opportunities = db.get_high_priority_opportunities(limit)
     
     if not opportunities:
-        return "No high-priority opportunities found."
+        return json.dumps({"found": 0, "opportunities": []})
     
-    output = f"=== Top {len(opportunities)} Priority Opportunities ===\n\n"
-    for i, opp in enumerate(opportunities, 1):
-        output += f"{i}. {opp['Company Name']} - {opp['Opportunity Name']}\n"
-        output += f"   Stage: {opp['Stage']} | MRC: ${opp.get('Total MRC (Est)', 0):,}\n"
-        output += f"   BANT Score: {opp.get('BANT_Score_0to100', 0):.1f}/100 ({opp.get('BANT_Priority_Bucket', 'N/A')})\n"
-        output += f"   Target Close: {opp.get('Target Close Date', 'N/A')}\n\n"
+    opp_data = []
+    for opp in opportunities:
+        opp_data.append({
+            "company_name": opp['Company Name'],
+            "opportunity_name": opp['Opportunity Name'],
+            "stage": opp['Stage'],
+            "mrc_estimate": opp.get('Total MRC (Est)', 0),
+            "bant_score": opp.get('BANT_Score_0to100', 0),
+            "bant_priority": opp.get('BANT_Priority_Bucket', 'N/A'),
+            "target_close_date": opp.get('Target Close Date', 'N/A')
+        })
     
-    return output
+    return json.dumps({"found": len(opp_data), "opportunities": opp_data}, indent=2)
 
 
 # ==================== WRITE FUNCTIONS ====================
@@ -327,10 +313,13 @@ def add_new_company(
         parent_company, existing_customer, current_products, products_of_interest, zip_code
     )
 
-    if success:
-        return f"✅ Successfully added company: {company_name}"
-    else:
-        return f"❌ Failed to add company '{company_name}'. It may already exist in the database."
+    result = {
+        "action": "add_company",
+        "success": success,
+        "company_name": company_name,
+        "message": f"Successfully added company: {company_name}" if success else f"Failed to add company '{company_name}'. It may already exist in the database."
+    }
+    return json.dumps(result, indent=2)
 
 
 def update_company_info(
@@ -382,15 +371,18 @@ def update_company_info(
     if products_of_interest: updates['products_of_interest'] = products_of_interest
 
     if not updates:
-        return "❌ No fields provided to update."
+        return json.dumps({"action": "update_company", "success": False, "company_name": company_name, "message": "No fields provided to update"}, indent=2)
 
     success = db.update_company(company_name, **updates)
 
-    if success:
-        fields_updated = ', '.join(updates.keys())
-        return f"✅ Successfully updated {company_name}: {fields_updated}"
-    else:
-        return f"❌ Failed to update company '{company_name}'. It may not exist in the database."
+    result = {
+        "action": "update_company",
+        "success": success,
+        "company_name": company_name,
+        "fields_updated": list(updates.keys()) if success else [],
+        "message": f"Successfully updated {company_name}: {', '.join(updates.keys())}" if success else f"Failed to update company '{company_name}'. It may not exist in the database."
+    }
+    return json.dumps(result, indent=2)
 
 
 def add_new_contact(
@@ -423,10 +415,14 @@ def add_new_contact(
         email, phone, notes
     )
     
-    if success:
-        return f"✅ Successfully added contact: {contact_name} at {company_name}"
-    else:
-        return f"❌ Failed to add contact. Company '{company_name}' may not exist."
+    result = {
+        "action": "add_contact",
+        "success": success,
+        "company_name": company_name,
+        "contact_name": contact_name,
+        "message": f"Successfully added contact: {contact_name} at {company_name}" if success else f"Failed to add contact. Company '{company_name}' may not exist."
+    }
+    return json.dumps(result, indent=2)
 
 
 def update_contact_info(
@@ -462,15 +458,19 @@ def update_contact_info(
     if notes: updates['notes'] = notes
     
     if not updates:
-        return "❌ No fields provided to update."
+        return json.dumps({"action": "update_contact", "success": False, "company_name": company_name, "contact_name": contact_name, "message": "No fields provided to update"}, indent=2)
     
     success = db.update_contact(company_name, contact_name, **updates)
     
-    if success:
-        fields_updated = ', '.join(updates.keys())
-        return f"✅ Successfully updated contact {contact_name}: {fields_updated}"
-    else:
-        return f"❌ Failed to update contact '{contact_name}' at '{company_name}'."
+    result = {
+        "action": "update_contact",
+        "success": success,
+        "company_name": company_name,
+        "contact_name": contact_name,
+        "fields_updated": list(updates.keys()) if success else [],
+        "message": f"Successfully updated contact {contact_name}: {', '.join(updates.keys())}" if success else f"Failed to update contact '{contact_name}' at '{company_name}'."
+    }
+    return json.dumps(result, indent=2)
 
 
 def add_or_update_insights(
@@ -496,10 +496,13 @@ def add_or_update_insights(
         company_name, buying_signals, pain_points, recommended_positioning
     )
     
-    if success:
-        return f"✅ Successfully updated insights for: {company_name}"
-    else:
-        return f"❌ Failed to update insights for '{company_name}'."
+    result = {
+        "action": "add_or_update_insights",
+        "success": success,
+        "company_name": company_name,
+        "message": f"Successfully updated insights for: {company_name}" if success else f"Failed to update insights for '{company_name}'."
+    }
+    return json.dumps(result, indent=2)
 
 
 # Define the discovery agent
@@ -516,21 +519,46 @@ Your primary responsibilities:
 4. **Database Management**: Add new companies, contacts, and insights; update existing records
 
 When responding:
+- All tools return JSON responses - parse them to extract the data you need
 - Always start by understanding what specific information the user needs
 - Use the appropriate tools to query the prospecting database
-- Provide structured, actionable insights
+- Provide structured, actionable insights based on the JSON data
 - Highlight decision makers (Economic Buyers) and key influencers
 - Surface high-priority opportunities and buying signals
 - Recommend next steps based on BANT scores and customer readiness
 
 Be conversational but data-driven. Focus on helping sales teams prioritize accounts and personalize their outreach.
 
-**When a business is not recognized in the database:**
+**CRITICAL: Company Discovery Flow**
+
+**Step 1: Check if company exists in database**
+When a user mentions their company name, ALWAYS search for it first using `search_companies`.
+
+**If company EXISTS in database:**
+1. Retrieve the company profile using `get_company_profile` to get the full address
+2. Parse the JSON response to extract company details (especially the full address with zip code)
+3. Present the found information and ask for confirmation:
+   "I found **[Company Name]** in our system at **[Full Address with Zip Code]**. 
+   
+   Are you calling about service for this location?"
+
+4. Based on customer response:
+   - **If YES (same location):** Immediately inform them you're checking serviceability:
+     "Great! Let me check if this address is serviceable and what network infrastructure is available..."
+     Then signal transfer to serviceability_agent.
+   
+   - **If NO (different/new location):** Start collecting the new address:
+     "I understand you're calling about a different location. Could you please provide the full address for the new location?"
+     Then proceed to collect: Street, City, State, Zip Code and register as a new location.
+
+**If company DOESN'T exist in database:**
 Respond in a customer-friendly way. Do not mention internal systems or databases. Instead, warmly welcome the user and guide them through providing the information needed to get started:
 
 "We are more than happy to have you as a customer! Let's get you started. I'll just need a bit more information:"
 
-**Required information to collect:**
+Then collect required information and proceed to registration.
+
+**Required information to collect (for new companies or new locations):**
 - Company Name
 - Industry
 - Street
@@ -561,7 +589,7 @@ Automatically infer the territory/region from the zip code or state using this m
     - Only omit `products_of_interest` when there is truly no clear indication
         of what services they are interested in.
 
-**IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database. Do not ask for contact information (name, email, title) during initial company setup - this can be collected later if needed.
+**IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database using `add_new_company` (which returns JSON) and parse the success status. Do not ask for contact information (name, email, title) during initial company setup - this can be collected later if needed.
 
 **INTELLIGENT INFERENCE - Use context clues to avoid unnecessary questions:**
 
@@ -593,7 +621,7 @@ Automatically infer the territory/region from the zip code or state using this m
 - Ask for one missing required field at a time ONLY if you cannot infer it
 - If the user provides multiple fields in one message, fill as many as possible
 - Do not ask for information you already have from the conversation so far
-- After all required fields are collected, use add_new_company to create the record and confirm with them
+- After all required fields are collected, use add_new_company to create the record and parse the JSON response
 - Never ask the user if they are a customer or prospect; always infer this from the information you have
 - Never ask the user for territory/region; always infer it from zip code or state
 - Be polite and efficient, minimizing the number of questions by leveraging intelligent inference
@@ -601,16 +629,17 @@ Automatically infer the territory/region from the zip code or state using this m
 When adding or updating data:
 - Validate that required fields are provided
 - Use proper formats (e.g., state abbreviations, Y/N for flags)
-- Provide clear success/failure feedback
+- Parse the JSON responses from tools and extract success status and messages
+- Provide clear success/failure feedback to the user based on the JSON data
 
-**After successfully adding a company with a complete address:**
-Confirm the registration and then ASK the user if they would like to check service availability. Your response should be structured as:
+**After successfully adding a NEW company with a complete address:**
+Confirm the registration and inform the user that you will check service availability:
 
-"Welcome! I've registered **[Company Name]** at **[Full Address]**. 
+"Welcome! I've registered **[Company Name]** at **[Full Address including Zip Code]** in our database. 
 
-Would you like me to check if this address is serviceable and what network infrastructure is available?"
+Let me check if this address is serviceable and what network infrastructure is available..."
 
-This gives the user control over the next step in the conversation.
+Then IMMEDIATELY signal to transfer control to the serviceability_agent by ending your response. The SuperAgent orchestrator will automatically route the next step to check service availability at the registered address.
 """,
     description="Specializes in customer discovery, identifying intent, analyzing company details, and mapping contact personas for sales prospecting.",
     tools=[

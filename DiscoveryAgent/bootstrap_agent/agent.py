@@ -5,8 +5,6 @@ import logging
 import vertexai
 from google.adk.agents import Agent
 from google.adk.agents.callback_context import CallbackContext
-from google.adk.models import LlmRequest, LlmResponse
-from google.adk.tools import agent_tool, google_search
 from google.genai import types
 from dotenv import load_dotenv
 
@@ -17,7 +15,9 @@ custom_logger.info("Initializing root agent...")
 
 load_dotenv()
 
-agent_model = os.environ.get("GEMINI_MODEL")
+agent_model = os.getenv("GEMINI_MODEL")
+if not agent_model:
+    raise ValueError("GEMINI_MODEL environment variable is not set")
 custom_logger.info(f"setting the agent model to {agent_model}")
 
 

@@ -35,6 +35,8 @@ logger = get_logger(__name__)
 
 # Agent configuration from environment
 GEMINI_MODEL = os.getenv("GEMINI_MODEL")
+if not GEMINI_MODEL:
+    raise ValueError("GEMINI_MODEL environment variable is not set")
 # AGENT_NAME no longer needed - using hardcoded name for sub-agent consistency
 
 logger.info(f"Initializing Serviceability Agent with model: {GEMINI_MODEL}")
