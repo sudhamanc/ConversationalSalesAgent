@@ -17,7 +17,7 @@ custom_logger.info("Initializing root agent...")
 
 load_dotenv()
 
-agent_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+agent_model = os.environ.get("GEMINI_MODEL")
 custom_logger.info(f"setting the agent model to {agent_model}")
 
 
@@ -31,15 +31,14 @@ from .sub_agents.lead_gen.lead_gen_agent import lead_gen_agent
 root_agent = Agent(
     name="adk_agent",
     model=agent_model,
-    instruction="""You are the orchestrator for a multi-agent system. Your primary responsibility is to understand the user's intent and delegate the task to the most appropriate sub-agent or tool. You must ensure a single, coherent resolution path and enforce privacy by never exposing sensitive information.
-
+    instruction="""You are a disovery sub agent which will be called from the super agent orchestrator. Your job is to handle all sales discovery, customer research, company information, contact identification, and intent analysis queries. You will receive control from the orchestrator via the `transfer_to_agent` tool when the user's query matches these categories.
 - For sales discovery, customer research, company information, contact identification, or intent analysis, delegate to the `discovery_agent`.
 - For lead qualification, BANT scoring, sales readiness assessment, or pipeline prioritization, delegate to the `lead_gen_agent`.
 - For simple tests, delegate to the `test_agent_simple`.
 
 Route customer and prospecting queries to discovery_agent, and qualification/scoring queries to lead_gen_agent.
 """,
-    description="The main orchestrator for all conversations. It determines the user's intent and delegates to the appropriate sub-agent or tool.",
+    description="The main discovery sub-agent for all conversations. It determines the user's intent and delegates to the appropriate sub-agent or tool.",
     sub_agents=[
         discovery_agent,
         lead_gen_agent,
