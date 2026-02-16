@@ -169,11 +169,13 @@ def check_address_serviceability(address: str) -> dict:
 ### Model Configuration
 
 **Production Model:** `gemini-3-flash-preview` (via `GEMINI_MODEL` env var)
-- Temperature: 0.7 (greeting/FAQ), 0.3 (deterministic agents)
+
+- Temperature: 0.7 (SuperAgent/greeting/FAQ), 0.0 (deterministic agents)
 - Max tokens: 2048-8192 (agent-specific)
 - Safety settings: Configurable per-agent
 
 **Alternative Models Supported:**
+
 - `gemini-2.0-flash` (stable release)
 - `gemini-2.5-flash` (future)
 - `gemini-pro` (high-reasoning tasks)
