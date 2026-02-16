@@ -1,0 +1,17 @@
+[project]
+name = "super-sales-agent"
+version = "0.1.0"
+description = "B2B Sales Super Agent with ADK"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "google-genai>=1.0.0",
+    "google-adk>=1.20.0",
+    "python-dotenv>=1.1.0",
+    "pydantic>=2.10.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["super_agent", "super_agent.*"]

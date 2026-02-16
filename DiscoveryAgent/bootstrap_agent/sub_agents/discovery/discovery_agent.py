@@ -1,9 +1,20 @@
 """Discovery Agent for identifying customer intent, company details, and contact personas."""
 
+
 import os
+import logging
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 from .db_tools import ProspectingDatabase
+
+# Set up a module-level logger
+logger = logging.getLogger("discovery.agent")
+if not logger.hasHandlers():
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s [%(name)s] %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 # Initialize database connection
@@ -16,6 +27,7 @@ def search_companies(
     region: str = None,
     customer_status: str = None
 ) -> str:
+    logger.info(f"DiscoveryAgent: search_companies called with company_name={company_name}, industry={industry}, region={region}, customer_status={customer_status}")
     """
     Search for companies in the prospecting database by name, industry, region, or customer status.
     
@@ -51,6 +63,7 @@ def search_companies(
 
 
 def get_company_profile(company_name: str) -> str:
+    logger.info(f"DiscoveryAgent: get_company_profile called with company_name={company_name}")
     """
     Get comprehensive profile for a specific company including spend data, location, and products.
     
@@ -95,6 +108,7 @@ def get_company_profile(company_name: str) -> str:
 
 
 def get_contact_personas(company_name: str) -> str:
+    logger.info(f"DiscoveryAgent: get_contact_personas called with company_name={company_name}")
     """
     Get all contacts and their personas for a specific company.
     Identifies decision makers, influencers, and their roles.
@@ -159,6 +173,7 @@ def get_contact_personas(company_name: str) -> str:
 
 
 def get_customer_intent(company_name: str) -> str:
+    logger.info(f"DiscoveryAgent: get_customer_intent called with company_name={company_name}")
     """
     Identify customer intent through buying signals, pain points, and opportunities.
     
@@ -213,6 +228,7 @@ def get_customer_intent(company_name: str) -> str:
 
 
 def search_by_intent_signals(keyword: str) -> str:
+    logger.info(f"DiscoveryAgent: search_by_intent_signals called with keyword={keyword}")
     """
     Find companies showing specific buying signals or pain points.
     
@@ -239,6 +255,7 @@ def search_by_intent_signals(keyword: str) -> str:
 
 
 def get_high_priority_opportunities(limit: int = 10) -> str:
+    logger.info(f"DiscoveryAgent: get_high_priority_opportunities called with limit={limit}")
     """
     Get top priority opportunities across all companies based on BANT scoring.
     
@@ -272,15 +289,17 @@ def add_new_company(
     street: str,
     city: str,
     state: str,
-    website: str,
+    zip_code: str = None,
+    website: str = "N/A",
     parent_company: str = None,
     existing_customer: str = 'N',
     current_products: str = None,
     products_of_interest: str = None
 ) -> str:
+    logger.info(f"DiscoveryAgent: add_new_company called with company_name={company_name}, industry={industry}, region={region}, street={street}, city={city}, state={state}, zip_code={zip_code}, website={website}, parent_company={parent_company}, existing_customer={existing_customer}, current_products={current_products}, products_of_interest={products_of_interest}")
     """
     Add a new company to the prospecting database.
-    
+
     Args:
         company_name: Company name (must be unique)
         industry: Industry (e.g., 'Technology', 'Healthcare', 'Finance')
@@ -293,15 +312,16 @@ def add_new_company(
         existing_customer: 'Y' for customer, 'N' for prospect
         current_products: Comma-separated products (for existing customers)
         products_of_interest: Comma-separated products (for prospects)
-    
+        zip_code: ZIP code (optional but recommended for serviceability checks)
+
     Returns:
         Success or failure message
     """
     success = db.add_company(
         company_name, industry, region, street, city, state, website,
-        parent_company, existing_customer, current_products, products_of_interest
+        parent_company, existing_customer, current_products, products_of_interest, zip_code
     )
-    
+
     if success:
         return f"✅ Successfully added company: {company_name}"
     else:
@@ -315,15 +335,17 @@ def update_company_info(
     street: str = None,
     city: str = None,
     state: str = None,
+    zip_code: str = None,
     website: str = None,
     parent_company: str = None,
     existing_customer: str = None,
     current_products: str = None,
     products_of_interest: str = None
 ) -> str:
+    logger.info(f"DiscoveryAgent: update_company_info called with company_name={company_name}, industry={industry}, region={region}, street={street}, city={city}, state={state}, zip_code={zip_code}, website={website}, parent_company={parent_company}, existing_customer={existing_customer}, current_products={current_products}, products_of_interest={products_of_interest}")
     """
     Update existing company information in the database.
-    
+
     Args:
         company_name: Company name to update (required)
         industry: New industry (optional)
@@ -331,12 +353,13 @@ def update_company_info(
         street: New street address (optional)
         city: New city (optional)
         state: New state (optional)
+        zip_code: New ZIP code (optional)
         website: New website (optional)
         parent_company: New parent company (optional)
         existing_customer: New customer status 'Y' or 'N' (optional)
         current_products: New current products (optional)
         products_of_interest: New products of interest (optional)
-    
+
     Returns:
         Success or failure message
     """
@@ -346,17 +369,18 @@ def update_company_info(
     if street: updates['street'] = street
     if city: updates['city'] = city
     if state: updates['state'] = state
+    if zip_code: updates['zip_code'] = zip_code
     if website: updates['website'] = website
     if parent_company: updates['parent_company'] = parent_company
     if existing_customer: updates['existing_customer'] = existing_customer
     if current_products: updates['current_products'] = current_products
     if products_of_interest: updates['products_of_interest'] = products_of_interest
-    
+
     if not updates:
         return "❌ No fields provided to update."
-    
+
     success = db.update_company(company_name, **updates)
-    
+
     if success:
         fields_updated = ', '.join(updates.keys())
         return f"✅ Successfully updated {company_name}: {fields_updated}"
@@ -373,6 +397,7 @@ def add_new_contact(
     phone: str = None,
     notes: str = None
 ) -> str:
+    logger.info(f"DiscoveryAgent: add_new_contact called with company_name={company_name}, contact_name={contact_name}, title={title}, role_in_decision_making={role_in_decision_making}, email={email}, phone={phone}, notes={notes}")
     """
     Add a new contact for a company.
     
@@ -408,6 +433,7 @@ def update_contact_info(
     phone: str = None,
     notes: str = None
 ) -> str:
+    logger.info(f"DiscoveryAgent: update_contact_info called with company_name={company_name}, contact_name={contact_name}, title={title}, role_in_decision_making={role_in_decision_making}, email={email}, phone={phone}, notes={notes}")
     """
     Update contact information.
     
@@ -448,6 +474,7 @@ def add_or_update_insights(
     pain_points: str = None,
     recommended_positioning: str = None
 ) -> str:
+    logger.info(f"DiscoveryAgent: add_or_update_insights called with company_name={company_name}, buying_signals={buying_signals}, pain_points={pain_points}, recommended_positioning={recommended_positioning}")
     """
     Add or update customer insights (buying signals, pain points, positioning).
     
@@ -471,6 +498,7 @@ def add_or_update_insights(
 
 
 # Define the discovery agent
+logger.info("DiscoveryAgent: Instantiating discovery_agent Agent object.")
 discovery_agent = Agent(
     name="discovery_agent",
     model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
@@ -492,10 +520,80 @@ When responding:
 
 Be conversational but data-driven. Focus on helping sales teams prioritize accounts and personalize their outreach.
 
+**When a business is not recognized in the database:**
+Respond in a customer-friendly way. Do not mention internal systems or databases. Instead, warmly welcome the user and guide them through providing the information needed to get started:
+
+"We are more than happy to have you as a customer! Let's get you started. I'll just need a bit more information:"
+
+**Required information to collect:**
+- Company Name
+- Industry
+- Street
+- City
+- State
+- Zip Code
+
+**Territory/Region - DO NOT ask the customer for this.**
+Automatically infer the territory/region from the zip code or state using this mapping:
+  - Northeast: ME, NH, VT, MA, RI, CT, NY, NJ, PA, MD, DE, DC
+  - Central: IL, IN, MI, OH, WI, MN, IA, MO, KS, NE, SD, ND, and all others not listed
+  - West: CA, WA, OR, NV, AZ, NM, CO, UT, ID, MT, WY, AK, HI
+
+**Optional information (ONLY if volunteered by customer or contextually relevant):**
+- Website - Use "N/A" if not provided
+- Parent Company - Use None if not provided
+- Products of Interest - Infer from conversation context
+
+**IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database. Do not ask for contact information (name, email, title) during initial company setup - this can be collected later if needed.
+
+**INTELLIGENT INFERENCE - Use context clues to avoid unnecessary questions:**
+
+**Industry Inference** - If the user mentions a business type, infer the industry automatically:
+  - "pizza shop", "restaurant", "cafe", "bakery" → Restaurant/Food Service
+  - "law firm", "legal practice" → Legal Services
+  - "accounting firm", "CPA firm" → Professional Services - Accounting
+  - "dental clinic", "dentist office" → Healthcare - Dental
+  - "medical practice", "doctor's office" → Healthcare - Medical
+  - "auto repair", "mechanic shop" → Automotive Services
+  - "retail store", "boutique", "shop" → Retail
+  - "tech company", "software company" → Technology
+  - "consulting firm" → Professional Services - Consulting
+  - "real estate agency" → Real Estate
+  - "construction company" → Construction
+  - Similar patterns should be inferred intelligently
+
+**Address Inference** - If the user provides a full address in one message, extract ALL components:
+  - "123 Main Street, Boston, MA 02101" → Extract: Street="123 Main Street", City="Boston", State="MA", Zip="02101"
+  - "456 Oak Ave, Los Angeles, California 90001" → Extract all, convert "California" to "CA"
+  - Do not ask for components you've already extracted
+
+**Multi-field Extraction** - Always look for multiple fields in a single message:
+  - "We're a pizza shop at 123 Main St, Boston MA" → Extract: Industry, Street, City, State
+  - Minimize back-and-forth by extracting everything available
+
+**Slot-filling guidelines:**
+- **FIRST**, check if you can INFER any fields from context before asking
+- Ask for one missing required field at a time ONLY if you cannot infer it
+- If the user provides multiple fields in one message, fill as many as possible
+- Do not ask for information you already have from the conversation so far
+- After all required fields are collected, use add_new_company to create the record and confirm with them
+- Never ask the user if they are a customer or prospect; always infer this from the information you have
+- Never ask the user for territory/region; always infer it from zip code or state
+- Be polite and efficient, minimizing the number of questions by leveraging intelligent inference
+
 When adding or updating data:
 - Validate that required fields are provided
 - Use proper formats (e.g., state abbreviations, Y/N for flags)
 - Provide clear success/failure feedback
+
+**After successfully adding a company with a complete address:**
+Confirm the registration and then ASK the user if they would like to check service availability. Your response should be structured as:
+
+"Welcome! I've registered **[Company Name]** at **[Full Address]**. 
+
+Would you like me to check if this address is serviceable and what network infrastructure is available?"
+
+This gives the user control over the next step in the conversation.
 """,
     description="Specializes in customer discovery, identifying intent, analyzing company details, and mapping contact personas for sales prospecting.",
     tools=[

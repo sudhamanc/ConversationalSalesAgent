@@ -15,7 +15,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 from google.genai import types
 
-from config import settings
+from super_agent.config import settings
 from middleware.auth import authenticator
 from middleware.rate_limiter import rate_limiter
 from utils.logger import get_logger, session_id_var
@@ -51,57 +51,59 @@ async def _ensure_adk_session(user_id: str, session_id: str):
 
 
 async def _stream_agent(user_id: str, session_id: str, user_message: str):
-    """Run the ADK agent with SSE streaming and yield formatted events."""
+    """
+    Stream ADK agent responses via SSE.
+    
+    Natural two-step workflow:
+    1. User provides company info → DiscoveryAgent responds and asks about serviceability
+    2. User says "yes" → SuperAgent routes to ServiceabilityAgent
+    
+    Each user message is one turn. No automatic recursive routing.
+    """
     from google.adk.runners import RunConfig
+    
+    try:
+        await _ensure_adk_session(user_id, session_id)
+        
+        new_message = types.Content(
+            role="user",
+            parts=[types.Part(text=user_message)],
+        )
+        
+        run_config = RunConfig()
+        
+        logger.info(f"Processing user message: {user_message[:80]}")
+        
+        async for event in _runner.run_async(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=new_message,
+            run_config=run_config,
+        ):
+            if event.error_message:
+                logger.error(f"Agent error: {event.error_message}")
+                yield f"data: {json.dumps({'type': 'error', 'content': event.error_message})}\n\n"
+                return
+            
+            if event.content and hasattr(event.content, 'parts'):
+                for part in event.content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        payload = json.dumps({
+                            "type": "token",
+                            "content": part.text,
+                            "author": event.author or "agent",
+                        })
+                        yield f"data: {payload}\n\n"
+            
+            if event.turn_complete:
+                logger.info(f"Turn complete from {event.author}")
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
 
-    await _ensure_adk_session(user_id, session_id)
-
-    new_message = types.Content(
-        role="user",
-        parts=[types.Part(text=user_message)],
-    )
-
-    run_config = RunConfig()  # Default streaming mode
-    sent_text = ""  # Track sent text to avoid duplication
-
-    async for event in _runner.run_async(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=new_message,
-        run_config=run_config,
-    ):
-        # Extract text from event content parts
-        text_content = None
-        if event.content and hasattr(event.content, 'parts') and event.content.parts:
-            for part in event.content.parts:
-                if hasattr(part, 'text') and part.text:
-                    text_content = part.text
-                    break
-
-        # Stream new text tokens (delta-based to avoid duplication)
-        if text_content and len(text_content) > len(sent_text):
-            delta = text_content[len(sent_text):]
-            sent_text = text_content
-            payload = json.dumps({
-                "type": "token",
-                "content": delta,
-                "author": event.author,
-            })
-            yield f"data: {payload}\n\n"
-
-        # Handle errors
-        if event.error_message:
-            payload = json.dumps({"type": "error", "content": event.error_message})
-            yield f"data: {payload}\n\n"
-            return
-
-        # Turn complete = done
-        if event.turn_complete:
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-            return
-
-    # Safety: always signal done
-    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+    except Exception as e:
+        logger.error(f"Exception in _stream_agent: {type(e).__name__}: {str(e)}", exc_info=True)
+        error_msg = f"Agent error: {str(e)}"
+        yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
 
 
 @router.post("/api/chat")

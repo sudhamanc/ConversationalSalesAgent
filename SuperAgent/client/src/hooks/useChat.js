@@ -42,7 +42,11 @@ export function useChat() {
           });
         },
         // onDone
-        () => setIsStreaming(false),
+        () => {
+          setIsStreaming(false);
+          // Note: Server-side recursive router now handles multi-agent workflows automatically
+          // No client-side auto-continuation needed anymore!
+        },
         // onError
         (err) => {
           setMessages((prev) => {

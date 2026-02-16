@@ -57,7 +57,7 @@ class ProspectingDatabase:
             customer_status: 'Y' for existing customers, 'N' for prospects, None for all
         """
         query = """SELECT "Company Name", "Parent Company", Industry, "Territory/Region",
-                   Street, City, State, Website, "Existing Customer", 
+                   Street, City, State, zip_code, Website, "Existing Customer",
                    "Current Products", "Products of Interest" FROM accounts WHERE 1=1"""
         conditions = []
         params = []
@@ -173,12 +173,13 @@ class ProspectingDatabase:
         return self._execute_query(query, (keyword, keyword))    
     # ==================== WRITE OPERATIONS ====================
     
-    def add_company(self, company_name: str, industry: str, region: str, 
+    def add_company(self, company_name: str, industry: str, region: str,
                    street: str, city: str, state: str, website: str,
                    parent_company: str = None, existing_customer: str = 'N',
-                   current_products: str = None, products_of_interest: str = None) -> bool:
+                   current_products: str = None, products_of_interest: str = None,
+                   zip_code: str = None) -> bool:
         """Add a new company to accounts table.
-        
+
         Args:
             company_name: Company name (must be unique)
             industry: Industry classification
@@ -191,21 +192,22 @@ class ProspectingDatabase:
             existing_customer: 'Y' or 'N'
             current_products: Comma-separated products (for existing customers)
             products_of_interest: Comma-separated products (for prospects)
-        
+            zip_code: ZIP code (optional)
+
         Returns:
             True if successful, False otherwise
         """
         query = """
         INSERT INTO accounts (
             "Company Name", "Parent Company", Industry, "Territory/Region",
-            Street, City, State, Website, "Existing Customer",
+            Street, City, State, zip_code, Website, "Existing Customer",
             "Current Products", "Products of Interest"
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
             rows = self._execute_write(query, (
                 company_name, parent_company, industry, region,
-                street, city, state, website, existing_customer,
+                street, city, state, zip_code, website, existing_customer,
                 current_products, products_of_interest
             ))
             return rows > 0
@@ -230,6 +232,7 @@ class ProspectingDatabase:
             'street': 'Street',
             'city': 'City',
             'state': 'State',
+            'zip_code': 'zip_code',
             'website': 'Website',
             'parent_company': '"Parent Company"',
             'existing_customer': '"Existing Customer"',

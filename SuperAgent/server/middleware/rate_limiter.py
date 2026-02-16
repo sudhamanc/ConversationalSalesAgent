@@ -8,7 +8,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from config import settings
+from super_agent.config import settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

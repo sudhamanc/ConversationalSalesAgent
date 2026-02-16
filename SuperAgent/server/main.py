@@ -15,11 +15,14 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Ensure the server package is on sys.path for absolute imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure the server package and project root are on sys.path for imports
+_server_dir = os.path.dirname(os.path.abspath(__file__))
+_project_dir = os.path.dirname(_server_dir)
+sys.path.insert(0, _server_dir)
+sys.path.insert(0, _project_dir)
 
-from config import settings
-from agent import get_agent
+from super_agent.config import settings
+from super_agent import get_agent
 from api.chat import router as chat_router, init_runner
 from api.session import router as session_router
 from utils.logger import get_logger
