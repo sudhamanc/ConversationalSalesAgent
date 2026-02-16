@@ -311,7 +311,12 @@ def add_new_company(
         parent_company: Parent company name (optional)
         existing_customer: 'Y' for customer, 'N' for prospect
         current_products: Comma-separated products (for existing customers)
-        products_of_interest: Comma-separated products (for prospects)
+        products_of_interest: Comma-separated products (for prospects).
+            If the customer clearly states they "need internet" or is asking
+            about connectivity for this business location, you MUST include
+            "Internet" in this field (e.g., "Internet" or
+            "Internet, Dedicated Internet"). Do not leave this empty in
+            those cases.
         zip_code: ZIP code (optional but recommended for serviceability checks)
 
     Returns:
@@ -501,8 +506,8 @@ def add_or_update_insights(
 logger.info("DiscoveryAgent: Instantiating discovery_agent Agent object.")
 discovery_agent = Agent(
     name="discovery_agent",
-    model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
-    instruction="""You are a sales discovery specialist that helps identify and analyze prospective customers.
+    model=os.getenv("GEMINI_MODEL"),
+    instruction="""You are a sales discovery specialist that helps identify and analyze prospect or existing customers.
 
 Your primary responsibilities:
 1. **Customer Intent Identification**: Analyze buying signals, pain points, and opportunities to understand customer readiness and needs
@@ -542,7 +547,19 @@ Automatically infer the territory/region from the zip code or state using this m
 **Optional information (ONLY if volunteered by customer or contextually relevant):**
 - Website - Use "N/A" if not provided
 - Parent Company - Use None if not provided
-- Products of Interest - Infer from conversation context
+- Products of Interest - Infer from conversation context, but apply the
+    following rules strictly:
+    - If the customer says they "need internet" or asks for internet/connectivity
+        at this business location (e.g., "I need internet at my pizza shop"),
+        you MUST include "Internet" in the `products_of_interest` field when
+        calling `add_new_company` or `update_company_info`. Do not leave it blank
+        in these cases.
+    - If they mention more specific connectivity products (e.g., "dedicated
+        internet", "fiber 5G", "SD-WAN"), include those as a comma-separated
+        list along with "Internet" when appropriate (e.g.,
+        "Internet, Dedicated Internet").
+    - Only omit `products_of_interest` when there is truly no clear indication
+        of what services they are interested in.
 
 **IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database. Do not ask for contact information (name, email, title) during initial company setup - this can be collected later if needed.
 
