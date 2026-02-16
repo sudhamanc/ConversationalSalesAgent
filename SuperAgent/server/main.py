@@ -11,7 +11,9 @@ point — all chat requests flow through it.
 
 import os
 import sys
+import logging
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,6 +28,13 @@ from super_agent import get_agent
 from api.chat import router as chat_router, init_runner
 from api.session import router as session_router
 from utils.logger import get_logger
+
+# Enable detailed Google GenAI SDK logging for Gemini API requests
+logging.basicConfig(level=logging.DEBUG)
+genai_logger = logging.getLogger("google.genai")
+genai_logger.setLevel(logging.DEBUG)
+adk_logger = logging.getLogger("google.adk")
+adk_logger.setLevel(logging.DEBUG)
 
 logger = get_logger(__name__)
 
@@ -48,13 +57,27 @@ runner = Runner(
 init_runner(runner, session_service, APP_NAME)
 
 # ---------------------------------------------------------------------------
-# FastAPI application
+# FastAPI application with lifespan
 # ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info(
+        f"SuperAgent server starting — "
+        f"agent={APP_NAME}, model={settings.model.model_name}, "
+        f"port={settings.server.port}, "
+        f"sub_agents_enabled={settings.agent.enable_sub_agents}"
+    )
+    yield
+    # Shutdown
+    logger.info("SuperAgent server shutting down")
+
 app = FastAPI(
     title="SuperAgent API",
     description="B2B Sales Super Agent with SSE streaming chat (ADK-backed)",
     version="1.0.0",
     debug=settings.server.debug,
+    lifespan=lifespan,
 )
 
 # --- CORS ---
@@ -74,16 +97,6 @@ app.include_router(session_router, tags=["Session"])
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": settings.agent.agent_name, "model": settings.model.model_name}
-
-
-@app.on_event("startup")
-async def startup():
-    logger.info(
-        f"SuperAgent server starting — "
-        f"agent={APP_NAME}, model={settings.model.model_name}, "
-        f"port={settings.server.port}, "
-        f"sub_agents_enabled={settings.agent.enable_sub_agents}"
-    )
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ Flow:
 """
 
 import json
+import logging
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
@@ -21,6 +22,7 @@ from middleware.rate_limiter import rate_limiter
 from utils.logger import get_logger, session_id_var
 
 logger = get_logger(__name__)
+logger.setLevel(logging.DEBUG)  # Enable debug logging for chat endpoint
 router = APIRouter()
 
 # These are set at startup by main.py — avoids circular imports.
@@ -73,6 +75,9 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         run_config = RunConfig()
         
         logger.info(f"Processing user message: {user_message[:80]}")
+        logger.debug(f"Full user message: {user_message}")
+        logger.debug(f"Session ID: {session_id}, User ID: {user_id}")
+        logger.debug(f"Model: {_runner.agent.model}")
         
         async for event in _runner.run_async(
             user_id=user_id,
@@ -88,6 +93,7 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
             if event.content and hasattr(event.content, 'parts'):
                 for part in event.content.parts:
                     if hasattr(part, 'text') and part.text:
+                        logger.debug(f"Streaming token from {event.author}: {part.text[:50]}...")
                         payload = json.dumps({
                             "type": "token",
                             "content": part.text,
