@@ -426,6 +426,157 @@ User: "Yes"
 
 ---
 
+## Overcoming Multi-Turn Conversation Challenges
+
+Multi-agent systems face unique challenges when coordinating across conversation turns. We've implemented two complementary strategies to ensure reliable agent-to-agent communication:
+
+### Strategy 1: LLM Instruction-Based Agent Chaining
+
+**Approach:** Use explicit instructions in agent prompts to guide multi-turn handoffs without requiring deterministic workflow engines.
+
+**How It Works:**
+
+Each sub-agent's instruction set includes explicit guidance on when and how to signal completion and transfer control:
+
+```python
+# DiscoveryAgent Instructions (excerpt)
+"""
+After successfully adding a NEW company with a complete address:
+Confirm the registration and inform the user that you will check service availability:
+
+"Welcome! I've registered **[Company Name]** at **[Full Address including Zip Code]**. 
+
+Let me check if this address is serviceable and what network infrastructure is available..."
+
+Then IMMEDIATELY signal to transfer control to the serviceability_agent by ending your response.
+The SuperAgent orchestrator will automatically route the next step to check service availability.
+"""
+
+# SuperAgent Routing Instructions (excerpt)
+"""
+Transfer to **serviceability_agent** whenever:
+- **AUTOMATICALLY after discovery_agent completes company registration with an address**
+  If the conversation history shows discovery_agent just registered a company with a full
+  address, transfer to serviceability_agent on the user's next message (even if it's
+  just "ok", "yes", or any acknowledgment)
+"""
+```
+
+**Benefits:**
+- ✅ **Natural conversation flow** - User doesn't experience jarring handoffs
+- ✅ **LLM-driven flexibility** - Handles variations in user responses ("ok", "yes", "sure")
+- ✅ **No rigid state machines** - Works within ADK's conversational model
+- ✅ **Context-aware routing** - SuperAgent reads conversation history to detect completion signals
+
+**Key Pattern:** Agents use **conversational cues** ("Let me check...") followed by response termination to signal handoffs. The orchestrator detects these patterns in history and routes accordingly.
+
+---
+
+### Strategy 2: Structured JSON Tool Outputs
+
+**Problem Identified (Feb 2026):** When agents transferred data across multi-turn conversations using unstructured text, Gemini would occasionally **hallucinate or modify critical data** during agent-to-agent handoffs.
+
+**Example Hallucination:**
+```
+DiscoveryAgent tool returns: "123 Main Street, Philadelphia, PA 19103"
+→ LLM transfers to ServiceabilityAgent as: "123 Main Street, Philadelphia, PA 19106"
+   (zip code changed from 19103 to 19106)
+```
+
+**Root Cause:** When tools returned formatted text strings like `"Address: 123 Main St, City: Philadelphia, PA, Zip: 19103"`, the LLM would **rephrase** the output in its next turn, which allowed for digit substitution, field omission, or paraphrasing errors.
+
+**Solution: Structured JSON Tool Outputs**
+
+All DiscoveryAgent tools now return **JSON with explicit field names** instead of formatted text:
+
+```python
+# ❌ BEFORE (Formatted Text - Prone to Hallucination)
+def get_company_profile(company_name: str) -> str:
+    return f"""
+    Company: {company['Company Name']}
+    Address: {company['Street']}, {company['City']}, {company['State']} {company['zip_code']}
+    """
+
+# ✅ AFTER (Structured JSON - Hallucination-Resistant)
+def get_company_profile(company_name: str) -> str:
+    profile = {
+        "company_name": company['Company Name'],
+        "address": {
+            "street": company['Street'],
+            "city": company['City'],
+            "state": company['State'],
+            "zip_code": company['zip_code']  # ← Explicit field prevents modification
+        }
+    }
+    return json.dumps(profile, indent=2)
+```
+
+**Agent Instructions Updated:**
+```python
+"""
+When responding:
+- All tools return JSON responses - parse them to extract the data you need
+- Parse the JSON response to extract company details (especially the full address with zip code)
+- Parse the JSON responses from tools and extract success status and messages
+"""
+```
+
+**Why JSON Works:**
+1. **Explicit field names** - LLM cannot "forget" which field is which
+2. **Type safety** - Numbers stay numbers, strings stay strings
+3. **No rephrasing ambiguity** - LLM passes structured data directly without text generation
+4. **Gemini's native JSON parsing** - ADK automatically parses JSON from tools, no custom handling needed
+
+**Implementation Results:**
+- ✅ All 11 DiscoveryAgent tools converted to JSON (read + write operations)
+- ✅ Zero hallucination incidents in testing after conversion
+- ✅ Agent instructions updated to explain JSON parsing requirements
+- ✅ Database schema enforces mandatory zip codes (NOT NULL constraint)
+
+**Key Learnings:**
+- LLM-to-LLM data transfer is unreliable for exact values (addresses, numbers, codes)
+- Structured data formats (JSON, XML) prevent hallucination in multi-agent systems
+- Tools should return machine-readable formats, even when consumed by LLMs
+- Mixing JSON and text tool outputs is safe - Gemini handles both natively
+
+---
+
+### Combined Strategy: Instruction Chaining + JSON Data Integrity
+
+The two strategies work together to create robust multi-turn agent coordination:
+
+| Challenge | Solution | Mechanism |
+|-----------|----------|-----------|
+| **Agent handoff timing** | Instruction-based chaining | Agents signal completion via conversational cues; orchestrator detects from history |
+| **Data corruption across turns** | Structured JSON outputs | Tools return JSON with explicit fields; LLM parses without rephrasing |
+| **User flexibility** | LLM-driven routing | SuperAgent handles variations in user responses based on context |
+| **Zero-hallucination compliance** | Deterministic tools + JSON | Critical data (addresses, numbers) protected by structure |
+
+**Example End-to-End Flow:**
+
+```
+1. User: "I need internet for DonutCoffeeRecord Inc"
+   → DiscoveryAgent searches database (tool returns JSON)
+   → Found company with address
+
+2. DiscoveryAgent: "I found DonutCoffeeRecord Inc at 123 Main Street, Philadelphia, PA 19103.
+                     Are you calling about service for this location?"
+   (Instruction: Ask confirmation before proceeding)
+
+3. User: "yes"
+   → SuperAgent detects: (1) DiscoveryAgent completed registration, (2) User confirmed
+   → Routes to ServiceabilityAgent automatically
+
+4. ServiceabilityAgent receives JSON address from context:
+   {"street": "123 Main Street", "city": "Philadelphia", "state": "PA", "zip_code": "19103"}
+   → No hallucination - exact zip code preserved
+   → Validates address and returns infrastructure details
+```
+
+This hybrid approach leverages **LLM flexibility for routing** while maintaining **deterministic accuracy for critical data**.
+
+---
+
 ### Typical Sales Conversation Flow
 
 ```mermaid

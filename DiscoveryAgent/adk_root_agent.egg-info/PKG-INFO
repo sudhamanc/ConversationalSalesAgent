@@ -2,7 +2,7 @@ Metadata-Version: 2.4
 Name: adk_root_agent
 Version: 0.1.0
 Summary: ADK version of Bootstrap_Agent Assistant
-Requires-Python: <3.13,>=3.12
+Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 Requires-Dist: boto3~=1.40.35
 Requires-Dist: cloudpickle==3.1.1

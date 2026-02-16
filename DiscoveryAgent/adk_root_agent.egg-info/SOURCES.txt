@@ -12,6 +12,12 @@ bootstrap_agent/api_tools/test_tool.py
 bootstrap_agent/deploy/__init__.py
 bootstrap_agent/deploy/__main__.py
 bootstrap_agent/eval/__init__.py
+bootstrap_agent/sub_agents/discovery/__init__.py
+bootstrap_agent/sub_agents/discovery/db_tools.py
+bootstrap_agent/sub_agents/discovery/discovery_agent.py
+bootstrap_agent/sub_agents/lead_gen/__init__.py
+bootstrap_agent/sub_agents/lead_gen/lead_gen_agent.py
+bootstrap_agent/sub_agents/lead_gen/qualification_tools.py
 bootstrap_agent/sub_agents/test/__init__.py
 bootstrap_agent/sub_agents/test/test_agent.py
 bootstrap_agent/utils/__init__.py
