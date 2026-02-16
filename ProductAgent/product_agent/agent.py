@@ -71,7 +71,7 @@ product_agent = Agent(
         get_best_value_product,
     ],
     generate_content_config=types.GenerateContentConfig(
-        temperature=0.1,  # Low temperature for accurate, factual responses
+        temperature=0.0,  # Deterministic - no creativity needed for factual, RAG-based responses
         top_p=0.2,        # Low sampling for determinism
         top_k=20,         # Restrict token selection
         max_output_tokens=2048,  # Sufficient for detailed product explanations
