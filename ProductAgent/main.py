@@ -117,7 +117,7 @@ async def health():
     return {
         "status": "ok",
         "agent": APP_NAME,
-        "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+        "model": os.getenv("GEMINI_MODEL"),
         "vector_db": {
             "available": vector_stats.get("available", False),
             "documents": vector_stats.get("count", 0)
@@ -347,7 +347,7 @@ async def startup_event():
         logger.warning("⚠️  Vector DB not available - will use product catalog fallback")
     
     logger.info(f"✅ Agent: {APP_NAME}")
-    logger.info(f"✅ Model: {os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')}")
+    logger.info(f"✅ Model: {os.getenv('GEMINI_MODEL')}")
     logger.info("=" * 60)
 
 

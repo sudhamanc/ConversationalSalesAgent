@@ -13,7 +13,6 @@ as a sub-agent for the Configuration cluster.
 import os
 from google.adk.agents import Agent
 from google.genai import types
-from dotenv import load_dotenv
 
 from .prompts import SERVICEABILITY_AGENT_INSTRUCTION, SERVICEABILITY_SHORT_DESCRIPTION
 from .tools.address_tools import (

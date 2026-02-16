@@ -14,6 +14,7 @@ from .sub_agents.greeting import greeting_agent
 from .sub_agents.faq import faq_agent
 from .sub_agents.discovery import discovery_agent
 from .sub_agents.serviceability import serviceability_agent
+from .sub_agents.product import product_agent
 
 _safety = settings.safety
 _model = settings.model
@@ -51,7 +52,7 @@ def _build_sub_agents() -> list[Agent]:
     """Return the list of active sub-agents based on config."""
     agents: list[Agent] = []
     if settings.agent.enable_sub_agents:
-        agents.extend([discovery_agent, serviceability_agent, greeting_agent, faq_agent])
+        agents.extend([discovery_agent, serviceability_agent, product_agent, greeting_agent, faq_agent])
     return agents
 
 

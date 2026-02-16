@@ -128,6 +128,7 @@ def check_address_serviceability(address: str) -> dict:
 | **SuperAgent** | ✅ Active | `SuperAgent/super_agent/agent.py` | Root orchestrator. Routes intents, manages session state, delegates to sub-agents |
 | **DiscoveryAgent** | ✅ Active | `DiscoveryAgent/bootstrap_agent/` | Prospect identification, company lookup, BANT qualification, intelligent slot-filling |
 | **ServiceabilityAgent** | ✅ Active | `ServiceabilityAgent/serviceability_agent/` | PRE-SALE address validation, coverage verification, infrastructure assessment |
+| **ProductAgent** | ✅ Active | `ProductAgent/product_agent/` | RAG-powered product catalog, technical specs, feature docs (ChromaDB) |
 | **GreetingAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/greeting/` | Handles greetings, phone script generation for human agents |
 | **FAQAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/faq/` | Answers product questions, policies, SLAs, support topics |
 
@@ -135,7 +136,6 @@ def check_address_serviceability(address: str) -> dict:
 
 | Agent | Status | Location | Description |
 |-------|--------|----------|-------------|
-| **ProductAgent** | ⏳ Ready | `ProductAgent/product_agent/` | RAG-powered product catalog, technical specs, feature docs (ChromaDB) |
 | **PaymentAgent** | ⏳ Ready | `PaymentAgent/payment_agent/` | Credit checks, payment validation, fraud assessment, authorization |
 | **ServiceFulfillmentAgent** | ⏳ Ready | `ServiceFulfillmentAgent/service_fulfillment_agent/` | POST-SALE installation scheduling, provisioning, service activation |
 
