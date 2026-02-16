@@ -68,20 +68,21 @@ from .tools.billing_tools import (
 from .utils.logger import get_logger
 
 # Load environment variables
-load_dotenv()
+# Note: load_dotenv() removed - sub-agents should not load root .env to avoid conflicts
+# load_dotenv()
 
 logger = get_logger(__name__)
 
 # Agent configuration from environment
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-AGENT_NAME = os.getenv("AGENT_NAME", "payment_agent")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL")
+# AGENT_NAME no longer needed - using hardcoded name for sub-agent consistency
 
 logger.info(f"Initializing Payment Agent with model: {GEMINI_MODEL}")
 
 
 # Create the payment agent following ADK pattern
 payment_agent = Agent(
-    name=AGENT_NAME,
+    name="payment_agent",  # Hardcoded to avoid .env conflicts when loaded as sub-agent
     model=GEMINI_MODEL,
     instruction=PAYMENT_AGENT_INSTRUCTION,
     description=PAYMENT_SHORT_DESCRIPTION,
@@ -139,4 +140,4 @@ def get_agent() -> Agent:
     return payment_agent
 
 
-logger.info(f"Payment Agent initialized: {AGENT_NAME}")
+logger.info(f"Payment Agent initialized: {payment_agent.name}")

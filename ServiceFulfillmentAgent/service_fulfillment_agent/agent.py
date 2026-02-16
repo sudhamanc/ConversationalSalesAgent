@@ -80,20 +80,21 @@ from .tools.order_tools import (
 from .utils.logger import get_logger
 
 # Load environment variables
-load_dotenv()
+# Note: load_dotenv() removed - sub-agents should not load root .env to avoid conflicts
+# load_dotenv()
 
 logger = get_logger(__name__)
 
 # Agent configuration from environment
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-AGENT_NAME = os.getenv("AGENT_NAME", "service_fulfillment_agent")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL")
+# AGENT_NAME no longer needed - using hardcoded name for sub-agent consistency
 
 logger.info(f"Initializing Service Fulfillment Agent with model: {GEMINI_MODEL}")
 
 
 # Create the service fulfillment agent following ADK pattern
 service_fulfillment_agent = Agent(
-    name=AGENT_NAME,
+    name="service_fulfillment_agent",  # Hardcoded to avoid .env conflicts when loaded as sub-agent
     model=GEMINI_MODEL,
     instruction=SERVICE_FULFILLMENT_AGENT_INSTRUCTION,
     description=SERVICE_FULFILLMENT_SHORT_DESCRIPTION,
@@ -160,4 +161,4 @@ def get_agent() -> Agent:
     return service_fulfillment_agent
 
 
-logger.info(f"Service Fulfillment Agent initialized: {AGENT_NAME}")
+logger.info(f"Service Fulfillment Agent initialized: {service_fulfillment_agent.name}")
