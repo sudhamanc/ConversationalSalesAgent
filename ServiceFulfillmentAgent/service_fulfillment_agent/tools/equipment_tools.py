@@ -15,26 +15,35 @@ logger = get_logger(__name__)
 def provision_equipment(
     order_id: str,
     service_type: str,
-    equipment_list: List[Dict[str, Any]] = None
+    equipment_list_json: str = None
 ) -> Dict[str, Any]:
     """
     Orders equipment for an installation.
-    
+
     For production: Integrates with equipment management system
     For testing: Simulates equipment ordering
-    
+
     Args:
         order_id: Order identifier
         service_type: Type of service (determines required equipment)
-        equipment_list: Optional specific equipment list, otherwise auto-determined
-    
+        equipment_list_json: Optional JSON string of equipment array. Each item has "type" (str), "model" (str), "quantity" (int). Example: '[{"type": "Router", "model": "XR-1000", "quantity": 1}]'. If not provided, equipment is auto-determined from service_type.
+
     Returns:
         Equipment order details with tracking
     """
     logger.info(f"Provisioning equipment for order {order_id}")
-    
+
     try:
         # Determine equipment based on service type if not specified
+        equipment_list = None
+        if equipment_list_json:
+            try:
+                equipment_list = json.loads(equipment_list_json)
+            except (json.JSONDecodeError, TypeError):
+                return {
+                    "success": False,
+                    "error": "Invalid equipment_list_json format. Must be a valid JSON array string."
+                }
         if equipment_list is None:
             equipment_list = _get_required_equipment(service_type)
         

@@ -19,7 +19,6 @@
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
 
-
 ---
 
 ## System Architecture
@@ -72,40 +71,45 @@ This system implements a **Super Agent/Sub-Agent** orchestration pattern using G
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Agent-to-Agent (A2A) Communication Protocol
+### Agent Communication: ADK Sub-Agent Delegation
 
-Agents communicate via **JSON-RPC-style A2A messaging**:
+Agents communicate via **ADK's native sub-agent delegation pattern**. The SuperAgent declares all sub-agents in its `sub_agents=[]` list, and ADK handles routing based on the orchestrator's LLM instructions:
 
-```json
-{
-  "sender": "super_agent",
-  "receiver": "discovery_agent",
-  "correlation_id": "uuid-1234",
-  "timestamp": "2026-02-15T10:30:00Z",
-  "content": {
-    "action": "lookup_company",
-    "parameters": {
-      "company_name": "VoiceStream Networks",
-      "address": "123 Main St, Boston, MA"
-    }
-  }
-}
+```python
+# SuperAgent/super_agent/agent.py
+root_agent = Agent(
+    name="super_sales_agent",
+    model=settings.model.model_name,
+    instruction=ORCHESTRATOR_INSTRUCTION,  # Contains routing rules
+    sub_agents=[
+        discovery_agent,
+        serviceability_agent,
+        product_agent,
+        payment_agent,
+        service_fulfillment_agent,
+        greeting_agent,
+        faq_agent,
+    ],
+)
 ```
 
-**Key A2A Principles:**
-- Asynchronous message passing
-- Correlation IDs for request/response tracking
-- Structured logging of all inter-agent communication
-- Agent autonomy: sub-agents execute without user intervention once invoked
+**Key Principles:**
+
+- ADK manages agent-to-agent delegation natively (no custom protocol needed)
+- SuperAgent's instruction prompt defines routing rules for each sub-agent
+- Sub-agents share session context via ADK's built-in state management
+- Sub-agents execute autonomously once delegated to by the orchestrator
 
 ### Model Context Protocol (MCP)
 
 MCP is used to connect agents to **local tools and data sources**:
+
 - Database connections (SQLite for prospect/order data)
 - File system access (product manuals, coverage maps)
 - External API wrappers (GIS, payment gateway stubs)
 
 **MCP Usage Pattern:**
+
 ```python
 # Agent declares tools via MCP
 from google.adk.tools import FunctionTool
@@ -131,13 +135,8 @@ def check_address_serviceability(address: str) -> dict:
 | **ProductAgent** | ✅ Active | `ProductAgent/product_agent/` | RAG-powered product catalog, technical specs, feature docs (ChromaDB) |
 | **GreetingAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/greeting/` | Handles greetings, phone script generation for human agents |
 | **FAQAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/faq/` | Answers product questions, policies, SLAs, support topics |
-
-### Standalone (Not Yet Integrated)
-
-| Agent | Status | Location | Description |
-|-------|--------|----------|-------------|
-| **PaymentAgent** | ⏳ Ready | `PaymentAgent/payment_agent/` | Credit checks, payment validation, fraud assessment, authorization |
-| **ServiceFulfillmentAgent** | ⏳ Ready | `ServiceFulfillmentAgent/service_fulfillment_agent/` | POST-SALE installation scheduling, provisioning, service activation |
+| **PaymentAgent** | ✅ Active | `PaymentAgent/payment_agent/` | Credit checks, payment validation, fraud assessment, authorization |
+| **ServiceFulfillmentAgent** | ✅ Active | `ServiceFulfillmentAgent/service_fulfillment_agent/` | POST-SALE installation scheduling, provisioning, service activation |
 
 ### Planned (Future Implementation)
 
@@ -156,7 +155,7 @@ def check_address_serviceability(address: str) -> dict:
 | Layer | Technology | Version | Purpose |
 |-------|-----------|---------|---------|
 | **LLM** | Google Gemini | 2.5 Flash | Autonomous reasoning, intent analysis, conversation |
-| **Agent Framework** | Google ADK | 1.20.0+ | Multi-agent orchestration, tool integration, A2A protocol |
+| **Agent Framework** | Google ADK | 1.20.0+ | Multi-agent orchestration, tool integration, sub-agent delegation |
 | **Backend** | Python | 3.12+ | Agent logic, API integration |
 | **Server** | FastAPI | Latest | REST + SSE streaming for real-time chat |
 | **Frontend** | React + Vite | 19 | Client UI with streaming message display |
@@ -164,7 +163,7 @@ def check_address_serviceability(address: str) -> dict:
 | **Styling** | Tailwind CSS | - | Rapid, clean UI components |
 | **Vector DB** | ChromaDB | - | RAG for product manuals (ProductAgent) |
 | **Transactional DB** | SQLite | - | Prospect data (DiscoveryAgent), Orders |
-| **API Protocol** | A2A JSON-RPC | Custom | Inter-agent communication |
+| **Agent Routing** | ADK Sub-Agent Delegation | Native | Inter-agent communication via orchestrator |
 
 ### Model Configuration
 
@@ -209,6 +208,7 @@ AgentName/
 ```
 
 **Why This Matters:**
+
 - Consistent navigation across all agent projects
 - Clean import resolution (`from agent_name import get_agent`)
 - Proper package isolation (critical for ADK parent-binding)
@@ -292,6 +292,7 @@ discovery_agent = _agent_mod.discovery_agent
 **CRITICAL:** Sub-agents loaded via importlib must use **hardcoded names** to avoid environment variable conflicts.
 
 **❌ WRONG (causes name conflicts):**
+
 ```python
 # ServiceabilityAgent/serviceability_agent/agent.py
 from dotenv import load_dotenv
@@ -307,6 +308,7 @@ serviceability_agent = Agent(
 ```
 
 **✅ CORRECT (hardcoded name, no conflicts):**
+
 ```python
 # ServiceabilityAgent/serviceability_agent/agent.py
 # No load_dotenv() call - sub-agents inherit config from parent
@@ -321,12 +323,14 @@ serviceability_agent = Agent(
 ```
 
 **Key Rules:**
+
 1. **Never call `load_dotenv()` in sub-agent code** - environment already loaded by SuperAgent
 2. **Hardcode agent names** - don't read from `AGENT_NAME` environment variable
 3. **No default model values** - use `os.getenv("GEMINI_MODEL")` without fallback to fail fast if not configured
 4. **Root agent (SuperAgent) sets environment** - sub-agents inherit it
 
 **Why This Matters:**
+
 - When `load_dotenv()` runs in ServiceabilityAgent, it reads root `.env` containing `AGENT_NAME=super_sales_agent`
 - This overrides the sub-agent's intended name, causing ADK to fail with "Agent not found in agent tree"
 - Hardcoded names ensure consistent agent identity regardless of environment state
@@ -334,6 +338,7 @@ serviceability_agent = Agent(
 ### 6. Configuration Management
 
 **Centralized Config (Pydantic):**
+
 ```python
 # super_agent/config.py
 from pydantic import Field
@@ -380,8 +385,9 @@ except ExternalAPIError as e:
 ### 9. Testing Requirements
 
 Every agent MUST include:
+
 - Unit tests for individual tools (`pytest`)
-- Integration tests for A2A communication
+- Integration tests for agent delegation and routing
 - E2E scenario tests (matches [Scenarios.md](Scenarios.md))
 
 ```python
@@ -404,6 +410,7 @@ def test_tool_execution():
 **Design Decision (Feb 2026):** The system uses a **natural conversational flow** where each user message is one agent turn. Multi-step processes (e.g., Discovery → Serviceability) happen through explicit user confirmation rather than automatic server-side orchestration.
 
 **Rationale:**
+
 - ✅ **ADK-aligned:** Respects ADK's one-turn-per-agent architecture
 - ✅ **User control:** Customer explicitly chooses each step
 - ✅ **Simple:** No server-side pattern matching or recursive routing
@@ -421,6 +428,7 @@ User: "Yes"
 ```
 
 **Alternative Architectures:**
+
 1. **Recursive Router** ❌ - Server-side pattern matching and auto-continuation (brittle, fights ADK)
 2. **Tool-Based Handoff** ⚠️ - Agent calls tool to trigger routing (ADK-native, can implement if needed)
 
@@ -463,6 +471,7 @@ Transfer to **serviceability_agent** whenever:
 ```
 
 **Benefits:**
+
 - ✅ **Natural conversation flow** - User doesn't experience jarring handoffs
 - ✅ **LLM-driven flexibility** - Handles variations in user responses ("ok", "yes", "sure")
 - ✅ **No rigid state machines** - Works within ADK's conversational model
@@ -477,6 +486,7 @@ Transfer to **serviceability_agent** whenever:
 **Problem Identified (Feb 2026):** When agents transferred data across multi-turn conversations using unstructured text, Gemini would occasionally **hallucinate or modify critical data** during agent-to-agent handoffs.
 
 **Example Hallucination:**
+
 ```
 DiscoveryAgent tool returns: "123 Main Street, Philadelphia, PA 19103"
 → LLM transfers to ServiceabilityAgent as: "123 Main Street, Philadelphia, PA 19106"
@@ -485,7 +495,7 @@ DiscoveryAgent tool returns: "123 Main Street, Philadelphia, PA 19103"
 
 **Root Cause:** When tools returned formatted text strings like `"Address: 123 Main St, City: Philadelphia, PA, Zip: 19103"`, the LLM would **rephrase** the output in its next turn, which allowed for digit substitution, field omission, or paraphrasing errors.
 
-**Solution: Structured JSON Tool Outputs**
+## Solution: Structured JSON Tool Outputs
 
 All DiscoveryAgent tools now return **JSON with explicit field names** instead of formatted text:
 
@@ -512,6 +522,7 @@ def get_company_profile(company_name: str) -> str:
 ```
 
 **Agent Instructions Updated:**
+
 ```python
 """
 When responding:
@@ -522,18 +533,21 @@ When responding:
 ```
 
 **Why JSON Works:**
+
 1. **Explicit field names** - LLM cannot "forget" which field is which
 2. **Type safety** - Numbers stay numbers, strings stay strings
 3. **No rephrasing ambiguity** - LLM passes structured data directly without text generation
 4. **Gemini's native JSON parsing** - ADK automatically parses JSON from tools, no custom handling needed
 
 **Implementation Results:**
+
 - ✅ All 11 DiscoveryAgent tools converted to JSON (read + write operations)
 - ✅ Zero hallucination incidents in testing after conversion
 - ✅ Agent instructions updated to explain JSON parsing requirements
 - ✅ Database schema enforces mandatory zip codes (NOT NULL constraint)
 
 **Key Learnings:**
+
 - LLM-to-LLM data transfer is unreliable for exact values (addresses, numbers, codes)
 - Structured data formats (JSON, XML) prevent hallucination in multi-agent systems
 - Tools should return machine-readable formats, even when consumed by LLMs
@@ -618,7 +632,7 @@ sequenceDiagram
 
 Note: Each arrow from Customer represents a separate user message/turn.
 
-### ### Routing Decision Tree
+### Routing Decision Tree
 
 **SuperAgent Routing Logic (Priority Order):**
 
@@ -676,6 +690,7 @@ SuperAgent/
 ```
 
 **Startup:**
+
 ```bash
 # Terminal 1 - Backend
 cd SuperAgent/server
@@ -691,7 +706,7 @@ npm run dev
 
 - **Containerization:** Docker for each agent + SuperAgent server
 - **Orchestration:** Kubernetes for scaling sub-agents independently
-- **Message Queue:** RabbitMQ/Kafka for A2A communication (replace in-memory)
+- **Message Queue:** RabbitMQ/Kafka for async agent communication (replace in-memory)
 - **Observability:** OpenTelemetry + Cloud Logging for agent decision trails
 - **Secret Management:** Google Secret Manager for API keys
 - **Database:** PostgreSQL (replace SQLite for multi-tenancy)
@@ -703,21 +718,23 @@ npm run dev
 ### Why Super Agent/Sub-Agent Pattern?
 
 **Alternatives Considered:**
+
 1. ❌ Monolithic LLM with all tools → Prompt bloat, poor intent separation
 2. ❌ Sequential pipeline → Rigid, can't handle dynamic conversation flow
-3. ✅ **Hierarchical orchestration** → Flexible routing, isolated concerns, A2A autonomy
+3. ✅ **Hierarchical orchestration** → Flexible routing, isolated concerns, sub-agent autonomy
 
 **Benefits:**
+
 - Clear separation of concerns (discovery ≠ pricing ≠ fulfillment)
 - Independent development/testing of sub-agents
-- A2A enables multi-turn autonomous negotiation
+- ADK delegation enables multi-turn autonomous conversations
 - Sub-agents can be owned by different teams
 
 ### Why ADK Over LangChain/LlamaIndex?
 
 | Feature | ADK | LangChain | Decision |
-|---------|-----|-----------|----------|
-| Multi-agent orchestration | ✅ Native | ⚠️ Via LangGraph | ADK built for A2A |
+| --------- | ----- | ----------- | ---------- |
+| Multi-agent orchestration | ✅ Native | ⚠️ Via LangGraph | ADK built for multi-agent |
 | Google Gemini integration | ✅ First-class | ➖ Generic | Optimized for Gemini |
 | Tool definition | ✅ `@FunctionTool` | ✅ Similar | Parity |
 | Observability | ✅ Built-in | ➖ Manual | ADK advantage |
@@ -728,12 +745,14 @@ npm run dev
 ### Why Importlib Isolation?
 
 **Problem:** ADK enforces `one parent per agent`. If `DiscoveryAgent/__init__.py` runs:
+
 ```python
 # DiscoveryAgent/bootstrap_agent/__init__.py
 from .agent import discovery_agent  # <-- Binds to DiscoveryAgent's root
 ```
 
 Then importing in SuperAgent fails:
+
 ```python
 # SuperAgent/super_agent/agent.py
 from discovery_agent import discovery_agent  # ERROR: Already has parent
@@ -744,6 +763,7 @@ from discovery_agent import discovery_agent  # ERROR: Already has parent
 ### Why SQLite for Development?
 
 **Rationale:**
+
 - Zero setup (no DB server)
 - Sufficient for single-user academic demo
 - Easy to inspect/reset (`sqlite3 data.db`)
@@ -768,6 +788,7 @@ from discovery_agent import discovery_agent  # ERROR: Already has parent
 ### LLM Safety
 
 **Guardrails in SuperAgent:**
+
 - Blocked topics: Competitors, pricing (unless via deterministic tool), sensitive data
 - Safety settings: `BLOCK_MEDIUM_AND_ABOVE` for harassment/hate speech
 - Output filtering: No PII leakage in LLM responses
@@ -778,31 +799,35 @@ from discovery_agent import discovery_agent  # ERROR: Already has parent
 
 ### Logging Levels
 
-```python
+```bash
 # Enable debug logging
 export LOG_LEVEL=DEBUG
-
-# Agent-specific logs
-logger.info(f"[{agent.name}] Tool execution: {tool_name}")
-logger.debug(f"A2A message sent: {message}")
 ```
 
-### A2A Audit Trail
+```python
+# Agent-specific logs
+logger.info(f"[{agent.name}] Tool execution: {tool_name}")
+logger.debug(f"Agent delegation: {message}")
+```
 
-All inter-agent messages logged with:
-- Correlation ID (trace request across agents)
+### Agent Delegation Audit Trail
+
+All agent delegation events logged with:
+
+- Session ID (trace request across agents)
 - Timestamp
-- Sender/Receiver
-- Full message payload
+- Delegating agent / Target agent
+- Tool calls and responses
 
 **Example Log:**
+
 ```json
 {
   "timestamp": "2026-02-15T10:30:15Z",
   "level": "INFO",
-  "correlation_id": "uuid-1234",
-  "sender": "super_agent",
-  "receiver": "discovery_agent",
+  "session_id": "uuid-1234",
+  "delegator": "super_sales_agent",
+  "target": "discovery_agent",
   "action": "lookup_company",
   "parameters": {"company_name": "VoiceStream Networks"},
   "duration_ms": 245
@@ -829,6 +854,7 @@ pytest tests/test_scenarios.py::test_serviceability_flow
 ### Adding a New Sub-Agent
 
 1. **Create agent project:**
+
    ```bash
    mkdir NewAgent
    cd NewAgent
@@ -841,12 +867,14 @@ pytest tests/test_scenarios.py::test_serviceability_flow
    - Tools in `new_agent/tools/`
 
 3. **Create wrapper in SuperAgent:**
+
    ```bash
    mkdir SuperAgent/super_agent/sub_agents/new_agent
    # Create __init__.py and agent.py with importlib loader
    ```
 
 4. **Register in SuperAgent:**
+
    ```python
    # super_agent/agent.py
    from .sub_agents.new_agent import new_agent
@@ -855,6 +883,7 @@ pytest tests/test_scenarios.py::test_serviceability_flow
    ```
 
 5. **Update routing in prompts.py:**
+
    ```python
    # super_agent/prompts.py
    """
@@ -871,6 +900,7 @@ pytest tests/test_scenarios.py::test_serviceability_flow
 **Best Practice:** Keep prompts in `prompts.py` for version control, A/B testing
 
 **After change:**
+
 ```bash
 # Restart server to reload agent
 pkill -f uvicorn
@@ -884,5 +914,5 @@ cd SuperAgent/server && uvicorn main:app --reload
 - **Project README:** [README.md](README.md) - Full project overview
 - **Test Scenarios:** [Scenarios.md](Scenarios.md) - Positive/negative test cases
 - **Milestone Plan:** [MilestonePlan.md](MilestonePlan.md) - Development timeline
-- **Google ADK Docs:** https://cloud.google.com/products/agent-development-kit
-- **Gemini API:** https://ai.google.dev/gemini-api/docs
+- **Google ADK Docs:** <https://cloud.google.com/products/agent-development-kit>
+- **Gemini API:** <https://ai.google.dev/gemini-api/docs>

@@ -14,23 +14,31 @@ logger = get_logger(__name__)
 
 def generate_invoice(
     customer_name: str,
-    line_items: List[Dict[str, Any]],
+    line_items_json: str,
     due_date: str = None,
     tax_rate: float = 0.08
 ) -> Dict[str, Any]:
     """
     Generates an invoice for services.
-    
+
     Args:
         customer_name: Customer/business name
-        line_items: List of items with description, quantity, unit_price
+        line_items_json: JSON string of line items array. Each item must have "description" (str), "quantity" (int), and "unit_price" (float). Example: '[{"description": "Fiber 5G Internet", "quantity": 1, "unit_price": 599.00}]'
         due_date: Payment due date (ISO format), defaults to 30 days from now
         tax_rate: Tax rate (default 8%)
-    
+
     Returns:
         Generated invoice with totals
     """
     logger.info(f"Generating invoice for: {customer_name}")
+
+    try:
+        line_items = json.loads(line_items_json)
+    except (json.JSONDecodeError, TypeError):
+        return {
+            "success": False,
+            "error": "Invalid line_items_json format. Must be a valid JSON array string."
+        }
     
     try:
         # Calculate totals
