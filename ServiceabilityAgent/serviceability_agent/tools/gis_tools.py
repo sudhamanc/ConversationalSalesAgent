@@ -39,7 +39,7 @@ MOCK_COVERAGE_DATA = {
             "redundancy_available": True
         },
         "zone": "Metro-East-PA",
-        "install_days": 5
+        "install_days": 2
     },
     "19103": {  # Philadelphia city center - full fiber
         "serviceable": True,
