@@ -79,6 +79,7 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         logger.debug(f"Session ID: {session_id}, User ID: {user_id}")
         logger.debug(f"Model: {_runner.agent.model}")
         
+        sent_content = False
         async for event in _runner.run_async(
             user_id=user_id,
             session_id=session_id,
@@ -90,7 +91,7 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                 yield f"data: {json.dumps({'type': 'error', 'content': event.error_message})}\n\n"
                 return
             
-            if event.content and hasattr(event.content, 'parts'):
+            if event.content and hasattr(event.content, 'parts') and event.content.parts:
                 for part in event.content.parts:
                     if hasattr(part, 'text') and part.text:
                         logger.debug(f"Streaming token from {event.author}: {part.text[:50]}...")
@@ -100,9 +101,19 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                             "author": event.author or "agent",
                         })
                         yield f"data: {payload}\n\n"
+                        sent_content = True
             
             if event.turn_complete:
                 logger.info(f"Turn complete from {event.author}")
+                # If no content was sent, send a fallback message
+                if not sent_content:
+                    logger.warning(f"Empty response from agent, sending fallback")
+                    fallback_payload = json.dumps({
+                        "type": "token",
+                        "content": "I'm ready to assist you! How can I help with your business telecommunications needs today?",
+                        "author": "agent",
+                    })
+                    yield f"data: {fallback_payload}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 

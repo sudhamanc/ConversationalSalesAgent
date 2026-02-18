@@ -1,12 +1,16 @@
 """
-Service Fulfillment Agent - Order scheduling and service activation.
+Service Fulfillment Agent - POST-ORDER installation scheduling and service activation.
 
 This agent is a deterministic, tool-based agent that:
 1. Schedules installation appointments
 2. Coordinates equipment provisioning
 3. Dispatches technicians
 4. Activates services
-5. Tracks order completion
+5. Tracks installation completion
+
+SEPARATION OF CONCERNS:
+- OrderAgent handles PRE-FULFILLMENT: cart management, order creation, contract generation
+- ServiceFulfillmentAgent (THIS) handles POST-ORDER: installation, equipment, activation
 
 It is designed to be integrated into the Super Agent orchestration system
 as a sub-agent for the Fulfillment cluster.
@@ -72,11 +76,12 @@ from .tools.activation_tools import (
     run_service_tests,
     get_service_details,
 )
-from .tools.order_tools import (
-    create_order,
-    get_order_status,
-    update_order_status,
-)
+# Note: order_tools removed - order creation is now handled by OrderAgent
+# from .tools.order_tools import (
+#     create_order,
+#     get_order_status,
+#     update_order_status,
+# )
 from .utils.logger import get_logger
 
 # Load environment variables
@@ -115,11 +120,8 @@ service_fulfillment_agent = Agent(
         # Activation tools
         activate_service,
         run_service_tests,
-        get_service_details,
-        # Order management tools
-        create_order,
-        get_order_status,
-        update_order_status,
+        # NOTE: Order creation tools removed - now handled by OrderAgent
+        # update_order_status tool also removed - OrderAgent handles all order status management
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,  # Deterministic - critical for fulfillment accuracy

@@ -16,7 +16,9 @@ from .sub_agents.discovery import discovery_agent
 from .sub_agents.serviceability import serviceability_agent
 from .sub_agents.product import product_agent
 from .sub_agents.payment import payment_agent
+from .sub_agents.order import order_agent
 from .sub_agents.service_fulfillment import service_fulfillment_agent
+from .sub_agents.customer_communication import customer_communication_agent
 
 _safety = settings.safety
 _model = settings.model
@@ -59,7 +61,9 @@ def _build_sub_agents() -> list[Agent]:
             serviceability_agent,
             product_agent,
             payment_agent,
+            order_agent,
             service_fulfillment_agent,
+            customer_communication_agent,
             greeting_agent,
             faq_agent
         ])
