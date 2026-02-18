@@ -32,7 +32,7 @@ Thumbs.db
 Sales Scenarios.md
 
 # DiscoveryAgent specific
-DiscoveryAgent/.venv312/
+#DiscoveryAgent/.venv312/
 DiscoveryAgent/.env.template
 DiscoveryAgent/check_gcloud_config.py
 DiscoveryAgent/requirements.txt 
@@ -50,6 +50,7 @@ DiscoveryAgent/update_database.py
 DiscoveryAgent/update_remaining_companies.py
 DiscoveryAgent/validate_lead_gen.py
 DiscoveryAgent/verify_all_products.py
+DsicoveryAgent/temp/
 
 # Test files
 **/test_*
