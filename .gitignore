@@ -1,16 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+.venv312/
+venv/
+
+# Environment
+.env
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Project-specific exclusions
 Sales Scenarios.md
-BootStrapAgent/
-DiscoveryAgent/.ven312/
-**/test*
-**/tests*
-**/__tests__*
+
+# DiscoveryAgent specific
+DiscoveryAgent/.venv312/
 DiscoveryAgent/.env.template
 DiscoveryAgent/check_gcloud_config.py
 DiscoveryAgent/requirements.txt 
 DiscoveryAgent/add_current_prodcts.py
 DiscoveryAgent/add_products_of_interest.py
 DiscoveryAgent/Chat_setup.md
-DicoveryAgent/check_gcloud_config.py
 DiscoveryAgent/check_schema.py
 DiscoveryAgent/DATABASE_UPDATE_SUMMARY.py
 DiscoveryAgent/explore_db.py
@@ -22,9 +50,9 @@ DiscoveryAgent/update_database.py
 DiscoveryAgent/update_remaining_companies.py
 DiscoveryAgent/validate_lead_gen.py
 DiscoveryAgent/verify_all_products.py
-**/__pycache__/
-**/verify*
-**verify*
-**test
-*test
 
+# Test files
+**/test_*
+**/tests/
+**/__tests__/
+**/verify_*
