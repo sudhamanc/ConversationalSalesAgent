@@ -15,7 +15,7 @@
 
 2. **Common tasks → Required reading:**
    - Configuration changes → [SuperAgent/README.md](/SuperAgent/README.md) (`.env` variables)
-   - RAG/ChromaDB setup → [AGENTS.md - Tools](AGENTS.md#tools)
+   - Product tool updates → [AGENTS.md - Tools](AGENTS.md#tools)
    - Product catalog → [AGENTS.md - Data Sources](AGENTS.md#data-sources)
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
@@ -24,11 +24,11 @@
 
 ## Key Rules
 
-1. **RAG-powered** - All product data from ChromaDB vector database
+1. **Catalog-powered** - All product data from deterministic product tools
 2. **Infrastructure-aware** - Filter products by Fiber/Coax constraints
-3. **Temperature = 0.1** - Low for factual accuracy
-4. **11 tools** - RAG, catalog, comparison
-5. **Status:** ⏳ Standalone (not yet integrated into SuperAgent)
+3. **Temperature = 0.0** - Deterministic for factual accuracy
+4. **7 tools** - Catalog and comparison only
+5. **Status:** ✅ Integrated into SuperAgent
 
 ---
 

@@ -63,7 +63,7 @@ This system implements a **Super Agent/Sub-Agent** orchestration pattern using G
 ┌──────────────────────▼──────────────────────────────────────┐
 │                 INFRASTRUCTURE LAYER                         │
 │  • SQLite (Prospect/Order DB)                                │
-│  • ChromaDB (Product RAG)                                    │
+│  • In-Repo Product Catalog (ProductAgent)                    │
 │  • GIS/Coverage Map API (Serviceability)                     │
 │  • Pricing Engine API (Offers)                               │
 │  • Payment Gateway (Credit/Auth)                             │
@@ -85,8 +85,11 @@ root_agent = Agent(
         discovery_agent,
         serviceability_agent,
         product_agent,
+        offer_management_agent,
+        order_agent,
         payment_agent,
         service_fulfillment_agent,
+        customer_communication_agent,
         greeting_agent,
         faq_agent,
     ],
@@ -132,19 +135,14 @@ def check_address_serviceability(address: str) -> dict:
 | **SuperAgent** | ✅ Active | `SuperAgent/super_agent/agent.py` | Root orchestrator. Routes intents, manages session state, delegates to sub-agents |
 | **DiscoveryAgent** | ✅ Active | `DiscoveryAgent/bootstrap_agent/` | Prospect identification, company lookup, BANT qualification, intelligent slot-filling |
 | **ServiceabilityAgent** | ✅ Active | `ServiceabilityAgent/serviceability_agent/` | PRE-SALE address validation, coverage verification, infrastructure assessment |
-| **ProductAgent** | ✅ Active | `ProductAgent/product_agent/` | RAG-powered product catalog, technical specs, feature docs (ChromaDB) |
+| **ProductAgent** | ✅ Active | `ProductAgent/product_agent/` | Deterministic product catalog lookup, technical specs, and product comparison |
+| **OfferManagementAgent** | ✅ Active | `OfferManagement/offer_management/` | Deterministic pricing calculation, bundle/term discounts, quote JSON generation |
+| **OrderAgent** | ✅ Active | `OrderAgent/order_agent/` | Cart management, contract generation, order finalization |
 | **GreetingAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/greeting/` | Handles greetings, phone script generation for human agents |
 | **FAQAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/faq/` | Answers product questions, policies, SLAs, support topics |
 | **PaymentAgent** | ✅ Active | `PaymentAgent/payment_agent/` | Credit checks, payment validation, fraud assessment, authorization |
 | **ServiceFulfillmentAgent** | ✅ Active | `ServiceFulfillmentAgent/service_fulfillment_agent/` | POST-SALE installation scheduling, provisioning, service activation |
-
-### Planned (Future Implementation)
-
-| Agent | Status | Purpose |
-|-------|--------|---------|
-| **OfferManagementAgent** | 🔮 Planned | Pricing calculation, bundle creation, promotional discounts |
-| **OrderAgent** | 🔮 Planned | Cart management, contract generation, order finalization |
-| **CustomerCommsAgent** | 🔮 Planned | Automated notifications (email/SMS) for order, payment, installation |
+| **CustomerCommsAgent** | ✅ Active | `CustomerCommunicationAgent/customer_communication_agent/` | Automated/manual notifications and communication history |
 
 ---
 
@@ -161,7 +159,6 @@ def check_address_serviceability(address: str) -> dict:
 | **Frontend** | React + Vite | 19 | Client UI with streaming message display |
 | **State Mgmt** | React Context | - | Chat history, session state |
 | **Styling** | Tailwind CSS | - | Rapid, clean UI components |
-| **Vector DB** | ChromaDB | - | RAG for product manuals (ProductAgent) |
 | **Transactional DB** | SQLite | - | Prospect data (DiscoveryAgent), Orders |
 | **Agent Routing** | ADK Sub-Agent Delegation | Native | Inter-agent communication via orchestrator |
 
@@ -601,6 +598,8 @@ sequenceDiagram
     participant Discovery
     participant Serviceability
     participant Product
+    participant OfferManagement
+    participant Order
     participant Payment
     participant ServiceFulfillment
 
@@ -620,8 +619,15 @@ sequenceDiagram
     SuperAgent->>Product: Get Fiber 5G specs
     Product-->>SuperAgent: Speed, SLA, features
 
-    Customer->>SuperAgent: "I'll take Fiber 5G"
-    SuperAgent->>Payment: Credit check
+    Customer->>SuperAgent: "Give me pricing for Fiber 5G + SD-WAN"
+    SuperAgent->>OfferManagement: Build quote
+    OfferManagement-->>SuperAgent: offer_id + item prices + discounts + total
+
+    Customer->>SuperAgent: "Proceed with this quote"
+    SuperAgent->>Order: Create order from quote
+    Order-->>SuperAgent: Order confirmed (pending_payment)
+
+    SuperAgent->>Payment: Credit check and payment
     Payment-->>SuperAgent: Approved (Score: 720)
 
     SuperAgent->>ServiceFulfillment: Schedule installation
@@ -646,21 +652,37 @@ Note: Each arrow from Customer represents a separate user message/turn.
    - Action: GIS lookup, return available infrastructure and speeds
    - Note: User must explicitly request or confirm serviceability check
 
-3. **Greetings** → GreetingAgent
+3. **Product Catalog & Technical Fit** → ProductAgent
+    - Trigger: "Show me internet products", "compare Fiber 1G vs 5G", "SLA details"
+    - Action: Return technical specs/features/SLA only (no pricing)
+
+4. **Offer Management (Pricing/Discounts/Quote)** → OfferManagementAgent
+    - Trigger: "Give me a quote", "show total price", "any discounts?"
+    - Action: Return deterministic JSON with offer_id, item price points, discounts, subtotal, total_discount, total_price
+
+5. **Order Creation and Cart Management** → OrderAgent
+    - Trigger: "Place order", "add to cart", "checkout"
+    - Action: Cart-first ordering and contract generation
+
+6. **Payment Processing** → PaymentAgent
+    - Trigger: "Process payment", "credit check", or post-order payment flow
+    - Action: Credit validation and payment authorization
+
+7. **Installation Scheduling and Activation** → ServiceFulfillmentAgent
+    - Trigger: "Schedule installation", "activate service"
+    - Action: Post-order fulfillment and activation
+
+8. **Customer Notifications** → CustomerCommunicationAgent
+    - Trigger: "Send confirmation", "resend reminder", "show notification history"
+    - Action: Notification dispatch/history
+
+9. **Greetings** → GreetingAgent
    - Trigger: "Hi", "Hello", "Good morning"
    - Action: Generate phone script listing all products
 
-4. **FAQ/Support** → FAQAgent
+10. **FAQ/Support** → FAQAgent
    - Trigger: "What's your policy?", "How long is install?", "Tell me about [product]"
    - Action: Answer from knowledge base
-
-5. **Product Catalog** → Tool: `get_product_catalog`
-   - Trigger: "Show me all products", "What voice services?"
-   - Action: Direct tool call, no sub-agent
-
-6. **Customer Lookup** → Tool: `lookup_customer` (fallback)
-   - Trigger: Account number, existing customer by name
-   - Action: Direct DB query
 
 ---
 
@@ -906,6 +928,28 @@ pytest tests/test_scenarios.py::test_serviceability_flow
 pkill -f uvicorn
 cd SuperAgent/server && uvicorn main:app --reload
 ```
+
+---
+
+## Project TODOs
+
+1. **Create persistent SQLite databases for quote, order, and pending cart state**
+    - Add `QuoteDB` (SQLite), `OrdersDB` (SQLite), and `PendingCartDB` (SQLite).
+    - `PendingCartDB` must be updated on every cart add/remove/change operation.
+    - `PendingCartDB` must be emptied for a cart when the related order is successfully submitted.
+    - Replace in-memory-only cart/order storage where applicable so state survives process restarts.
+
+2. **Move frontend rendering from heuristic prose parsing to structured contracts**
+    - Current `responseFormatters.js` parsing is heuristic and text-shape dependent; this is brittle with LLM output variability.
+    - Backend (`chat.py`) should emit typed SSE events from tool responses, e.g. `offer_update`, `serviceability_update`, `product_update`.
+    - UI (`ChatContext.jsx`, `MessageBubble.jsx`) should render cards from typed structured payloads rather than prose parsing.
+    - Keep `responseFormatters.js` as a legacy fallback path only.
+    - Goal: deterministic rendering and removal of prompt-coupled hardcoding from the frontend.
+
+3. **Persist fulfilled customer records in a CustomerMaster database**
+    - Once an order is fully fulfilled, capture complete customer details and store them in `CustomerMasterDB` (SQLite).
+    - Include key identifiers and lifecycle details (e.g., customer_id, company/contact info, service address, ordered products/services, order/fulfillment references).
+    - Ensure writes happen only after successful completion of the full fulfillment workflow.
 
 ---
 

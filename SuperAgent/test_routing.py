@@ -56,6 +56,11 @@ try:
             'description': 'Product comparison'
         },
         {
+            'message': 'Give me a quote for Fiber 5G and SDWAN-PRO',
+            'expected_agent': 'offer_management_agent',
+            'description': 'Offer management quote request'
+        },
+        {
             'message': 'What is your cancellation policy?',
             'expected_agent': 'faq_agent',
             'description': 'FAQ/Policy question'
@@ -68,7 +73,7 @@ try:
     instruction = root_agent.instruction
     
     # Check if routing instructions mention all agents
-    agents_to_check = ['discovery_agent', 'serviceability_agent', 'product_agent', 'greeting_agent', 'faq_agent']
+    agents_to_check = ['discovery_agent', 'serviceability_agent', 'product_agent', 'offer_management_agent', 'greeting_agent', 'faq_agent']
     
     print('\n1. Verifying routing instructions include all agents:')
     for agent_name in agents_to_check:
@@ -86,8 +91,23 @@ try:
         'technical specifications',
         'product comparisons'
     ]
+
+    offer_keywords = [
+        'offer_management_agent',
+        'Pricing',
+        'discount',
+        'quote',
+        'total price'
+    ]
     
     for keyword in product_keywords:
+        if keyword.lower() in instruction.lower():
+            print(f'   ✅ "{keyword}" found in instructions')
+        else:
+            print(f'   ⚠️  "{keyword}" not found in instructions')
+
+    print('\n2b. Verifying OfferManagement routing examples:')
+    for keyword in offer_keywords:
         if keyword.lower() in instruction.lower():
             print(f'   ✅ "{keyword}" found in instructions')
         else:

@@ -28,7 +28,7 @@
 ❌ Technician dispatch (ServiceFulfillmentAgent)  
 ❌ Service activation (ServiceFulfillmentAgent)  
 ❌ Payment processing (PaymentAgent)  
-❌ Pricing calculation (OfferManagementAgent - planned)  
+❌ Pricing calculation (OfferManagementAgent - active)  
 
 ---
 

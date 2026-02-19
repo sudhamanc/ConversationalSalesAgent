@@ -2,7 +2,7 @@
 GIS integration tools for checking service availability.
 
 These tools interface with GIS/Coverage Map APIs to determine
-if an address can receive service and what products are available.
+if an address can receive service and what infrastructure is available.
 """
 
 import os
@@ -11,6 +11,26 @@ from ..utils.logger import get_logger
 from ..utils.cache import cache_result, get_cached_result
 
 logger = get_logger(__name__)
+
+
+PRODUCT_ID_TO_NAME = {
+    "FIB-1G": "Business Fiber 1 Gbps",
+    "FIB-5G": "Business Fiber 5 Gbps",
+    "FIB-10G": "Business Fiber 10 Gbps",
+    "COAX-200M": "Business Coax 200 Mbps",
+    "COAX-500M": "Business Coax 500 Mbps",
+    "COAX-1G": "Business Coax 1 Gbps",
+    "VOICE-BAS": "Business Voice Basic",
+    "VOICE-STD": "Business Voice Standard",
+    "VOICE-ENT": "Business Voice Enterprise",
+    "VOICE-UCAAS": "Unified Communications (UCaaS)",
+    "SDWAN-ESS": "SD-WAN Essentials",
+    "SDWAN-PRO": "SD-WAN Professional",
+    "SDWAN-ENT": "SD-WAN Enterprise",
+    "MOB-BAS": "Business Mobile Basic",
+    "MOB-UNL": "Business Mobile Unlimited",
+    "MOB-PREM": "Business Mobile Premium",
+}
 
 
 # Mock coverage database for development/testing
@@ -38,6 +58,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Enterprise",
             "redundancy_available": True
         },
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-East-PA",
         "install_days": 2
     },
@@ -63,6 +84,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Business",
             "redundancy_available": True
         },
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Center-PA",
         "install_days": 5
     },
@@ -88,6 +110,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Standard",
             "redundancy_available": False
         },
+        "available_products": ["COAX-200M", "COAX-500M", "VOICE-BAS", "VOICE-STD", "SDWAN-ESS", "MOB-BAS", "MOB-UNL"],
         "zone": "Rural-PA",
         "install_days": 10
     },
@@ -113,6 +136,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Enterprise",
             "redundancy_available": True
         },
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-NYC",
         "install_days": 7
     },
@@ -138,6 +162,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Business",
             "redundancy_available": False
         },
+        "available_products": ["COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-LA",
         "install_days": 7
     },
@@ -163,6 +188,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Enterprise",
             "redundancy_available": True
         },
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Chicago-Loop",
         "install_days": 5
     },
@@ -188,6 +214,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Business",
             "redundancy_available": True
         },
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-SF-Downtown",
         "install_days": 6
     },
@@ -213,6 +240,7 @@ MOCK_COVERAGE_DATA = {
             "service_class": "Enterprise",
             "redundancy_available": True
         },
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Boston-Downtown",
         "install_days": 5
     },
@@ -220,19 +248,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$289/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$659/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$289/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$659/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Seattle",
         "install_days": 7
     },
@@ -240,25 +259,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$599/mo"
-            },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$999/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$599/mo"},
+            {"id": "FIB-10G", "name": "Business Fiber 10 Gbps", "speeds": ["10 Gbps"], "price": "$999/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Atlanta",
         "install_days": 6
     },
@@ -266,25 +271,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$89/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$159/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Coax 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$259/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$89/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$159/mo"},
+            {"id": "COAX-1G", "name": "Business Coax 1 Gbps", "speeds": ["1 Gbps"], "price": "$259/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Miami",
         "install_days": 8
     },
@@ -292,19 +283,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$259/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$619/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$259/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$619/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Dallas",
         "install_days": 6
     },
@@ -312,19 +294,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "DOCSIS 3.1",
         "products": [
-            {
-                "id": "COAX-500M",
-                "name": "Business Internet 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Internet 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-500M", "name": "Business Internet 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Internet 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Phoenix",
         "install_days": 7
     },
@@ -332,25 +305,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$269/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$639/mo"
-            },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1039/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$269/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$639/mo"},
+            {"id": "FIB-10G", "name": "Business Fiber 10 Gbps", "speeds": ["10 Gbps"], "price": "$1039/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Denver",
         "install_days": 6
     },
@@ -358,25 +317,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$289/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$669/mo"
-            },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1069/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$289/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$669/mo"},
+            {"id": "FIB-10G", "name": "Business Fiber 10 Gbps", "speeds": ["10 Gbps"], "price": "$1069/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-DC",
         "install_days": 5
     },
@@ -384,25 +329,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Coax 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Coax 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Minneapolis",
         "install_days": 8
     },
@@ -410,19 +341,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "VOICE-BAS", "VOICE-STD", "SDWAN-ESS", "MOB-BAS", "MOB-UNL"],
         "zone": "Metro-StLouis",
         "install_days": 9
     },
@@ -430,19 +352,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$279/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$649/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$279/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$649/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Portland",
         "install_days": 7
     },
@@ -450,19 +363,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "DOCSIS 3.1",
         "products": [
-            {
-                "id": "COAX-500M",
-                "name": "Business Internet 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Internet 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-500M", "name": "Business Internet 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Internet 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-LasVegas",
         "install_days": 7
     },
@@ -470,19 +374,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$259/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$619/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$259/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$619/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Charlotte",
         "install_days": 6
     },
@@ -490,19 +385,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "DOCSIS 3.1",
         "products": [
-            {
-                "id": "COAX-500M",
-                "name": "Business Internet 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Internet 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-500M", "name": "Business Internet 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Internet 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-SanDiego",
         "install_days": 7
     },
@@ -510,25 +396,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$259/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$619/mo"
-            },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1019/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$259/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$619/mo"},
+            {"id": "FIB-10G", "name": "Business Fiber 10 Gbps", "speeds": ["10 Gbps"], "price": "$1019/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Austin",
         "install_days": 5
     },
@@ -536,25 +408,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Coax 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Coax 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Nashville",
         "install_days": 8
     },
@@ -562,19 +420,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$259/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$619/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$259/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$619/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Raleigh",
         "install_days": 6
     },
@@ -582,19 +431,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "VOICE-BAS", "VOICE-STD", "SDWAN-ESS", "MOB-BAS", "MOB-UNL"],
         "zone": "Metro-Columbus",
         "install_days": 8
     },
@@ -602,25 +442,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Coax 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Coax 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Indianapolis",
         "install_days": 8
     },
@@ -628,19 +454,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$259/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$619/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$259/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$619/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-KansasCity",
         "install_days": 7
     },
@@ -648,19 +465,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "VOICE-BAS", "VOICE-STD", "SDWAN-ESS", "MOB-BAS", "MOB-UNL"],
         "zone": "Metro-Milwaukee",
         "install_days": 9
     },
@@ -668,25 +476,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$79/mo"
-            },
-            {
-                "id": "COAX-500M",
-                "name": "Business Coax 500 Mbps",
-                "speeds": ["500 Mbps"],
-                "price": "$149/mo"
-            },
-            {
-                "id": "COAX-1G",
-                "name": "Business Coax 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$249/mo"
-            },
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$79/mo"},
+            {"id": "COAX-500M", "name": "Business Coax 500 Mbps", "speeds": ["500 Mbps"], "price": "$149/mo"},
+            {"id": "COAX-1G", "name": "Business Coax 1 Gbps", "speeds": ["1 Gbps"], "price": "$249/mo"},
         ],
+        "available_products": ["COAX-200M", "COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Detroit",
         "install_days": 8
     },
@@ -694,19 +488,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$269/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$639/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$269/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$639/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-Baltimore",
         "install_days": 6
     },
@@ -714,25 +499,11 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "FTTP",
         "products": [
-            {
-                "id": "FIB-1G",
-                "name": "Business Fiber 1 Gbps",
-                "speeds": ["1 Gbps"],
-                "price": "$299/mo"
-            },
-            {
-                "id": "FIB-5G",
-                "name": "Business Fiber 5 Gbps",
-                "speeds": ["5 Gbps"],
-                "price": "$699/mo"
-            },
-            {
-                "id": "FIB-10G",
-                "name": "Business Fiber 10 Gbps",
-                "speeds": ["10 Gbps"],
-                "price": "$1099/mo"
-            },
+            {"id": "FIB-1G", "name": "Business Fiber 1 Gbps", "speeds": ["1 Gbps"], "price": "$299/mo"},
+            {"id": "FIB-5G", "name": "Business Fiber 5 Gbps", "speeds": ["5 Gbps"], "price": "$699/mo"},
+            {"id": "FIB-10G", "name": "Business Fiber 10 Gbps", "speeds": ["10 Gbps"], "price": "$1099/mo"},
         ],
+        "available_products": ["FIB-1G", "FIB-5G", "FIB-10G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "SDWAN-ENT", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
         "zone": "Metro-SanJose",
         "install_days": 5
     },
@@ -740,19 +511,10 @@ MOCK_COVERAGE_DATA = {
         "serviceable": True,
         "technology": "HFC",
         "products": [
-            {
-                "id": "COAX-100M",
-                "name": "Business Coax 100 Mbps",
-                "speeds": ["100 Mbps"],
-                "price": "$59/mo"
-            },
-            {
-                "id": "COAX-200M",
-                "name": "Business Coax 200 Mbps",
-                "speeds": ["200 Mbps"],
-                "price": "$89/mo"
-            },
+            {"id": "COAX-100M", "name": "Business Coax 100 Mbps", "speeds": ["100 Mbps"], "price": "$59/mo"},
+            {"id": "COAX-200M", "name": "Business Coax 200 Mbps", "speeds": ["200 Mbps"], "price": "$89/mo"},
         ],
+        "available_products": ["COAX-200M", "VOICE-BAS", "VOICE-STD", "SDWAN-ESS", "MOB-BAS", "MOB-UNL"],
         "zone": "Suburban-Austin",
         "install_days": 12
     },
@@ -769,6 +531,19 @@ MOCK_COVERAGE_DATA = {
         "reason": "Outside coverage area - rural region with no infrastructure"
     },
 }
+
+
+def _sanitize_mock_coverage_data() -> None:
+    """
+    Remove legacy pricing and plan payloads from mock GIS data.
+
+    Serviceability must expose infrastructure and product IDs only.
+    """
+    for coverage in MOCK_COVERAGE_DATA.values():
+        coverage.pop("products", None)
+
+
+_sanitize_mock_coverage_data()
 
 
 def check_service_availability(address: Dict[str, str]) -> Dict[str, Any]:
@@ -861,15 +636,25 @@ def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:
             "reason": coverage.get("reason", "Service not available at this location")
         }
     
-    # Return infrastructure details instead of products
-    return {
+    available_ids = coverage.get("available_products", [])
+    available_product_details = [
+        {"product_id": product_id, "product_name": PRODUCT_ID_TO_NAME.get(product_id, "Unknown Product")}
+        for product_id in available_ids
+    ]
+
+    # Return infrastructure details and available product IDs/details
+    result = {
         "serviceable": True,
         "address": address,
-        "infrastructure": coverage["infrastructure"],
+        "infrastructure": coverage.get("infrastructure"),
         "service_zone": coverage["zone"],
         "estimated_install_days": coverage["install_days"],
-        "infrastructure_type": coverage["technology"]
+        "infrastructure_type": coverage["technology"],
+        "available_products": available_ids,
+        "available_product_details": available_product_details,
     }
+
+    return result
 
 
 def _call_real_gis_api(address: Dict[str, str]) -> Dict[str, Any]:

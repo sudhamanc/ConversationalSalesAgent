@@ -48,6 +48,7 @@ except (ImportError, ModuleNotFoundError):
             HARM_CATEGORY_SEXUALLY_EXPLICIT = "sexually_explicit"
         class HarmBlockThreshold:
             BLOCK_LOW_AND_ABOVE = "block_low"
+            BLOCK_MEDIUM_AND_ABOVE = "block_medium"
 
 from .prompts import PAYMENT_AGENT_INSTRUCTION, PAYMENT_SHORT_DESCRIPTION
 from .tools.payment_tools import (
@@ -108,19 +109,19 @@ payment_agent = Agent(
         safety_settings=[
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
         ],
     ),

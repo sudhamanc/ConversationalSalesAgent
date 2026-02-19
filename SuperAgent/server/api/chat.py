@@ -31,6 +31,81 @@ _session_service = None
 _app_name = None
 
 
+def _parse_suggestion_payload(raw_text: str) -> list[str]:
+    """Parse JSON suggestions payload into a cleaned list."""
+    if not raw_text:
+        return []
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return []
+
+    candidates = []
+    if isinstance(parsed, list):
+        candidates = parsed
+    elif isinstance(parsed, dict):
+        suggestions = parsed.get("suggestions")
+        if isinstance(suggestions, list):
+            candidates = suggestions
+
+    cleaned: list[str] = []
+    for item in candidates:
+        text = str(item).strip()
+        if not text:
+            continue
+        # Keep suggestions editable and generic; avoid over-specific hard values.
+        text = text.replace("\n", " ").strip()
+        if text not in cleaned:
+            cleaned.append(text)
+        if len(cleaned) >= 3:
+            break
+
+    return cleaned
+
+
+def _generate_dynamic_suggestions(user_message: str, assistant_message: str, author: str | None) -> list[str]:
+    """Generate generic editable next-step suggestions using LLM; return empty list on failure."""
+    if not assistant_message.strip():
+        return []
+
+    try:
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = genai.Client()
+        prompt = (
+            "You generate next-step suggestions for a B2B telecom sales chat.\n"
+            "Return ONLY JSON.\n"
+            "Output format: {\"suggestions\": [\"...\", \"...\", \"...\"]}\n"
+            "Rules:\n"
+            "- Exactly 3 suggestions\n"
+            "- Suggestions must be generic and editable templates\n"
+            "- Do NOT include specific addresses, IDs, account numbers, emails, phone numbers, or names\n"
+            "- Keep each suggestion under 80 characters\n"
+            "- Keep suggestions actionable and relevant to the assistant response\n"
+            f"Agent author: {author or 'agent'}\n"
+            f"User message: {user_message}\n"
+            f"Assistant response: {assistant_message}\n"
+        )
+
+        response = client.models.generate_content(
+            model=settings.model.model_name,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=180,
+                response_mime_type="application/json",
+            ),
+        )
+
+        response_text = getattr(response, "text", "") or ""
+        return _parse_suggestion_payload(response_text)
+    except Exception as error:
+        logger.warning("Dynamic suggestion generation failed: %s", error)
+        return []
+
+
 def init_runner(runner, session_service, app_name: str):
     """Called once from main.py at startup to inject the ADK runner."""
     global _runner, _session_service, _app_name
@@ -80,6 +155,8 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         logger.debug(f"Model: {_runner.agent.model}")
         
         sent_content = False
+        response_parts: list[str] = []
+        last_text_author: str | None = None
         async for event in _runner.run_async(
             user_id=user_id,
             session_id=session_id,
@@ -95,6 +172,8 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                 for part in event.content.parts:
                     if hasattr(part, 'text') and part.text:
                         logger.debug(f"Streaming token from {event.author}: {part.text[:50]}...")
+                        response_parts.append(part.text)
+                        last_text_author = event.author or last_text_author
                         payload = json.dumps({
                             "type": "token",
                             "content": part.text,
@@ -102,6 +181,48 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                         })
                         yield f"data: {payload}\n\n"
                         sent_content = True
+
+                    # Emit cart_update events for cart/order tool responses
+                    if hasattr(part, 'function_response') and part.function_response:
+                        fn_name = getattr(part.function_response, 'name', '')
+                        fn_response = getattr(part.function_response, 'response', None)
+                        cart_tools = {'create_cart', 'add_to_cart', 'remove_from_cart', 'get_cart', 'clear_cart'}
+                        order_tools = {'create_order', 'modify_order', 'get_order'}
+                        if isinstance(fn_response, dict) and fn_response.get('success'):
+                            cart_data = None
+                            if fn_name in cart_tools:
+                                cart_data = fn_response.get('cart', fn_response)
+                            elif fn_name in order_tools:
+                                order_payload = fn_response.get('order') if isinstance(fn_response.get('order'), dict) else None
+                                items = []
+                                total_amount = fn_response.get('total_amount', 0)
+                                cart_id = fn_response.get('order_id', '')
+
+                                if order_payload:
+                                    if isinstance(order_payload.get('items'), list):
+                                        items = order_payload.get('items', [])
+                                    total_amount = order_payload.get('total_amount', total_amount)
+                                    cart_id = order_payload.get('order_id', cart_id)
+                                elif isinstance(fn_response.get('items'), list):
+                                    items = fn_response.get('items', [])
+
+                                if items:
+                                    cart_data = {
+                                        'cart_id': cart_id,
+                                        'items': items,
+                                        'total_amount': total_amount,
+                                    }
+                                else:
+                                    logger.debug("Skipping cart_update for %s: no structured items in response", fn_name)
+                            if cart_data:
+                                cart_payload = json.dumps({
+                                    "type": "cart_update",
+                                    "tool": fn_name,
+                                    "data": cart_data,
+                                    "author": event.author or "order_agent",
+                                })
+                                logger.debug(f"Emitting cart_update from {fn_name}")
+                                yield f"data: {cart_payload}\n\n"
             
             if event.turn_complete:
                 logger.info(f"Turn complete from {event.author}")
@@ -114,6 +235,20 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                         "author": "agent",
                     })
                     yield f"data: {fallback_payload}\n\n"
+                else:
+                    full_response = "".join(response_parts).strip()
+                    suggestion_items = _generate_dynamic_suggestions(
+                        user_message=user_message,
+                        assistant_message=full_response,
+                        author=last_text_author or event.author,
+                    )
+                    if suggestion_items:
+                        suggestion_payload = json.dumps({
+                            "type": "suggestions",
+                            "author": last_text_author or event.author or "agent",
+                            "data": suggestion_items,
+                        })
+                        yield f"data: {suggestion_payload}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 

@@ -44,11 +44,20 @@ export function resetSession() {
  * Send a chat message and stream the response via SSE.
  *
  * @param {string} message - User message text.
- * @param {function} onToken - Called with each streamed token string.
+ * @param {function} onToken - Called with (tokenString, authorString) for each streamed token.
  * @param {function} onDone  - Called when streaming completes.
  * @param {function} onError - Called on error with error message.
+ * @param {function} [onCartUpdate] - Called with cart data when a cart_update event arrives.
+ * @param {function} [onSuggestions] - Called with (suggestionsArray, authorString) for LLM suggestion events.
  */
-export async function streamChat(message, onToken, onDone, onError) {
+export async function streamChat(
+  message,
+  onToken,
+  onDone,
+  onError,
+  onCartUpdate,
+  onSuggestions
+) {
   const token = await getToken();
 
   try {
@@ -64,7 +73,7 @@ export async function streamChat(message, onToken, onDone, onError) {
     if (res.status === 401) {
       // Session expired – create a new one and retry once
       await createSession();
-      return streamChat(message, onToken, onDone, onError);
+      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions);
     }
 
     const reader = res.body.getReader();
@@ -87,7 +96,11 @@ export async function streamChat(message, onToken, onDone, onError) {
         try {
           const payload = JSON.parse(jsonStr);
           if (payload.type === "token") {
-            onToken(payload.content);
+            onToken(payload.content, payload.author);
+          } else if (payload.type === "cart_update") {
+            onCartUpdate?.(payload.data);
+          } else if (payload.type === "suggestions") {
+            onSuggestions?.(payload.data, payload.author);
           } else if (payload.type === "done") {
             onDone();
             return;

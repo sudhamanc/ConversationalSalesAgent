@@ -9,7 +9,6 @@ from .schemas import (
     ProductSpec,
     ProductQuery,
     ProductComparison,
-    RAGQueryResult,
     ProductCatalogItem,
 )
 
@@ -20,6 +19,5 @@ __all__ = [
     "ProductSpec",
     "ProductQuery",
     "ProductComparison",
-    "RAGQueryResult",
     "ProductCatalogItem",
 ]

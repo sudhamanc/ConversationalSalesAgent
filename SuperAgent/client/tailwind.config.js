@@ -1,6 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  safelist: [
+    // Agent badge colors used dynamically in agentLabels.js
+    { pattern: /bg-(blue|green|purple|orange|emerald|teal|amber|slate|indigo|primary)-(100|700)/ },
+    { pattern: /text-(blue|green|purple|orange|emerald|teal|amber|slate|indigo|primary)-(100|700)/ },
+  ],
   theme: {
     extend: {
       colors: {

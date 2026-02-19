@@ -9,7 +9,7 @@ from google.genai import types
 
 faq_agent = Agent(
     name="faq_agent",
-    model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+    model=os.getenv("GEMINI_MODEL"),
     instruction=(
         "Generate a clear phone script for a human sales agent to answer customer questions "
         "about cable MSO products, contracts, SLAs, installation timelines, support channels, and policies. "

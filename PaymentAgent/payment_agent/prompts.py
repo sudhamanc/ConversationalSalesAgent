@@ -102,7 +102,7 @@ Required Deposit: $0
 You're approved for business credit! Would you like to set up automatic billing or prefer invoice-based payments?"
 
 Example 3 - Invalid Payment Method:
-User: "Charge my card 5555-5555-5555-5555"
+User: "Charge my card ending in 5555"
 Agent:
 "I've checked the payment method you provided.
 

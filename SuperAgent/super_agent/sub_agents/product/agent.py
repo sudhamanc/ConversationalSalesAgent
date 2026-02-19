@@ -82,15 +82,6 @@ _cache_mod = importlib.util.module_from_spec(_cache_spec)
 sys.modules[_cache_spec.name] = _cache_mod
 _cache_spec.loader.exec_module(_cache_mod)
 
-# Load vector_db.py (needed by RAG tools)
-_vector_db_spec = importlib.util.spec_from_file_location(
-    "product_agent.utils.vector_db",
-    os.path.join(_PRODUCT_PKG, "utils", "vector_db.py"),
-)
-_vector_db_mod = importlib.util.module_from_spec(_vector_db_spec)
-sys.modules[_vector_db_spec.name] = _vector_db_mod
-_vector_db_spec.loader.exec_module(_vector_db_mod)
-
 # ---------------------------------------------------------------------------
 # Load models package (needed by tools)
 # ---------------------------------------------------------------------------
@@ -115,15 +106,6 @@ if "product_agent.tools" not in sys.modules:
     _tools_stub = pytypes.ModuleType("product_agent.tools")
     _tools_stub.__path__ = [os.path.join(_PRODUCT_PKG, "tools")]
     sys.modules["product_agent.tools"] = _tools_stub
-
-# Load rag_tools.py
-_rag_tools_spec = importlib.util.spec_from_file_location(
-    "product_agent.tools.rag_tools",
-    os.path.join(_PRODUCT_PKG, "tools", "rag_tools.py"),
-)
-_rag_tools_mod = importlib.util.module_from_spec(_rag_tools_spec)
-sys.modules[_rag_tools_spec.name] = _rag_tools_mod
-_rag_tools_spec.loader.exec_module(_rag_tools_mod)
 
 # Load product_tools.py
 _product_tools_spec = importlib.util.spec_from_file_location(
