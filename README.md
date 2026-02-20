@@ -14,19 +14,7 @@ The system routes each customer turn to specialized agents for discovery, servic
 
 The core design principle is:
 - **LLM reasoning for orchestration and conversation**
-- **Deterministic tools/APIs for critical business data** (coverage, pricing, order/payment/fulfillment actions)
-
----
-
-## ✅ Current State (Latest)
-
-- ProductAgent is now **catalog-first deterministic** (no active RAG/Chroma runtime path).
-- **OfferManagementAgent is the single pricing source of truth** for quotes/discounts/totals.
-- Serviceability + Product agents are technical/fit-focused (non-commercial).
-- SuperAgent routing includes active flow for discovery → serviceability → product → offer → order → payment → fulfillment.
-- Frontend uses **SSE streaming** and includes journey/cart-oriented UX components under `SuperAgent/client/src`.
-
----
+- **Deterministic tools/APIs for critical business data** (coverage, pricing, order/payment/fulfillment 
 
 ## 🏗️ Architecture
 
