@@ -56,6 +56,7 @@ from .tools.payment_tools import (
     process_payment,
     get_payment_methods,
     tokenize_payment_method,
+    add_payment_method,
 )
 from .tools.credit_tools import (
     check_business_credit,
@@ -93,6 +94,7 @@ payment_agent = Agent(
         process_payment,
         get_payment_methods,
         tokenize_payment_method,
+        add_payment_method,
         # Credit check tools
         check_business_credit,
         get_credit_report,

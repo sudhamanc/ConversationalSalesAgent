@@ -13,26 +13,6 @@ from ..utils.cache import cache_result, get_cached_result
 logger = get_logger(__name__)
 
 
-PRODUCT_ID_TO_NAME = {
-    "FIB-1G": "Business Fiber 1 Gbps",
-    "FIB-5G": "Business Fiber 5 Gbps",
-    "FIB-10G": "Business Fiber 10 Gbps",
-    "COAX-200M": "Business Coax 200 Mbps",
-    "COAX-500M": "Business Coax 500 Mbps",
-    "COAX-1G": "Business Coax 1 Gbps",
-    "VOICE-BAS": "Business Voice Basic",
-    "VOICE-STD": "Business Voice Standard",
-    "VOICE-ENT": "Business Voice Enterprise",
-    "VOICE-UCAAS": "Unified Communications (UCaaS)",
-    "SDWAN-ESS": "SD-WAN Essentials",
-    "SDWAN-PRO": "SD-WAN Professional",
-    "SDWAN-ENT": "SD-WAN Enterprise",
-    "MOB-BAS": "Business Mobile Basic",
-    "MOB-UNL": "Business Mobile Unlimited",
-    "MOB-PREM": "Business Mobile Premium",
-}
-
-
 # Mock coverage database for development/testing
 # In production, this would be replaced with actual GIS API calls
 MOCK_COVERAGE_DATA = {
@@ -518,6 +498,84 @@ MOCK_COVERAGE_DATA = {
         "zone": "Suburban-Austin",
         "install_days": 12
     },
+    "07101": {  # Newark, NJ - full fiber
+        "serviceable": True,
+        "technology": "FTTP",
+        "infrastructure": {
+            "type": "Fiber",
+            "network_element": {
+                "switch_id": "NWK-SW-501",
+                "switch_location": "Newark Central CO",
+                "cabinet_id": "NWK-CAB-710",
+                "fiber_pairs_available": 42,
+                "splice_point": "SP-07101-CTR",
+                "olt_chassis": "CISCO-ASR9K-501",
+                "olt_port": "1/6/3"
+            },
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 5000,
+                "symmetrical": True
+            },
+            "service_class": "Business",
+            "redundancy_available": True
+        },
+        "available_products": ["FIB-1G", "FIB-5G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "VOICE-UCAAS", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
+        "zone": "Metro-Newark",
+        "install_days": 6
+    },
+    "06103": {  # Hartford, CT - hybrid
+        "serviceable": True,
+        "technology": "HFC",
+        "infrastructure": {
+            "type": "Coax/HFC",
+            "network_element": {
+                "node_id": "HTF-NODE-201",
+                "node_location": "Hartford Downtown Hub",
+                "cmts_id": "CMTS-HTF-020",
+                "cmts_port": "4/3",
+                "cable_pairs_available": 18,
+                "amplifier_cascade": 2,
+                "last_mile_type": "RG-6 Coax"
+            },
+            "speed_capability": {
+                "min_speed_mbps": 100,
+                "max_speed_mbps": 1000,
+                "symmetrical": False
+            },
+            "service_class": "Business",
+            "redundancy_available": False
+        },
+        "available_products": ["COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "VOICE-ENT", "SDWAN-ESS", "SDWAN-PRO", "MOB-BAS", "MOB-UNL", "MOB-PREM"],
+        "zone": "Metro-Hartford",
+        "install_days": 7
+    },
+    "08053": {  # Marlton, NJ - suburban hybrid
+        "serviceable": True,
+        "technology": "HFC",
+        "infrastructure": {
+            "type": "Coax/HFC",
+            "network_element": {
+                "node_id": "MLT-NODE-305",
+                "node_location": "Marlton Suburban Hub",
+                "cmts_id": "CMTS-MLT-015",
+                "cmts_port": "2/4",
+                "cable_pairs_available": 16,
+                "amplifier_cascade": 3,
+                "last_mile_type": "RG-6 Coax"
+            },
+            "speed_capability": {
+                "min_speed_mbps": 50,
+                "max_speed_mbps": 1000,
+                "symmetrical": False
+            },
+            "service_class": "Standard",
+            "redundancy_available": False
+        },
+        "available_products": ["COAX-200M", "COAX-500M", "COAX-1G", "VOICE-BAS", "VOICE-STD", "SDWAN-ESS", "MOB-BAS", "MOB-UNL"],
+        "zone": "Suburban-Philadelphia-NJ",
+        "install_days": 9
+    },
     "99501": {  # Anchorage - not serviceable
         "serviceable": False,
         "reason": "Outside coverage area - Alaska region not currently served"
@@ -636,13 +694,15 @@ def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:
             "reason": coverage.get("reason", "Service not available at this location")
         }
     
-    available_ids = coverage.get("available_products", [])
-    available_product_details = [
-        {"product_id": product_id, "product_name": PRODUCT_ID_TO_NAME.get(product_id, "Unknown Product")}
-        for product_id in available_ids
-    ]
+    # Determine available product categories based on infrastructure
+    available_categories = []
+    if coverage["technology"] in ["FTTP", "HFC", "DOCSIS 3.1"]:
+        available_categories.append("Internet")
+    # Voice, SD-WAN, and Mobile are typically available if infrastructure exists
+    if coverage.get("serviceable"):
+        available_categories.extend(["Voice", "SD-WAN", "Mobile"])
 
-    # Return infrastructure details and available product IDs/details
+    # Return infrastructure details and available product categories (not specific IDs)
     result = {
         "serviceable": True,
         "address": address,
@@ -650,8 +710,7 @@ def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:
         "service_zone": coverage["zone"],
         "estimated_install_days": coverage["install_days"],
         "infrastructure_type": coverage["technology"],
-        "available_products": available_ids,
-        "available_product_details": available_product_details,
+        "available_product_categories": available_categories,
     }
 
     return result

@@ -22,7 +22,9 @@ greeting_agent = Agent(
         "**Example response:**\n"
         "'Hello! Welcome to Connectivity Max the nation's leading telecommunications provider. I'm here to help you with our Internet, "
         "Voice, Mobile, SD-WAN Products. How can I assist you today?'\n\n"
-        "Keep it conversational (2-3 sentences). Respond directly to the user's greeting - do NOT ask for more information."
+        "Keep it conversational (2-3 sentences). Respond directly to the user's greeting - do NOT ask for more information.\n\n"
+        "**AFTER GREETING**: If the user responds with anything other than another greeting (like asking about services, internet, products, etc.), "
+        "you MUST call transfer_to_agent with agent_name='discovery_agent' to hand off the conversation for prospect qualification."
     ),
     description="Handles greetings, introductions, and casual conversation.",
     tools=[],

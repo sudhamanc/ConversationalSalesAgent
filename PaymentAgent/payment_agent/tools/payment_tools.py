@@ -372,3 +372,74 @@ def _get_card_brand(card_number: str) -> str:
         return 'discover'
     else:
         return 'unknown'
+
+
+def add_payment_method(
+    customer_id: str,
+    payment_type: str,
+    payment_token: str,
+    is_default: bool = False,
+    nickname: str = None
+) -> str:
+    """
+    Adds a tokenized payment method to a customer's account.
+    
+    This tool saves a validated and tokenized payment method for future use.
+    ALWAYS call tokenize_payment_method first to get a secure token before calling this.
+    
+    Args:
+        customer_id: Customer identifier
+        payment_type: 'credit_card' or 'ach'
+        payment_token: Secure token from tokenize_payment_method
+        is_default: Whether to set as default payment method (default: False)
+        nickname: Optional friendly name for the payment method
+    
+    Returns:
+        JSON string with success confirmation and saved payment method details
+    """
+    logger.info(f"Adding payment method for customer: {customer_id}")
+    
+    try:
+        # Simulate saving to database
+        # In production: Store in database with customer_id as foreign key
+        
+        if not customer_id or not payment_token:
+            return json.dumps({
+                "success": False,
+                "error": "customer_id and payment_token are required"
+            })
+        
+        if payment_type not in ["credit_card", "ach"]:
+            return json.dumps({
+                "success": False,
+                "error": f"Invalid payment_type: {payment_type}. Must be 'credit_card' or 'ach'"
+            })
+        
+        # Generate a friendly display name
+        if not nickname:
+            token_last_four = payment_token[-4:] if len(payment_token) >= 4 else payment_token
+            nickname = f"Payment method ending in {token_last_four}"
+        
+        result = {
+            "success": True,
+            "message": f"Payment method added successfully for customer {customer_id}",
+            "payment_method": {
+                "customer_id": customer_id,
+                "payment_type": payment_type,
+                "token": payment_token,
+                "is_default": is_default,
+                "nickname": nickname,
+                "last_four": payment_token[-4:] if len(payment_token) >= 4 else payment_token,
+                "status": "active"
+            }
+        }
+        
+        logger.info(f"Payment method added successfully: {nickname}")
+        return json.dumps(result, indent=2)
+        
+    except Exception as e:
+        logger.error(f"Error adding payment method: {e}")
+        return json.dumps({
+            "success": False,
+            "error": f"Error adding payment method: {str(e)}"
+        })

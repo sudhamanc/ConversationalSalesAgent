@@ -6,7 +6,7 @@ and calendar management for installations.
 """
 
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from ..utils.logger import get_logger
 
@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 def check_availability(
     service_address: str,
     service_type: str,
-    start_date: str = None,
+    start_date: Optional[str] = None,
     num_days: int = 7
 ) -> Dict[str, Any]:
     """
@@ -93,30 +93,39 @@ def check_availability(
 
 
 def schedule_installation(
-    order_id: str,
     service_address: str,
     scheduled_date: str,
     window: str,
-    customer_contact: str,
-    customer_phone: str,
-    special_instructions: str = None
+    order_id: Optional[str] = None,
+    cart_id: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    customer_contact: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    special_instructions: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Schedules an installation appointment.
     
+    Supports both PRE-ORDER scheduling (cart_id, no order_id yet) and 
+    POST-ORDER scheduling (order_id exists).
+    
     Args:
-        order_id: Order identifier
-        service_address: Installation address
-        scheduled_date: Date for installation (YYYY-MM-DD)
-        window: Time window ('AM' or 'PM')
-        customer_contact: On-site contact name
-        customer_phone: Contact phone number
-        special_instructions: Special notes for technician
+        service_address: Installation address (REQUIRED)
+        scheduled_date: Date for installation (YYYY-MM-DD) (REQUIRED)
+        window: Time window ('AM' or 'PM') (REQUIRED)
+        order_id: Order identifier (optional - for post-order scheduling)
+        cart_id: Cart identifier (optional - for pre-order scheduling)
+        customer_name: Customer/company name (optional)
+        customer_contact: On-site contact name (optional, defaults to customer_name)
+        customer_phone: Contact phone number (optional, defaults to placeholder)
+        special_instructions: Special notes for technician (optional)
     
     Returns:
         Appointment details
     """
-    logger.info(f"Scheduling installation for order {order_id}")
+    # Use cart_id or order_id for reference
+    reference_id = order_id or cart_id or "PENDING"
+    logger.info(f"Scheduling installation for reference {reference_id}")
     
     try:
         # Validate inputs
@@ -144,7 +153,7 @@ def schedule_installation(
             }
         
         # Generate appointment ID
-        appointment_id = f"APT-{appt_date.strftime('%Y%m%d')}-{hash(order_id) % 1000:03d}"
+        appointment_id = f"APT-{appt_date.strftime('%Y%m%d')}-{hash(reference_id) % 1000:03d}"
         
         # Determine time range
         if window == 'AM':
@@ -157,17 +166,24 @@ def schedule_installation(
             start_time = "08:00"
             end_time = "17:00"
         
+        # Use defaults for optional contact info
+        contact_name = customer_contact or customer_name or "On-site representative"
+        contact_phone = customer_phone or "To be confirmed"
+        
         appointment = {
             "success": True,
             "appointment_id": appointment_id,
             "order_id": order_id,
+            "cart_id": cart_id,
+            "reference_id": reference_id,
             "service_address": service_address,
             "scheduled_date": scheduled_date,
             "window": window,
             "start_time": start_time,
             "end_time": end_time,
-            "customer_contact": customer_contact,
-            "customer_phone": customer_phone,
+            "customer_name": customer_name,
+            "customer_contact": contact_name,
+            "customer_phone": contact_phone,
             "special_instructions": special_instructions,
             "status": "scheduled",
             "message": f"Installation scheduled for {scheduled_date} {window} ({start_time}-{end_time})"
@@ -188,7 +204,7 @@ def reschedule_appointment(
     appointment_id: str,
     new_date: str,
     new_window: str,
-    reason: str = None
+    reason: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Reschedules an existing appointment.
@@ -242,7 +258,7 @@ def reschedule_appointment(
 
 def cancel_appointment(
     appointment_id: str,
-    reason: str = None
+    reason: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Cancels an installation appointment.
