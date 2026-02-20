@@ -118,6 +118,8 @@ curl -s http://localhost:8000/health | $PYTHON -m json.tool
 echo ""
 echo "Starting frontend on port 3000..."
 cd "$SCRIPT_DIR/client"
+echo "Installing frontend dependencies..."
+npm install --silent
 npm run dev > "$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
 echo "Frontend started (PID: $FRONTEND_PID)"

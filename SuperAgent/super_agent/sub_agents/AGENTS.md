@@ -44,8 +44,14 @@ greeting/
 
 Located in separate projects, wrapped here:
 
-- **DiscoveryAgent** (`discovery/`) - Wraps `DiscoveryAgent/bootstrap_agent/`
+- **DiscoveryAgent** (`discovery/`) - Wraps `DiscoveryAgent/bootstrap_agent/` — 12 tools including BANT qualification
 - **ServiceabilityAgent** (`serviceability/`) - Wraps `ServiceabilityAgent/serviceability_agent/`
+- **ProductAgent** (`product/`) - Wraps `ProductAgent/product_agent/`
+- **OfferManagementAgent** (`offer_management/`) - Wraps `OfferManagement/offer_management/` — deterministic pricing with 3-layer discounts (Bundle + Term + BANT)
+- **OrderAgent** (`order/`) - Wraps `OrderAgent/order_agent/`
+- **PaymentAgent** (`payment/`) - Wraps `PaymentAgent/payment_agent/`
+- **ServiceFulfillmentAgent** (`service_fulfillment/`) - Wraps `ServiceFulfillmentAgent/service_fulfillment_agent/`
+- **CustomerCommunicationAgent** (`customer_communication/`) - Wraps `CustomerCommunicationAgent/customer_communication_agent/`
 
 **Pattern:**
 ```
@@ -393,9 +399,17 @@ Before merging a new sub-agent:
    - Package stubbing for dependencies
 
 3. **Tool Integration:** `DiscoveryAgent/bootstrap_agent/sub_agents/discovery/discovery_agent.py`
-   - Multiple FunctionTools
-   - Database integration
+   - 12 FunctionTools including `create_opportunity_from_bant`
+   - Database integration (SQLite)
+   - Conversational BANT qualification flow
+   - Explicit products-of-interest keyword mapping
    - Intelligent inference logic
+
+4. **Deterministic Pricing:** `OfferManagement/offer_management/tools/pricing_tools.py`
+   - Three-layer discount system (Bundle → Term → BANT)
+   - Structured `discount_breakdown` array in quote JSON
+   - Customer-facing discount labels for transparency
+   - BANT score integration via conversation context
 
 ---
 

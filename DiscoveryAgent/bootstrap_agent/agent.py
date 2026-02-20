@@ -31,12 +31,12 @@ from .sub_agents.lead_gen.lead_gen_agent import lead_gen_agent
 root_agent = Agent(
     name="adk_agent",
     model=agent_model,
-    instruction="""You are a disovery sub agent which will be called from the super agent orchestrator. Your job is to handle all sales discovery, customer research, company information, contact identification, and intent analysis queries. You will receive control from the orchestrator via the `transfer_to_agent` tool when the user's query matches these categories.
-- For sales discovery, customer research, company information, contact identification, or intent analysis, delegate to the `discovery_agent`.
-- For lead qualification, BANT scoring, sales readiness assessment, or pipeline prioritization, delegate to the `lead_gen_agent`.
+    instruction="""You are a discovery sub agent which will be called from the super agent orchestrator. Your job is to handle all sales discovery, customer research, company information, contact identification, and intent analysis queries. You will receive control from the orchestrator via the `transfer_to_agent` tool when the user's query matches these categories.
+- For sales discovery, customer research, company information, contact identification, intent analysis, AND new customer BANT qualification, delegate to the `discovery_agent`. The discovery_agent now handles conversational BANT gathering (Budget, Authority, Need, Timeline) for new customers as part of the registration flow.
+- For explicit lead qualification queries, BANT scoring reports, sales readiness assessment, or pipeline prioritization across multiple leads, delegate to the `lead_gen_agent`.
 - For simple tests, delegate to the `test_agent_simple`.
 
-Route customer and prospecting queries to discovery_agent, and qualification/scoring queries to lead_gen_agent.
+Route new customer conversations and prospecting queries to discovery_agent. Route analytical/reporting qualification queries (e.g., \"show me all qualified leads\", \"what's the pipeline health\") to lead_gen_agent.
 """,
     description="The main discovery sub-agent for all conversations. It determines the user's intent and delegates to the appropriate sub-agent or tool.",
     sub_agents=[

@@ -33,8 +33,10 @@ The Discovery Agent specializes in **prospect identification, qualification, and
 1. **Extracts** company details from natural conversation
 2. **Looks up** existing prospects in the database
 3. **Creates** new prospect records with intelligent slot-filling
-4. **Qualifies** leads using BANT scoring (Budget, Authority, Need, Timeline)
+4. **Qualifies** leads using conversational BANT scoring (Budget, Authority, Need, Timeline)
 5. **Maps** contact personas and decision-makers
+6. **Captures** products of interest using explicit keyword-to-category mapping
+7. **Creates** opportunity records with automatic BANT scoring
 
 This is the **first agent invoked** when a customer shares their company information.
 
@@ -78,39 +80,39 @@ DiscoveryAgent/
 
 ## Tools
 
-The Discovery Agent has **8 specialized tools** for prospect management:
+The Discovery Agent has **12 specialized tools** for prospect management:
 
-### 1. `search_by_company_name(company_name: str)`
+### 1. `search_companies(company_name: str)`
 
 Searches the prospect database by company name (fuzzy matching).
 
 **Returns:** Company records with BANT scores, contacts, insights
 
-### 2. `search_by_address(street: str, city: str, state: str, zip_code: str)`
+### 2. `get_company_profile(company_name: str)`
 
-Looks up prospects by physical address.
+Retrieves the full profile of a company including address and all metadata.
 
-**Returns:** Matching company records at that location
+**Returns:** JSON with company details, address, industry, products of interest
 
-### 3. `search_by_phone(phone_number: str)`
+### 3. `get_contact_personas(company_name: str)`
 
-Finds prospects by contact phone number.
+Retrieves contacts associated with a company, including roles and personas.
 
-**Returns:** Company and contact information
+**Returns:** Contact list with titles, roles, and influence levels
 
-### 4. `search_by_email(email: str)`
+### 4. `get_customer_intent(company_name: str)`
 
-Locates prospects by email address.
+Analyzes buying signals, insights, and opportunities for a given company.
 
-**Returns:** Contact and company details
+**Returns:** Customer intentions, opportunities, BANT scores
 
-### 5. `search_by_intent_signals(keywords: list[str])`
+### 5. `search_by_intent_signals(keyword: str)`
 
 Searches for prospects expressing specific buying signals or product interests.
 
 **Returns:** Prospects matching intent keywords
 
-### 6. `get_high_priority_opportunities(min_bant_score: int = 70)`
+### 6. `get_high_priority_opportunities(limit: int = 10)`
 
 Retrieves prospects with high BANT qualification scores.
 
@@ -140,6 +142,38 @@ Creates a new prospect record with intelligent slot-filling.
 Updates existing prospect data.
 
 **Updatable Fields:** All company fields, BANT scores, status
+
+### 9. `add_new_contact(company_name, first_name, last_name, title, email, phone, persona)`
+
+Adds a new contact person associated with a company.
+
+**Returns:** JSON with success status and contact details
+
+### 10. `update_contact_info(contact_id, ...)`
+
+Updates an existing contact record.
+
+**Returns:** JSON with success status
+
+### 11. `add_or_update_insights(company_name, insight_type, insight_text, ...)`
+
+Records a new business insight or buying signal for a company.
+
+**Returns:** JSON with success status
+
+### 12. `create_opportunity_from_bant(company_name, opportunity_name, need_level, timeline_days, budget_status, authority_level, products_of_interest)`
+
+Creates a sales opportunity record with automatic BANT scoring. Called after the agent conversationally gathers BANT signals from a **new** prospect.
+
+**BANT Scoring (automatic):**
+- Budget: Approved(3), Identified(2), Estimated(1), Unknown(0)
+- Authority: Confirmed(3), Identified(2), Suspected(1), Unknown(0)
+- Need: High/Critical(3), Medium(2), Low(1), Unknown(0)
+- Timeline: ≤30 days(3), ≤90 days(2), ≤180 days(1), >180(0)
+- Formula: `score = ((B+A+N+T) / 4) / 3 * 100`
+- Priority buckets: A (≥66.7), B (≥33.3), C (<33.3)
+
+**Returns:** JSON with opportunity ID, BANT scores, and priority bucket
 
 ---
 
@@ -188,19 +222,74 @@ Captures multiple fields from a single message:
 
 ## BANT Scoring
 
-The agent qualifies leads using BANT methodology:
+The agent qualifies **new** leads using conversational BANT methodology. For existing customers found in the database, BANT is skipped.
 
-| Factor | Weight | Criteria |
-|--------|--------|----------|
-| **Budget** | 25% | Authority to spend, budget cycle timing |
-| **Authority** | 30% | Decision-maker access, procurement process |
-| **Need** | 25% | Pain points, urgency, current solutions |
-| **Timeline** | 20% | Purchase timeframe, contract renewal dates |
+### Conversational BANT Gathering Flow
 
-**Scoring:**
-- 0-40: Cold lead (nurture only)
-- 41-69: Warm lead (qualified follow-up)
-- 70-100: Hot lead (immediate engagement)
+For new prospects, the agent naturally weaves BANT signals into the discovery conversation:
+
+1. **Need** (gathered first, most natural): "What challenges are you facing with your current connectivity?"
+2. **Timeline**: "When are you looking to have this in place?"
+3. **Budget**: "Do you have a budget range in mind for this project?"
+4. **Authority**: "Will you be the main decision-maker on this?"
+
+The agent does NOT ask all four BANT questions robotically — it listens for signals and only fills gaps.
+
+### Scoring Model
+
+| Factor | Weight | Scoring Criteria |
+|--------|--------|-----------------|
+| **Budget** | 25% | Approved=3, Identified=2, Estimated=1, Unknown=0 |
+| **Authority** | 25% | Confirmed=3, Identified=2, Suspected=1, Unknown=0 |
+| **Need** | 25% | High/Critical=3, Medium=2, Low=1, Unknown=0 |
+| **Timeline** | 25% | ≤30 days=3, ≤90 days=2, ≤180 days=1, >180 days=0 |
+
+**Formula:** `score_100 = ((B + A + N + T) / 4) / 3 × 100`
+
+**Priority Buckets:**
+- **A (Hot):** Score ≥ 66.7 → Immediate engagement, earns Preferred Business Discount (8%)
+- **B (Warm):** Score ≥ 33.3 → Qualified follow-up, earns Business Advantage Discount (4%)
+- **C (Cold):** Score < 33.3 → Nurture only, no qualification discount
+
+### BANT → Downstream Impact
+
+BANT scores flow into OfferManagement via conversation context. Higher-qualified prospects receive better pricing through the BANT discount tier system (see OfferManagement AGENTS.md).
+
+---
+
+## Products of Interest Mapping
+
+The agent uses explicit keyword-to-category mapping to reliably capture products of interest from natural conversation. This prevents the LLM from missing product mentions.
+
+### Product Categories (from ProductAgent catalog)
+
+| Category | Products |
+|----------|----------|
+| **Fiber Internet** | FIB-1G (1 Gbps), FIB-5G (5 Gbps), FIB-10G (10 Gbps) |
+| **Coax Internet** | COAX-200M, COAX-500M, COAX-1G |
+| **Voice** | VOICE-BAS, VOICE-STD, VOICE-ENT, VOICE-UCAAS |
+| **SD-WAN** | SDWAN-ESS, SDWAN-PRO, SDWAN-ENT |
+| **Mobile** | MOB-BAS, MOB-UNL, MOB-PREM |
+
+### Keyword → Category Mapping
+
+| Customer says… | Maps to |
+|----------------|---------|
+| "internet", "broadband", "connectivity", "WiFi" | Internet |
+| "fiber", "dedicated internet", "DIA", "fiber optic" | Fiber Internet |
+| "coax", "cable internet", "cable broadband" | Coax Internet |
+| "voice", "phone", "VoIP", "calling", "UCaaS", "telephone" | Voice |
+| "SD-WAN", "sdwan", "software-defined", "WAN optimization", "SASE" | SD-WAN |
+| "mobile", "cell", "cellular", "wireless plan" | Mobile |
+| "security", "firewall", "cybersecurity", "DDoS" | Security |
+| "TV", "television", "video", "cable TV" | TV |
+| "Ethernet", "dedicated Ethernet", "Metro Ethernet" | Ethernet |
+
+**Rules:**
+- Keywords are case-insensitive
+- Multiple categories are comma-separated (e.g., "Internet, Voice, SD-WAN")
+- Generic "internet" → "Internet"; specific "fiber" → "Fiber Internet"
+- Only omit when truly no service interest is expressed
 
 ---
 
@@ -317,23 +406,35 @@ pytest tests/test_discovery_agent.py -v
 ### Conversation Flow
 
 ```
-User: "Hi, we're a pizza shop looking for internet"
+User: "Hi, we're a pizza shop looking for internet and voice"
 
-Agent: (Infers Industry=Restaurant/Food Service)
+Agent: (Infers Industry=Restaurant/Food Service, products_of_interest="Internet, Voice")
        "Great! To check service availability, could you share your business address?"
 
 User: "123 Main St, Boston MA 02101"
 
-Agent: (Extracts all address components + infers Region=East)
-       (Calls add_new_company with: Industry, Street, City, State, Zip, Region)
+Agent: (Extracts all address components + infers Region=Northeast)
+       (Calls add_new_company with: Industry, Street, City, State, Zip, Region, products_of_interest)
        "Welcome! I've registered [Company] at [Address].
        
-       Would you like me to check if this address is serviceable and what network infrastructure is available?"
+       Before we check serviceability, I'd love to understand your needs better.
+       What challenges are you facing with your current connectivity?"
 
-User: "Yes" or "Yes, check availability"
+User: "Our internet keeps going down during peak hours, it's costing us orders"
 
-Agent: (SuperAgent routes to ServiceabilityAgent)
-       ServiceabilityAgent: "✅ This location is serviceable..."
+Agent: (Captures Need=High/Critical ← direct pain point with business impact)
+       "That sounds frustrating! When are you looking to have a new solution in place?"
+
+User: "As soon as possible, within a month ideally"
+
+Agent: (Captures Timeline=≤30 days → score 3)
+       (Calls create_opportunity_from_bant with gathered signals)
+       "I understand the urgency. I've created your opportunity record.
+       
+       Let me check if this address is serviceable and what network infrastructure 
+       is available..."
+
+→ SuperAgent routes to ServiceabilityAgent on next message
 ```
 
 ---

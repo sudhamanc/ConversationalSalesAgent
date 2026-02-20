@@ -7,6 +7,7 @@ import logging
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 from .db_tools import ProspectingDatabase
+from ..lead_gen.qualification_tools import LeadQualificationDatabase
 
 # Set up a module-level logger
 logger = logging.getLogger("discovery.agent")
@@ -18,8 +19,9 @@ if not logger.hasHandlers():
 logger.setLevel(logging.INFO)
 
 
-# Initialize database connection
+# Initialize database connections
 db = ProspectingDatabase()
+lead_db = LeadQualificationDatabase()
 
 
 def search_companies(
@@ -505,6 +507,97 @@ def add_or_update_insights(
     return json.dumps(result, indent=2)
 
 
+def create_opportunity_from_bant(
+    company_name: str,
+    opportunity_name: str,
+    budget: str = None,
+    authority: str = None,
+    need: str = None,
+    timeline_days: int = None,
+    total_mrc: float = None,
+    next_step: str = None
+) -> str:
+    logger.info(f"DiscoveryAgent: create_opportunity_from_bant called for {company_name}")
+    """
+    Create a new sales opportunity with BANT qualification scoring for a customer.
+    Call this AFTER gathering BANT signals conversationally from a new customer.
+    BANT scores are automatically calculated from the inputs.
+
+    Args:
+        company_name: Company name (must already exist in database)
+        opportunity_name: A descriptive name for this opportunity (e.g., "Internet Service - New Location")
+        budget: Budget status gathered from customer conversation.
+            Use: 'Approved' (customer has confirmed budget), 'Identified' (budget exists but not confirmed),
+            'Estimated' (customer gave a rough range), 'Unknown' (customer didn't share budget info)
+        authority: Authority status based on who you're speaking with.
+            Use: 'Confirmed' (speaking with decision-maker), 'Identified' (decision-maker is known but not on call),
+            'Suspected' (likely has authority but not confirmed), 'Unknown' (unclear who decides)
+        need: Need level inferred from customer's stated requirements.
+            Use: 'High' (urgent/critical need), 'Medium' (important but not urgent),
+            'Low' (exploring options), 'Unknown' (unclear)
+        timeline_days: Approximate number of days until customer wants service active.
+            Infer from customer statements like "ASAP" (7), "next month" (30),
+            "next quarter" (90), "sometime this year" (180)
+        total_mrc: Estimated Monthly Recurring Revenue if known (optional)
+        next_step: Recommended next action (e.g., "Check serviceability", "Schedule demo")
+
+    Returns:
+        JSON with success status, BANT score, and priority bucket
+    """
+    success = lead_db.add_opportunity(
+        company_name=company_name,
+        opportunity_name=opportunity_name,
+        stage="Discovery",
+        total_mrc=total_mrc,
+        budget=budget,
+        authority=authority,
+        need=need,
+        timeline_days=timeline_days,
+        target_close_date=None,
+        next_step=next_step or "Check serviceability and recommend products"
+    )
+
+    if success:
+        # Retrieve the created opportunity to show calculated scores
+        opp = lead_db.get_opportunity_qualification(company_name, opportunity_name)
+        if opp and len(opp) > 0:
+            opp_data = opp[0]
+            result = {
+                "action": "create_opportunity",
+                "success": True,
+                "company_name": company_name,
+                "opportunity_name": opportunity_name,
+                "bant_scores": {
+                    "budget_score": opp_data.get('BANT_Budget_Score', 0),
+                    "authority_score": opp_data.get('BANT_Authority_Score', 0),
+                    "need_score": opp_data.get('BANT_Need_Score', 0),
+                    "timing_score": opp_data.get('BANT_Timing_Score', 0),
+                    "weighted_score": opp_data.get('BANT_Weighted_0to3', 0),
+                    "score_0to100": opp_data.get('BANT_Score_0to100', 0),
+                    "priority_bucket": opp_data.get('BANT_Priority_Bucket', 'N/A'),
+                    "data_gaps": opp_data.get('BANT_Data_Gaps', '')
+                },
+                "message": f"Opportunity created with BANT score {opp_data.get('BANT_Score_0to100', 0):.1f}/100 ({opp_data.get('BANT_Priority_Bucket', 'N/A')})"
+            }
+        else:
+            result = {
+                "action": "create_opportunity",
+                "success": True,
+                "company_name": company_name,
+                "opportunity_name": opportunity_name,
+                "message": "Opportunity created successfully"
+            }
+    else:
+        result = {
+            "action": "create_opportunity",
+            "success": False,
+            "company_name": company_name,
+            "message": f"Failed to create opportunity. Company '{company_name}' may not exist or opportunity name may be duplicate."
+        }
+
+    return json.dumps(result, indent=2)
+
+
 # Define the discovery agent
 logger.info("DiscoveryAgent: Instantiating discovery_agent Agent object.")
 discovery_agent = Agent(
@@ -593,18 +686,39 @@ Automatically infer the territory/region from the zip code or state using this m
 - Website - Use "N/A" if not provided
 - Parent Company - Use None if not provided
 - Products of Interest - Infer from conversation context, but apply the
-    following rules strictly:
-    - If the customer says they "need internet" or asks for internet/connectivity
-        at this business location (e.g., "I need internet at my pizza shop"),
-        you MUST include "Internet" in the `products_of_interest` field when
-        calling `add_new_company` or `update_company_info`. Do not leave it blank
-        in these cases.
-    - If they mention more specific connectivity products (e.g., "dedicated
-        internet", "fiber 5G", "SD-WAN"), include those as a comma-separated
-        list along with "Internet" when appropriate (e.g.,
-        "Internet, Dedicated Internet").
-    - Only omit `products_of_interest` when there is truly no clear indication
-        of what services they are interested in.
+    following mapping rules strictly. Our product catalog has these categories:
+      • **Fiber Internet** – Dedicated fiber broadband (1G / 5G / 10G)
+      • **Coax Internet** – Cable-based broadband (200M / 500M / 1G)
+      • **Voice** – Business phone / VoIP / UCaaS
+      • **SD-WAN** – Software-defined WAN / network optimization
+      • **Mobile** – Business cellular / wireless plans
+
+    **Keyword → Category mapping (case-insensitive):**
+    | Customer says…                                                      | Map to                         |
+    |---------------------------------------------------------------------|--------------------------------|
+    | "internet", "broadband", "connectivity", "WiFi", "web access"       | Internet                       |
+    | "fiber", "dedicated internet", "DIA", "fiber optic"                  | Fiber Internet                 |
+    | "coax", "cable internet", "cable broadband"                          | Coax Internet                  |
+    | "voice", "phone", "phone system", "VoIP", "calling", "phone line",  |                                |
+    |   "telephone", "phone service", "UCaaS", "unified communications"   | Voice                          |
+    | "SD-WAN", "sdwan", "software-defined", "WAN optimization", "SASE"   | SD-WAN                         |
+    | "mobile", "cell", "cellular", "wireless plan", "mobile plan",       |                                |
+    |   "business wireless"                                               | Mobile                         |
+    | "security", "firewall", "cybersecurity", "DDoS", "threat protection"| Security                       |
+    | "TV", "television", "video", "cable TV"                             | TV                             |
+    | "Ethernet", "dedicated Ethernet", "Metro Ethernet"                  | Ethernet                       |
+
+    **Rules:**
+    - If the customer mentions ANY keyword above, you MUST include the
+      corresponding category in the `products_of_interest` field when
+      calling `add_new_company` or `update_company_info`.
+    - Use a comma-separated list when multiple categories apply
+      (e.g., "Internet, Voice, SD-WAN").
+    - The generic keyword "internet" maps to "Internet". If the customer
+      is MORE specific ("fiber", "coax"), use the specific category
+      instead (or in addition).
+    - Only omit `products_of_interest` when there is truly no clear
+      indication of what services they are interested in.
 
 **IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database using `add_new_company` (which returns JSON) and parse the success status. Do not ask for contact information (name, email, title) during initial company setup - this can be collected later if needed.
 
@@ -650,13 +764,52 @@ When adding or updating data:
 - Provide clear success/failure feedback to the user based on the JSON data
 
 **After successfully adding a NEW company with a complete address:**
-Confirm the registration and inform the user that you will check service availability:
+Confirm the registration, then proceed to BANT qualification.
 
-"Welcome! I've registered **[Company Name]** at **[Full Address including Zip Code]** in our database. 
+**BANT QUALIFICATION FLOW (for NEW customers only):**
+After registering a new company, you MUST gather BANT signals conversationally before handing off to serviceability. This helps downstream agents (Product, Offer) make smarter, personalized recommendations.
 
-Let me check if this address is serviceable and what network infrastructure is available..."
+Gather the following in a natural, conversational way — do NOT present it as a formal questionnaire. Weave these questions into the conversation naturally:
 
-Then IMMEDIATELY signal to transfer control to the serviceability_agent by ending your response. The SuperAgent orchestrator will automatically route the next step to check service availability at the registered address.
+1. **Need** (ask first — most natural after registration):
+   - "What's driving your interest — are you expanding, upgrading your current service, or setting up a new location?"
+   - "What kind of connectivity challenges are you facing today?"
+   - Infer need level: expanding/critical pain = 'High', upgrading/improving = 'Medium', just exploring = 'Low'
+
+2. **Timeline**:
+   - "When are you looking to have service up and running?"
+   - "Is there a target date you're working toward?"
+   - Convert to days: "ASAP"/"immediately" = 7, "next week" = 14, "next month" = 30, "next quarter" = 90, "this year" = 180
+
+3. **Budget**:
+   - "Do you have a budget range in mind for connectivity services?"
+   - "What are you currently spending on internet/connectivity?"
+   - Infer budget status: specific number/range given = 'Identified', "we have budget" = 'Approved', rough estimate = 'Estimated', no info = 'Unknown'
+
+4. **Authority** (collect contact details here):
+   - "Are you the decision-maker for this purchase, or is there someone else involved?"
+   - "Can I get your name and role so I can set up your account properly?"
+   - Collect: name, title/role, email, phone (if offered)
+   - Use `add_new_contact` to save the contact with appropriate `role_in_decision_making`:
+     - If they say "I'm the owner/CEO/I make the decisions" → role = 'Economic Buyer', authority = 'Confirmed'
+     - If they say "I'm the IT manager/tech lead" → role = 'Technical Buyer', authority = 'Identified'
+     - If they say "I'm researching for my boss" → role = 'Influencer', authority = 'Suspected'
+     - If unclear → role = 'End User', authority = 'Unknown'
+
+**IMPORTANT BANT GUIDELINES:**
+- Ask these questions naturally over 2-3 conversational turns, NOT all at once
+- If the customer seems eager to move forward quickly, you can combine questions
+- If they decline to answer any question, that's OK — mark that component as 'Unknown'
+- Do NOT block the conversation on BANT — if they want to skip ahead, let them
+- After gathering available BANT signals, call `create_opportunity_from_bant` to create the opportunity record
+- Then inform the user you'll check serviceability:
+
+"Thank you for sharing that! I've got everything I need to get you started. Let me check if your address is serviceable and what network infrastructure is available..."
+
+Then signal to transfer control to the serviceability_agent.
+
+**For EXISTING customers found in the database:**
+Skip BANT qualification — they already have records. Just confirm the address and proceed directly to serviceability.
 """,
     description="Specializes in customer discovery, identifying intent, analyzing company details, and mapping contact personas for sales prospecting.",
     tools=[
@@ -671,5 +824,6 @@ Then IMMEDIATELY signal to transfer control to the serviceability_agent by endin
         FunctionTool(add_new_contact),
         FunctionTool(update_contact_info),
         FunctionTool(add_or_update_insights),
+        FunctionTool(create_opportunity_from_bant),
     ],
 )
