@@ -1,11 +1,10 @@
 """
-Product Agent - Info/RAG agent for product specifications & documentation.
+Product Agent - deterministic catalog/specification agent.
 
-This agent is an information retrieval agent that:
-1. Queries product documentation via RAG (ChromaDB)
-2. Provides technical specifications and features
-3. Compares products and suggests alternatives
-4. Answers product-related questions with zero hallucination
+This agent:
+1. Retrieves product specifications from structured catalog tools
+2. Compares products and suggests alternatives
+3. Provides technical fit guidance (non-commercial)
 
 It is designed to be integrated into the Super Agent orchestration system
 as a sub-agent for the Configuration cluster.
@@ -16,12 +15,6 @@ from google.adk.agents import Agent
 from google.genai import types
 
 from .prompts import PRODUCT_AGENT_INSTRUCTION, PRODUCT_SHORT_DESCRIPTION
-from .tools.rag_tools import (
-    query_product_documentation,
-    search_technical_specs,
-    get_product_features,
-    get_sla_terms,
-)
 from .tools.product_tools import (
     list_available_products,
     get_product_by_id,
@@ -55,11 +48,6 @@ product_agent = Agent(
     instruction=PRODUCT_AGENT_INSTRUCTION,
     description=PRODUCT_SHORT_DESCRIPTION,
     tools=[
-        # RAG tools - primary source of truth
-        query_product_documentation,
-        search_technical_specs,
-        get_product_features,
-        get_sla_terms,
         # Product catalog tools - structured data
         list_available_products,
         get_product_by_id,
@@ -71,7 +59,7 @@ product_agent = Agent(
         get_best_value_product,
     ],
     generate_content_config=types.GenerateContentConfig(
-        temperature=0.0,  # Deterministic - no creativity needed for factual, RAG-based responses
+        temperature=0.0,  # Deterministic - no creativity needed for factual responses
         top_p=0.2,        # Low sampling for determinism
         top_k=20,         # Restrict token selection
         max_output_tokens=2048,  # Sufficient for detailed product explanations

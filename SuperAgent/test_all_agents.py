@@ -67,8 +67,11 @@ def test_sub_agents(root_agent):
         'discovery_agent',
         'serviceability_agent',
         'product_agent',
+        'offer_management_agent',
         'payment_agent',
+        'order_agent',
         'service_fulfillment_agent',
+        'customer_communication_agent',
         'greeting_agent',
         'faq_agent'
     ]
@@ -207,8 +210,11 @@ def test_routing_coverage():
             'discovery_agent',
             'serviceability_agent',
             'product_agent',
+            'offer_management_agent',
+            'order_agent',
             'payment_agent',
             'service_fulfillment_agent',
+            'customer_communication_agent',
             'greeting_agent',
             'faq_agent'
         ]

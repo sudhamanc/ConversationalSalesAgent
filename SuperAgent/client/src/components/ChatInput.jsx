@@ -1,8 +1,21 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
-export default function ChatInput({ onSend, disabled, onClear, hasMessages }) {
+export default function ChatInput({
+  onSend,
+  disabled,
+  onClear,
+  hasMessages,
+  prefillRequest = null,
+}) {
   const [text, setText] = useState("");
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    const textToPrefill = prefillRequest?.text;
+    if (!textToPrefill) return;
+    setText(textToPrefill);
+    inputRef.current?.focus();
+  }, [prefillRequest]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

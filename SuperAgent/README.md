@@ -152,6 +152,39 @@ Revokes the current session.
 ### `GET /health`
 Returns `{ status: "ok", agent: "super_sales_agent" }`.
 
+## Current Sales Flow
+
+The active orchestration path is:
+
+1. Discovery (`discovery_agent`) – identify business and collect company context
+2. Serviceability (`serviceability_agent`) – validate address and infrastructure capability
+3. Product (`product_agent`) – provide technical fit/specifications only
+4. Offer Management (`offer_management_agent`) – compute quote and discounts as JSON
+5. Order (`order_agent`) – cart/order creation from selected products/quote
+6. Payment (`payment_agent`) – credit check and payment authorization
+7. Fulfillment (`service_fulfillment_agent`) – installation scheduling and activation
+
+Pricing ownership is centralized in `offer_management_agent`. Serviceability and Product do not provide commercial totals/discounts.
+
+Typical quote payload includes:
+
+```json
+{
+  "offer_id": "OFF-XXXXXXXXXX",
+  "items": [
+    {
+      "product_id": "FIB-5G",
+      "price_points": {"unit_price": 599.0, "extended_price": 599.0},
+      "discount": 59.9,
+      "final_price": 539.1
+    }
+  ],
+  "subtotal": 599.0,
+  "total_discount": 59.9,
+  "total_price": 539.1
+}
+```
+
 ## Configuration
 
 All settings live in `server/config.py` and are overridable via environment

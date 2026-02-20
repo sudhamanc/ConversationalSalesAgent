@@ -2,7 +2,7 @@
 Product Agent package.
 
 A specialized AI agent for retrieving technical specifications,
-product features, and documentation via RAG (Retrieval-Augmented Generation).
+product features, and catalog-driven comparisons.
 """
 
 from .agent import get_agent, product_agent

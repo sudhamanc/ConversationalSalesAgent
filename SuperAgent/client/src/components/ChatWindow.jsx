@@ -1,12 +1,39 @@
-import React, { useRef, useEffect } from "react";
-import { useChat } from "../hooks/useChat";
+import React, { useRef, useEffect, useState, useCallback } from "react";
+import { useChatContext } from "../contexts/ChatContext";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import TypingIndicator from "./TypingIndicator";
+import { exportSessionToPdf } from "../utils/pdfExport";
 
-export default function ChatWindow() {
-  const { messages, isStreaming, sendMessage, clearChat } = useChat();
+export default function ChatWindow({ onRegisterExport }) {
+  const { messages, isStreaming, sendMessage, clearChat } = useChatContext();
   const bottomRef = useRef(null);
+  const transcriptRef = useRef(null);
+  const [prefillRequest, setPrefillRequest] = useState(null);
+  const handleSuggestionPick = (text) => {
+    if (!text || isStreaming) return;
+    setPrefillRequest({ text, nonce: Date.now() });
+  };
+
+  const handleExportPdf = useCallback(async (options = {}) => {
+    const journeyElement = document.getElementById("journey-sidebar-panel");
+    const cartElement = document.getElementById("cart-panel");
+
+    await exportSessionToPdf({
+      chatElement: transcriptRef.current,
+      journeyElement,
+      cartElement,
+      includeJourney: Boolean(options.includeJourney),
+      includeCart: Boolean(options.includeCart),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!onRegisterExport) return;
+    onRegisterExport(() => handleExportPdf);
+    return () => onRegisterExport(null);
+  }, [onRegisterExport, handleExportPdf]);
+
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -16,7 +43,10 @@ export default function ChatWindow() {
   return (
     <>
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto chat-scroll px-6 py-4 space-y-4">
+      <div
+        ref={transcriptRef}
+        className="flex-1 overflow-y-auto chat-scroll px-6 py-4 space-y-4"
+      >
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center text-slate-400">
             <div className="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center mb-4">
@@ -45,7 +75,12 @@ export default function ChatWindow() {
         )}
 
         {messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} />
+          <MessageBubble
+            key={i}
+            message={msg}
+            onSuggestionPick={handleSuggestionPick}
+            suggestionsDisabled={isStreaming}
+          />
         ))}
 
         {isStreaming &&
@@ -63,6 +98,7 @@ export default function ChatWindow() {
         disabled={isStreaming}
         onClear={clearChat}
         hasMessages={messages.length > 0}
+        prefillRequest={prefillRequest}
       />
     </>
   );

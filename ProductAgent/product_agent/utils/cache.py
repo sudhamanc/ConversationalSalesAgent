@@ -1,7 +1,7 @@
 """
 Caching utility for Product Agent.
 
-Provides TTL-based caching for query results to reduce redundant RAG queries.
+Provides TTL-based caching for query results to reduce redundant tool lookups.
 """
 
 import time

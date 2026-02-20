@@ -2,13 +2,6 @@
 Tools package initialization.
 """
 
-from .rag_tools import (
-    query_product_documentation,
-    search_technical_specs,
-    get_product_features,
-    get_sla_terms,
-)
-
 from .product_tools import (
     list_available_products,
     get_product_by_id,
@@ -23,11 +16,6 @@ from .comparison_tools import (
 )
 
 __all__ = [
-    # RAG tools
-    "query_product_documentation",
-    "search_technical_specs",
-    "get_product_features",
-    "get_sla_terms",
     # Product tools
     "list_available_products",
     "get_product_by_id",

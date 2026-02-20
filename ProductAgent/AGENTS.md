@@ -1,6 +1,6 @@
 # Product Agent
 
-**Type:** Info/RAG Agent (Configuration Phase)
+**Type:** Product Catalog Agent (Configuration Phase)
 **Framework:** Google ADK 1.20.0
 **Package:** `product_agent`
 **Status:** ✅ Deployed in SuperAgent
@@ -19,7 +19,7 @@
 2. **Common tasks → Required reading:**
    - Configuration changes → [SuperAgent/README.md](/SuperAgent/README.md) (`.env` variables)
    - Agent development → [Root AGENTS.md - Golden Rule](/AGENTS.md#the-golden-rule)
-   - ChromaDB/RAG setup → This file (see Tools section)
+   - Product catalog changes → `product_agent/tools/product_tools.py`
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
 
@@ -27,15 +27,15 @@
 
 ## Purpose
 
-The Product Agent retrieves technical product specifications using **RAG (Retrieval-Augmented Generation)** with ChromaDB. It provides accurate, zero-hallucination responses about business internet products by querying a vector database of product manuals and documentation.
+The Product Agent retrieves technical product specifications from a deterministic in-repo product catalog. It provides accurate, zero-hallucination responses about business telecom products using catalog and comparison tools.
 
 **Key Responsibilities:**
 
 1. **Product Lookup** - Query specs by name/ID
-2. **Semantic Search** - Find products matching customer needs
+2. **Criteria Search** - Find products matching customer needs
 3. **Product Comparison** - Side-by-side feature analysis
 4. **Infrastructure Filtering** - Only recommend products compatible with available infrastructure
-5. **Technical Documentation** - SLAs, features, hardware details
+5. **Technical Guidance** - Speeds, features, technology compatibility
 
 ---
 
@@ -43,37 +43,30 @@ The Product Agent retrieves technical product specifications using **RAG (Retrie
 
 | Attribute | Value |
 |-----------|-------|
-| **Type** | Info/RAG |
+| **Type** | Catalog/Comparison |
 | **Phase** | Configuration (Phase 2) |
-| **Source of Truth** | Vector DB (ChromaDB) + Product Catalog |
-| **Temperature** | 0.1 (low, for factual accuracy) |
+| **Source of Truth** | Product catalog + deterministic comparison logic |
+| **Temperature** | 0.0 (deterministic for factual accuracy) |
 | **Invocation** | After ServiceabilityAgent confirms infrastructure |
 
 ---
 
 ## Tools
 
-11 specialized tools organized into 3 categories:
-
-### RAG Tools (`rag_tools.py`)
-
-1. `semantic_search_products(query: str)` - Natural language product search
-2. `get_product_by_name(product_name: str)` - Exact name lookup
-3. `query_product_documentation(product_id: str, question: str)` - Q&A on product docs
+7 specialized tools organized into 2 categories:
 
 ### Product Catalog Tools (`product_tools.py`)
 
-4. `get_all_products()` - Full catalog
-5. `get_products_by_category(category: str)` - Filter by Internet/Voice/Cloud
-6. `get_product_specs(product_id: str)` - Technical specifications
-7. `filter_by_infrastructure(products: list, infrastructure_type: str, max_speed: int)` - Infrastructure-aware filtering
+1. `list_available_products(category: str | None)` - Full catalog or category filtered
+2. `get_product_by_id(product_id: str)` - Product details by ID
+3. `search_products_by_criteria(...)` - Criteria-based filtering
+4. `get_product_categories()` - Available categories
 
 ### Comparison Tools (`comparison_tools.py`)
 
-8. `compare_products(product_ids: list[str])` - Side-by-side comparison
-9. `recommend_alternatives(product_id: str, reason: str)` - Suggest alternatives
-10. `get_product_bundles()` - Available product bundles
-11. `calculate_product_fit_score(product_id: str, requirements: dict)` - Match scoring
+5. `compare_products(product_ids: list[str])` - Side-by-side technical comparison
+6. `suggest_alternatives(product_id: str, criteria: str)` - Suggest alternatives
+7. `get_best_value_product(max_budget: int | None)` - Deterministic value recommendation
 
 ---
 
@@ -92,6 +85,7 @@ Service Class: Business
 ```
 
 **Filtering Rules:**
+
 - **Fiber infrastructure** → Only FTTP/Fiber products
 - **Coax infrastructure** → Only HFC/Cable products
 - **Max speed limit** → Exclude products exceeding infrastructure capacity
@@ -99,28 +93,12 @@ Service Class: Business
 
 ---
 
-## Vector Database (ChromaDB)
-
-**Storage:** `data/embeddings/` (git-ignored)
-**Documents:** Product PDFs in `data/product_docs/`
-
-**Indexed Fields:**
-- Product name, description
-- Technical specifications
-- Features, SLAs
-- Hardware requirements
-- Use cases
-
-**Embedding Model:** model2vec (local, no API calls)
-
----
-
 ## Integration Steps (Future)
 
-1. Create wrapper in `SuperAgent/super_agent/sub_agents/product/`
-2. Use importlib isolation pattern
-3. Register in `super_agent/agent.py`
-4. Add routing rule: "Tell me about [product]", "What internet plans?"
+1. Keep wrapper in `SuperAgent/super_agent/sub_agents/product/` aligned with ProductAgent imports
+2. Maintain deterministic catalog/comparison tool behavior
+3. Keep routing in `super_agent/prompts.py` for technical product questions
+4. Route all commercial/pricing asks to OfferManagementAgent
 
 ---
 

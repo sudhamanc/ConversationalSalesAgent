@@ -10,11 +10,6 @@ from .cache import (
     get_cache_stats,
     cleanup_cache,
 )
-from .vector_db import (
-    VectorDBManager,
-    get_vector_db,
-    initialize_vector_db,
-)
 
 __all__ = [
     "get_logger",
@@ -23,7 +18,4 @@ __all__ = [
     "clear_cache",
     "get_cache_stats",
     "cleanup_cache",
-    "VectorDBManager",
-    "get_vector_db",
-    "initialize_vector_db",
 ]

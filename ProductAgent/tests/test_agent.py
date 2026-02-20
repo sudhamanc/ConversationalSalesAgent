@@ -15,16 +15,13 @@ class TestAgentIntegration:
         
         assert agent is not None
         assert agent.name == "product_agent" or agent.name.startswith("product")
-        assert len(agent.tools) >= 11  # Should have at least 11 tools
+        assert len(agent.tools) >= 7
     
     def test_agent_has_required_tools(self):
         """Test that agent has all required tools"""
         agent = get_agent()
         
         tool_names = [tool.__name__ if hasattr(tool, '__name__') else str(tool) for tool in agent.tools]
-        
-        # Should have RAG tools
-        assert any('query' in str(name).lower() or 'documentation' in str(name).lower() for name in tool_names)
         
         # Should have product catalog tools
         assert any('list' in str(name).lower() or 'product' in str(name).lower() for name in tool_names)
@@ -36,9 +33,9 @@ class TestAgentIntegration:
         """Test agent configuration settings"""
         agent = get_agent()
         
-        # Agent should have low temperature for factual responses
+        # Agent should be deterministic for factual responses
         config = agent.generate_content_config
-        assert config.temperature == 0.1
+        assert config.temperature == 0.0
         assert config.top_p == 0.2
         assert config.top_k == 20
     
@@ -47,30 +44,8 @@ class TestAgentIntegration:
         agent = get_agent()
         
         assert agent.description is not None
-        assert "Info/RAG" in agent.description or "RAG" in agent.description
+        assert "Catalog" in agent.description or "catalog" in agent.description
         assert "product" in agent.description.lower()
-
-
-class TestVectorDBIntegration:
-    """Test vector database integration"""
-    
-    def test_vector_db_initialization(self):
-        """Test vector DB can be initialized"""
-        from product_agent.utils.vector_db import get_vector_db
-        
-        vector_db = get_vector_db()
-        assert vector_db is not None
-    
-    def test_vector_db_stats(self):
-        """Test getting vector DB statistics"""
-        from product_agent.utils.vector_db import get_vector_db
-        
-        vector_db = get_vector_db()
-        stats = vector_db.get_collection_stats()
-        
-        assert "available" in stats
-        assert "count" in stats
-        assert "collection_name" in stats
 
 
 class TestCacheIntegration:

@@ -21,7 +21,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from product_agent import get_agent
 from product_agent.utils.logger import get_logger
 from product_agent.utils.cache import get_cache_stats, cleanup_cache
-from product_agent.utils.vector_db import get_vector_db
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
@@ -47,7 +46,7 @@ logger.info(f"ADK Runner initialized for {APP_NAME}")
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Product Agent API",
-    description="Info/RAG agent for product specifications & documentation retrieval",
+    description="Catalog-driven agent for product specifications and technical comparisons",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -111,17 +110,11 @@ class QueryResponse(BaseModel):
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    vector_db = get_vector_db()
-    vector_stats = vector_db.get_collection_stats()
-    
     return {
         "status": "ok",
         "agent": APP_NAME,
         "model": os.getenv("GEMINI_MODEL"),
-        "vector_db": {
-            "available": vector_stats.get("available", False),
-            "documents": vector_stats.get("count", 0)
-        }
+        "catalog_mode": True,
     }
 
 
@@ -273,17 +266,15 @@ async def get_product(product_id: str):
 @app.get("/stats")
 async def get_stats():
     """
-    Get agent statistics including cache and vector DB stats.
+    Get agent statistics including cache stats.
     """
     logger.info("Getting agent statistics")
     
     try:
-        vector_db = get_vector_db()
-        
         return {
             "agent": APP_NAME,
             "cache": get_cache_stats(),
-            "vector_db": vector_db.get_collection_stats()
+            "catalog_mode": True,
         }
         
     except Exception as e:
@@ -337,14 +328,7 @@ async def startup_event():
     logger.info("🚀 Product Agent Starting Up")
     logger.info("=" * 60)
     
-    # Initialize vector database
-    vector_db = get_vector_db()
-    stats = vector_db.get_collection_stats()
-    
-    if stats.get("available"):
-        logger.info(f"✅ Vector DB initialized: {stats['count']} documents")
-    else:
-        logger.warning("⚠️  Vector DB not available - will use product catalog fallback")
+    logger.info("✅ Catalog mode active")
     
     logger.info(f"✅ Agent: {APP_NAME}")
     logger.info(f"✅ Model: {os.getenv('GEMINI_MODEL')}")

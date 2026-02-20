@@ -66,7 +66,7 @@ try:
     
     checks = [
         ('Agent name is hardcoded', product_agent.name == 'product_agent'),
-        ('Temperature is 0.1 (RAG)', product_agent.generate_content_config.temperature == 0.1),
+        ('Temperature is 0.0 (deterministic)', product_agent.generate_content_config.temperature == 0.0),
         ('Has 11 tools', len(product_agent.tools) == 11),
         ('All tools loaded', len(tool_names) == 11),
         ('No duplicate agent names', len([a.name for a in root_agent.sub_agents]) == len(set([a.name for a in root_agent.sub_agents]))),
@@ -126,13 +126,13 @@ try:
     # Test 6: System Readiness
     print_subsection('✓ Test 6: System Readiness')
     
-    all_agents_present = len(root_agent.sub_agents) == 5
+    all_agents_present = len(root_agent.sub_agents) >= 9
     product_agent_working = product_agent.name == 'product_agent' and len(product_agent.tools) == 11
     routing_configured = 'product_agent' in instruction
-    no_conflicts = len(set([a.name for a in root_agent.sub_agents])) == 5
+    no_conflicts = len(set([a.name for a in root_agent.sub_agents])) == len(root_agent.sub_agents)
     
     readiness_checks = [
-        ('All 5 agents loaded', all_agents_present),
+        ('All expected agents loaded', all_agents_present),
         ('ProductAgent functional', product_agent_working),
         ('Routing configured', routing_configured),
         ('No naming conflicts', no_conflicts),

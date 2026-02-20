@@ -1,83 +1,70 @@
 # Payment Agent
 
-A deterministic, tool-based ADK agent for handling payment operations in the B2B telecommunications sales process.
+Deterministic transactional agent for credit and payment authorization steps.
 
-## Overview
+## Current Role
 
-The Payment Agent is responsible for:
-- Payment method validation and processing
-- Credit checks and authorization
-- Invoice generation and management
-- Payment history tracking
-- Billing account setup
+PaymentAgent handles payment-phase checks after order creation/checkout.
 
-## Features
+This agent is **active in SuperAgent**.
 
-- **Payment Validation**: Validates credit cards, ACH, and other payment methods
-- **Credit Checks**: Performs credit worthiness assessment for business customers
-- **Transaction Processing**: Securely processes payments and authorizations
-- **Invoice Management**: Generates quotes, invoices, and payment schedules
-- **Deterministic**: Temperature set to 0.0 for consistent, reliable payment operations
+## Scope Boundaries
 
-## Quick Start
+### PaymentAgent does
+- Credit/financial validation workflows
+- Payment method validation and authorization
+- Transaction status handling for downstream updates
+
+### PaymentAgent does not do
+- Quote pricing/discount computation (OfferManagementAgent)
+- Cart/order creation (OrderAgent)
+- Installation scheduling (ServiceFulfillmentAgent)
+
+## Determinism Rules
+
+- Deterministic tool-driven execution
+- Structured outputs for reliable orchestration handoff
+- No freeform financial inventing
+
+## Package Layout
+
+```text
+PaymentAgent/
+├── payment_agent/
+│   ├── agent.py
+│   ├── prompts.py
+│   ├── tools/
+│   └── models/
+├── main.py
+└── tests/
+```
+
+## SuperAgent Integration
+
+- Wrapper location: `SuperAgent/super_agent/sub_agents/payment/agent.py`
+- Triggered after order flow reaches payment stage
+
+## Local Run
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your API keys and configuration
-
-# Run the agent
+cd PaymentAgent
+pip install -e .
 python main.py
 ```
 
-## Usage
-
-```python
-from payment_agent import get_agent
-
-agent = get_agent()
-
-# Process a payment
-response = agent.run("I'd like to pay with a credit card ending in 1234")
-
-# Check credit
-response = agent.run("Can you run a credit check for this business?")
-```
-
-## Integration
-
-This agent is designed to integrate with the Super Agent orchestration system as a sub-agent for the Payment cluster.
-
-## Architecture
-
-- **Agent**: ADK-based tool agent with deterministic configuration
-- **Tools**: Payment validation, credit checks, transaction processing
-- **Models**: Pydantic schemas for payment data structures
-- **Utils**: Logging, caching, and secure credential handling
-
-## Testing
+## Tests
 
 ```bash
-# Run all tests
-pytest tests/
-
-# Run specific test
-pytest tests/test_agent.py
+cd /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent
+./venv/bin/python -m pytest PaymentAgent/tests -q
 ```
 
-## Environment Variables
+## Security Note
 
-See `.env.example` for required configuration:
-- `GEMINI_MODEL`: Gemini model to use (default: gemini-2.0-flash)
-- `AGENT_NAME`: Agent identifier (default: payment_agent)
-- Payment gateway API keys and credentials
+This repository is an academic/demo system. Production deployment requires full PCI/PII controls and hardened secrets/observability.
 
-## Security
+## References
 
-- All payment data is encrypted in transit and at rest
-- PCI-DSS compliance for credit card processing
-- Sensitive credentials stored in environment variables
-- Audit logging for all payment transactions
+- Root architecture: `AGENTS.md`
+- SuperAgent runtime: `SuperAgent/README.md`
+- Scenario validation: `Scenarios.md`

@@ -128,24 +128,6 @@ class ProductComparison(BaseModel):
         }
 
 
-class RAGQueryResult(BaseModel):
-    """Result from RAG query"""
-    answer: str = Field(..., description="Answer to the query")
-    sources: List[str] = Field(default_factory=list, description="Source documents used")
-    confidence: float = Field(..., description="Confidence score (0-1)")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "answer": "The Business Fiber 5G provides 5 Gbps symmetrical speeds...",
-                "sources": ["fiber_5g_spec.pdf", "business_internet_guide.pdf"],
-                "confidence": 0.95,
-                "metadata": {"product_id": "FIB-5G"}
-            }
-        }
-
-
 class ProductCatalogItem(BaseModel):
     """Simplified product catalog entry"""
     product_id: str = Field(..., description="Product identifier")
