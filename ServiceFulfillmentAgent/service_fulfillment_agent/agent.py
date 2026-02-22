@@ -124,9 +124,9 @@ service_fulfillment_agent = Agent(
         # update_order_status tool also removed - OrderAgent handles all order status management
     ],
     generate_content_config=types.GenerateContentConfig(
-        temperature=0.0,  # Deterministic - critical for fulfillment accuracy
-        top_p=0.1,        # Low sampling for determinism
-        top_k=10,         # Restrict token selection
+        temperature=0.3,  # Low but not zero - prevents empty responses
+        top_p=0.8,        # Sufficient sampling while maintaining consistency
+        top_k=40,         # Balanced token selection
         max_output_tokens=2048,  # Sufficient for detailed responses
         safety_settings=[
             types.SafetySetting(
