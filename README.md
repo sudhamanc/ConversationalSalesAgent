@@ -74,26 +74,6 @@ Typical production-intent flow:
 7. Fulfillment: schedule/install activation
 8. Customer Comms: confirmation/reminder notifications
 
-### Quote Payload Shape (Offer Management)
-
-```json
-{
-  "offer_id": "OFF-XXXXXXXXXX",
-  "items": [
-    {
-      "product_id": "FIB-5G",
-      "price_points": { "unit_price": 599.0, "extended_price": 599.0 },
-      "discount": 59.9,
-      "final_price": 539.1
-    }
-  ],
-  "subtotal": 599.0,
-  "total_discount": 59.9,
-  "total_price": 539.1
-}
-```
-
----
 
 ## 🧰 Technology Stack
 
