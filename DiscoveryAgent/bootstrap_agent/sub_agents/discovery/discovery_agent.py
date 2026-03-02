@@ -509,7 +509,7 @@ def add_or_update_insights(
 
 def create_opportunity_from_bant(
     company_name: str,
-    opportunity_name: str,
+    opportunity_name: str = "General Inquiry",
     budget: str = None,
     authority: str = None,
     need: str = None,

@@ -162,12 +162,13 @@ function isProductHeading(line) {
   const cleaned = stripMarkdownArtifacts(line);
   return (
     /^\d+[\.)]\s+.+/.test(cleaned) ||
-    /\([A-Z]{2,}(?:-[A-Z0-9]+)+\)\s*$/.test(cleaned)
+    /\([A-Z]{2,}(?:-[A-Z0-9]+)+\)[:\s]*$/.test(cleaned)
   );
 }
 
 function parseProductHeading(line) {
-  const cleaned = stripMarkdownArtifacts(line).replace(/^\d+\.\s+/, "");
+  // Strip trailing colon that product agent sometimes appends: "Product Name (ID):"
+  const cleaned = stripMarkdownArtifacts(line).replace(/^\d+\.\s+/, "").replace(/:$/, "");
   const idMatch = cleaned.match(/\(([A-Z0-9-]+)\)\s*$/);
   return {
     title: normalizeText(cleaned.replace(/\(([A-Z0-9-]+)\)\s*$/, "")),
@@ -194,7 +195,8 @@ function parseProductBlock(lines) {
       continue;
     }
 
-    if (/^key features:?$/i.test(cleaned)) {
+    // Match both "Key Features:" and plain "Features:" section headers
+    if (/^(?:key\s+)?features:?$/i.test(cleaned)) {
       inFeatureSection = true;
       continue;
     }
@@ -215,6 +217,16 @@ function parseProductBlock(lines) {
   }
 
   if (!title) return null;
+
+  // Promote "Description" attribute to the card's description field for cleaner display
+  if (!description) {
+    const descIndex = attributes.findIndex((a) => /^description$/i.test(a.label));
+    if (descIndex !== -1) {
+      description = attributes[descIndex].value;
+      attributes.splice(descIndex, 1);
+    }
+  }
+
   return {
     title,
     productId,
