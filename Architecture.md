@@ -1,52 +1,10 @@
-# Technical Architecture Diagram
+# Architecture
 
 ## B2B Conversational Sales Agent - Multi-Agent System Architecture
 
-```mermaid
-flowchart TB
-    Client["<b>React + FastAPI</b><br/>SSE Streaming"]
-    
-    SuperAgent["<b>🧠 SuperAgent</b><br/>Orchestrator<br/>(Gemini 3 Flash Preview)"]
-    
-    Discovery["<b>🔍 Discovery</b><br/>────────<br/>SQLite DB"]
-    Serviceability["<b>⚙️ Serviceability</b><br/>────────<br/>GIS API"]
-    Product["<b>📦 Product</b><br/>────────<br/>Catalog"]
-    OfferMgmt["<b>📊 Offer Mgmt</b><br/>────────<br/>Pricing API"]
-    Order["<b>🛒 Order</b><br/>────────<br/>Orders DB"]
-    
-    Payment["<b>💳 Payment</b><br/>────────<br/>Gateway"]
-    Fulfillment["<b>📦 Fulfillment</b><br/>────────<br/>Scheduler"]
-    Comms["<b>💬 Comms</b><br/>────────<br/>Notifications"]
-    Greeting["<b>👋 Greeting</b><br/>────────<br/>Scripts"]
-    FAQ["<b>❓ FAQ</b><br/>────────<br/>Knowledge"]
-    
-    Client --> SuperAgent
-    
-    SuperAgent --> Discovery
-    SuperAgent --> Serviceability
-    SuperAgent --> Product
-    SuperAgent --> OfferMgmt
-    SuperAgent --> Order
-    SuperAgent --> Payment
-    SuperAgent --> Fulfillment
-    SuperAgent --> Comms
-    SuperAgent --> Greeting
-    SuperAgent --> FAQ
-    
-    classDef clientStyle fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
-    classDef orchestratorStyle fill:#7B68EE,stroke:#5A4CB8,stroke-width:4px,color:#fff
-    classDef discoveryStyle fill:#1ABC9C,stroke:#16A085,stroke-width:2px,color:#fff
-    classDef configStyle fill:#3498DB,stroke:#2980B9,stroke-width:2px,color:#fff
-    classDef transactionStyle fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff
-    classDef supportStyle fill:#F39C12,stroke:#D68910,stroke-width:2px,color:#fff
-    
-    class Client clientStyle
-    class SuperAgent orchestratorStyle
-    class Discovery discoveryStyle
-    class Serviceability,Product,OfferMgmt,Order configStyle
-    class Payment,Fulfillment,Comms transactionStyle
-    class Greeting,FAQ supportStyle
-```
+![Architecture Diagram](./architecture-diagram.png)
+
+*Interactive version: Open [architecture.html](./architecture.html) in your browser for the full styled diagram*
 
 ## Architecture Overview
 

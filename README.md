@@ -24,6 +24,12 @@ This separation is the core architectural principle: the LLM decides *what* to d
 
 ## 🧠 Multi-Agent Orchestration Architecture
 
+![System Architecture](./architecture-diagram.png)
+
+*📊 For the interactive HTML version with detailed styling, open [architecture.html](./architecture.html) in your browser. Full documentation: [Architecture.md](./Architecture.md)*
+
+---
+
 ### What Makes This a Multi-Agent System?
 
 Unlike a single-agent chatbot with many tools, this system decomposes the sales domain into **10 autonomous agents**, each with:
@@ -253,10 +259,11 @@ npm run dev
 
 ## 📚 Project Documentation
 
-- Root architecture and standards: `AGENTS.md`
-- SuperAgent implementation/runtime details: `SuperAgent/README.md`
-- Agent-specific guidance: each `<Agent>/AGENTS.md`
-- Validation scenarios: `Scenarios.md`
+- **System architecture diagram**: [Architecture.md](./Architecture.md) — Visual overview and architecture details
+- **Root architecture and standards**: [AGENTS.md](./AGENTS.md) — Complete multi-agent system guide
+- **SuperAgent implementation**: [SuperAgent/README.md](./SuperAgent/README.md) — Runtime and orchestration details
+- **Agent-specific guidance**: Each `<Agent>/AGENTS.md` — Individual agent documentation
+- **Validation scenarios**: [Scenarios.md](./Scenarios.md) — Test cases and user flows
 
 ---
 
