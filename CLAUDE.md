@@ -27,11 +27,12 @@ All system architecture, agent development patterns, and technical guidelines ar
 
 ## 🎯 The Golden Rule
 
-**ALL AGENTS MUST STRICTLY FOLLOW ADK STANDARDS**
+**A LL AGENTS MUST STRICTLY FOLLOW ADK STANDARDS **
 
 See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete details.
 
 **Critical Requirements:**
+
 1. ADK Bootstrap Template structure
 2. Importlib isolation for external sub-agents
 3. Tools use `@FunctionTool` decorator

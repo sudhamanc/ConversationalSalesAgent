@@ -1,6 +1,6 @@
 # 🤖 B2B Conversational Sales Agent
 
-**A Multi-Agent Orchestration System for B2B Telecom Sales**
+** A Multi-Agent Orchestration System for B2B Telecom Sales **
 
 ADK-powered multi-agent orchestration for end-to-end B2B telecom sales conversations.
 
@@ -121,14 +121,16 @@ Typical production-intent flow:
 ## 🧰 Technology Stack
 
 ### Core
+
 - Python 3.12+
 - FastAPI
 - Google ADK (multi-agent runtime)
-- Google Gemini models (configured via `GEMINI_MODEL`)
+- Google Gemini model 3.0 Flash preview (configured via `GEMINI_MODEL`)
 - React 19 + Vite + Tailwind CSS
 - SQLite
 
 ### Runtime/Integration
+
 - SSE for token streaming between backend and frontend
 - ADK sub-agent delegation (no custom A2A protocol implementation required)
 - MCP-style deterministic tool integration for local/external data sources
@@ -167,17 +169,74 @@ ConversationalSalesAgent/
 - Node.js 18+
 - Gemini API key (for model access)
 
-### 1) Backend
+### Recommended: Use the Startup Script
+
+The easiest way to start both the backend and frontend is with the provided `start_servers.sh` script:
+
+```bash
+# 1. Set up environment variables
+cd SuperAgent/server
+cp .env.example .env
+# Edit .env: set GOOGLE_API_KEY and GEMINI_MODEL
+
+# 2. Run the startup script
+cd ..  # Back to SuperAgent/
+./start_servers.sh
+```
+
+**What the script does:**
+
+- ✅ Auto-detects and uses Python venv if available (falls back to system python3)
+- ✅ Cleans up any stale processes on ports 8000 (backend) and 3000 (frontend)
+- ✅ Sets up organized logging with per-agent log files in `SuperAgent/logs/agents/`
+- ✅ Starts backend (FastAPI/uvicorn) on port 8000
+- ✅ Starts frontend (React/Vite) on port 3000
+- ✅ Provides real-time log splitting for each agent
+
+**After starting:**
+
+- Frontend: `http://localhost:3000`
+- Backend health: `http://localhost:8000/health`
+
+**View logs:**
+
+```bash
+# All backend logs
+tail -f SuperAgent/logs/backend.log
+
+# Frontend logs
+tail -f SuperAgent/logs/frontend.log
+
+# Individual agent logs (examples)
+tail -f SuperAgent/logs/agents/discovery_agent.log
+tail -f SuperAgent/logs/agents/serviceability_agent.log
+tail -f SuperAgent/logs/agents/product_agent.log
+```
+
+**Stop servers:**
+
+```bash
+pkill -9 -f 'uvicorn main:app'
+pkill -9 -f 'vite'
+```
+
+---
+
+### Alternative: Manual Startup
+
+If you prefer manual control:
+
+**Backend:**
 
 ```bash
 cd SuperAgent/server
 pip install -e ..
 cp .env.example .env
-# set GOOGLE_API_KEY and GEMINI_MODEL in .env
-uvicorn main:app --reload
+# Edit .env: set GOOGLE_API_KEY and GEMINI_MODEL
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 2) Frontend
+**Frontend (in a separate terminal):**
 
 ```bash
 cd SuperAgent/client
@@ -185,39 +244,10 @@ npm install
 npm run dev
 ```
 
-### 3) Open App
+**Open:**
 
 - Frontend: `http://localhost:3000`
 - Backend health: `http://localhost:8000/health`
-
----
-
-## 🧪 Testing
-
-Run focused suites from repo root with your virtualenv Python.
-
-Examples:
-
-```bash
-# ProductAgent focused tests
-GEMINI_MODEL=gemini-2.0-flash ./venv/bin/python -m pytest ProductAgent/tests/test_tools.py ProductAgent/tests/test_agent.py -q
-
-# SuperAgent routing/integration smoke tests
-./venv/bin/python -m pytest SuperAgent/test_routing.py -q
-```
-
-For end-to-end positive/negative scenario coverage, see:
-- `Scenarios.md`
-
----
-
-## 🔐 Security Notes (Demo Scope)
-
-This is an academic/demo environment:
-- Uses mock/test data patterns in several flows
-- Not production-hardened for PCI/PII requirements
-
-For production, implement full authN/authZ, secret management, encryption, compliance controls, and operational observability.
 
 ---
 
