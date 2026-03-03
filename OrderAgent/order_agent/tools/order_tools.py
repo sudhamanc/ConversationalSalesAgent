@@ -8,6 +8,7 @@ Moved from ServiceFulfillmentAgent to maintain proper separation of concerns:
 """
 
 import json
+import sys
 from typing import Dict, Any
 from datetime import datetime
 from ..utils.logger import get_logger
@@ -17,6 +18,49 @@ logger = get_logger(__name__)
 
 # In-memory order storage (in production, use database)
 _ORDERS: Dict[str, Order] = {}
+
+
+def _auto_send_order_confirmation(
+    order_id: str,
+    customer_name: str,
+    contact_email: str,
+    contact_phone: str,
+    service_type: str,
+    total_amount: float,
+) -> Dict[str, Any]:
+    """
+    Automatically send an order confirmation email/SMS immediately after order creation.
+
+    Uses sys.modules to call the already-loaded CustomerCommunicationAgent notification
+    tools without a hard cross-package import dependency.  All sub-agents are initialised
+    before the first user interaction, so the module is always present at call time.
+    """
+    try:
+        # Prefer the notification_tools submodule; fall back to the tools package itself
+        notif_mod = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if notif_mod is None:
+            notif_mod = sys.modules.get("customer_communication_agent.tools")
+
+        if notif_mod is None or not hasattr(notif_mod, "send_order_confirmation"):
+            logger.warning(
+                "CustomerCommunicationAgent notification tools not found in sys.modules; "
+                "order confirmation email will not be sent automatically."
+            )
+            return {"success": False, "error": "Notification module unavailable"}
+
+        result = notif_mod.send_order_confirmation(
+            order_id=order_id,
+            customer_name=customer_name,
+            customer_email=contact_email or None,
+            customer_phone=contact_phone or None,
+            service_type=service_type,
+            total_amount=total_amount,
+        )
+        logger.info(f"Auto order confirmation triggered for {order_id}: {result}")
+        return result
+    except Exception as exc:
+        logger.warning(f"Auto order confirmation failed (non-fatal): {exc}")
+        return {"success": False, "error": str(exc)}
 
 
 def create_order(
@@ -78,7 +122,23 @@ def create_order(
         _ORDERS[order_id] = order
         
         logger.info(f"Order created: {order_id} for customer {customer_id}")
-        
+
+        # Automatically send order confirmation email/SMS
+        email_result = _auto_send_order_confirmation(
+            order_id=order_id,
+            customer_name=customer_name,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            service_type=service_type,
+            total_amount=price or 0.0,
+        )
+        email_sent = bool(
+            email_result
+            and email_result.get("success")
+            # "deduped" status means a notification was already sent recently — still counts
+        )
+        email_notification_id = email_result.get("notification_id") if email_result else None
+
         # Return JSON structure
         return json.loads(json.dumps({
             "success": True,
@@ -92,6 +152,8 @@ def create_order(
             "status": order.status,
             "total_amount": order.total_amount,
             "created_at": order.created_at,
+            "email_confirmation_sent": email_sent,
+            "email_notification_id": email_notification_id,
             "message": f"Order {order_id} created successfully. Customer ID: {customer_id}"
         }))
     

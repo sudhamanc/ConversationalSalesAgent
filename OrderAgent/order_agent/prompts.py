@@ -82,7 +82,12 @@ Step 1: Extract from conversation history:
    * scheduled installation date/time
    * contact_email — scan ALL previous messages for any email address provided during Discovery/BANT (e.g., "john@company.com"); pass it as the contact_email parameter to create_order
 Step 2: IMMEDIATELY call create_order tool with these details (include contact_email if found in conversation history)
-Step 3: After order creation, respond with:
+Step 3: After order creation, check the tool's JSON response:
+   - If `email_confirmation_sent` is true → include the email confirmation line with the actual email address
+   - If `email_confirmation_sent` is false and contact_email was provided → note that email delivery failed
+   - If no contact_email was available → omit the email line entirely
+
+   Respond with:
    "✅ **Order Submitted Successfully!**
    
    **Order Details:**
@@ -95,7 +100,8 @@ Step 3: After order creation, respond with:
    • Payment Status: ✅ Paid
    • Order Status: Confirmed
    
-   📧 **Order summary is being sent to your email** — our communications team will email you the full order details shortly.
+   📧 **Order confirmation sent to [contact_email]** — a full order summary including service details, total amount, and next steps has been emailed to the customer.
+   *(Omit this line if no email was available or email_confirmation_sent is false)*
    
    **What's Next?**
    Would you like to:
@@ -174,7 +180,7 @@ Agent:
 • Payment Status: ✅ Paid
 • Order Status: Confirmed
 
-📧 **Order summary is being sent to your email** — our communications team will email you the full order details shortly.
+📧 **Order confirmation sent to john@pizzahut.com** — a full order summary has been emailed to the customer.
 
 **What's Next?**
 Would you like to:
