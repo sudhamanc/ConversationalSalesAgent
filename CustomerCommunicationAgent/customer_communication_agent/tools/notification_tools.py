@@ -6,7 +6,6 @@ for various customer communication scenarios.
 """
 
 import json
-import hashlib
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from ..utils.logger import get_logger
@@ -20,10 +19,9 @@ _DEDUP_CACHE: Dict[str, datetime] = {}  # Track recent notifications for dedupli
 
 
 def _generate_notification_id(notification_type: str, recipient: str) -> str:
-    """Generate unique notification ID."""
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    hash_suffix = hash(f"{recipient}{timestamp}") % 1000
-    return f"NOTIF-{timestamp}-{hash_suffix:03d}"
+    """Generate unique notification ID using microsecond precision to avoid collisions."""
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
+    return f"NOTIF-{timestamp}"
 
 
 def _check_duplicate(notification_type: str, recipient: str, window_minutes: int = 5) -> bool:
@@ -105,7 +103,7 @@ Order Details:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Order ID: {order_id}
 Service: {service_type or 'N/A'}
-Total Amount: ${total_amount:.2f if total_amount else 0}
+Total Amount: ${f'{total_amount:.2f}' if total_amount is not None else '0.00'}
 
 Your order has been confirmed and is now being processed.
 
@@ -227,7 +225,7 @@ Your payment has been processed successfully!
 Payment Details:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Order ID: {order_id}
-Amount: ${amount:.2f if amount else 'N/A'}
+Amount: ${f'{amount:.2f}' if amount is not None else 'N/A'}
 Payment Method: {payment_method or 'N/A'}
 Status: ✓ Paid
 
@@ -245,7 +243,7 @@ Dear {customer_name},
 We were unable to process your payment for order {order_id}.
 
 Order ID: {order_id}
-Amount: ${amount:.2f if amount else 'N/A'}
+Amount: ${f'{amount:.2f}' if amount is not None else 'N/A'}
 Status: ✗ Payment Failed
 
 Action Required:
@@ -564,7 +562,7 @@ Your Quote:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Cart ID: {cart_id}
 Items: {cart_items or 'Your selected services'}
-Total: ${total_amount:.2f if total_amount else 'TBD'}
+Total: ${f'{total_amount:.2f}' if total_amount is not None else 'TBD'}
 
 Don't miss out! This quote expires in 7 days.
 

@@ -788,8 +788,11 @@ Gather the following in a natural, conversational way — do NOT present it as a
 
 4. **Authority** (collect contact details here):
    - "Are you the decision-maker for this purchase, or is there someone else involved?"
-   - "Can I get your name and role so I can set up your account properly?"
-   - Collect: name, title/role, email, phone (if offered)
+   - "Can I get your name, role, and **email address**? Your email is required to receive your order summary and service notifications."
+   - **EMAIL IS REQUIRED** — always ask for it explicitly: "What email address should we use for your order confirmations and account updates?"
+   - If customer provides email: save it with `add_new_contact`
+   - If customer skips email: ask once more — "We need an email address to send your order summary. Could you provide one?" — if still declined, proceed with email='N/A' but note the absence
+   - Collect: name, title/role, **email (required)**, phone (if offered)
    - Use `add_new_contact` to save the contact with appropriate `role_in_decision_making`:
      - If they say "I'm the owner/CEO/I make the decisions" → role = 'Economic Buyer', authority = 'Confirmed'
      - If they say "I'm the IT manager/tech lead" → role = 'Technical Buyer', authority = 'Identified'
@@ -799,8 +802,9 @@ Gather the following in a natural, conversational way — do NOT present it as a
 **IMPORTANT BANT GUIDELINES:**
 - Ask these questions naturally over 2-3 conversational turns, NOT all at once
 - If the customer seems eager to move forward quickly, you can combine questions
-- If they decline to answer any question, that's OK — mark that component as 'Unknown'
-- Do NOT block the conversation on BANT — if they want to skip ahead, let them
+- If they decline to answer any BANT question (budget, need, timeline), that's OK — mark that component as 'Unknown'
+- **EMAIL is always required** — if the customer skips it or tries to move on before giving it, ask once more: "I just need one thing before we check serviceability — what email address should we use for order confirmations?" Do NOT transfer to serviceability without a valid email on file.
+- Do NOT block the conversation on other BANT fields — if they want to skip budget/timeline, let them
 - After gathering available BANT signals, call `create_opportunity_from_bant` to create the opportunity record
 - Then inform the user you'll check serviceability:
 
@@ -809,7 +813,14 @@ Gather the following in a natural, conversational way — do NOT present it as a
 Then signal to transfer control to the serviceability_agent.
 
 **For EXISTING customers found in the database:**
-Skip BANT qualification — they already have records. Just confirm the address and proceed directly to serviceability.
+Skip BANT qualification — they already have records. Confirm the address first.
+Then ALWAYS call `get_contact_personas` to check whether a valid email address is on file:
+- Parse the JSON response and look for any contact whose email is NOT 'N/A' and NOT empty.
+- If a valid email **is already on file**: proceed directly to serviceability. No email question needed.
+- If **no valid email exists** (all contacts have email='N/A', no contacts exist, or the personas list is empty):
+  Ask: "To send you order confirmations and service notifications, what email address should we use for your account?"
+  Wait for their reply, then save it using `update_contact_info` (if a contact record exists) or `add_new_contact` (if no contacts exist).
+  Only after saving the email, proceed to serviceability.
 """,
     description="Specializes in customer discovery, identifying intent, analyzing company details, and mapping contact personas for sales prospecting.",
     tools=[

@@ -80,7 +80,8 @@ Step 1: Extract from conversation history:
    * service_type from cart (e.g., "Business Fiber 1 Gbps")
    * price from cart
    * scheduled installation date/time
-Step 2: IMMEDIATELY call create_order tool with these details
+   * contact_email — scan ALL previous messages for any email address provided during Discovery/BANT (e.g., "john@company.com"); pass it as the contact_email parameter to create_order
+Step 2: IMMEDIATELY call create_order tool with these details (include contact_email if found in conversation history)
 Step 3: After order creation, respond with:
    "✅ **Order Submitted Successfully!**
    
@@ -93,6 +94,8 @@ Step 3: After order creation, respond with:
    • Installation Date: [scheduled_date from conversation]
    • Payment Status: ✅ Paid
    • Order Status: Confirmed
+   
+   📧 **Order summary is being sent to your email** — our communications team will email you the full order details shortly.
    
    **What's Next?**
    Would you like to:
@@ -170,6 +173,8 @@ Agent:
 • Installation Date: February 22, 2026 (8AM-12PM)
 • Payment Status: ✅ Paid
 • Order Status: Confirmed
+
+📧 **Order summary is being sent to your email** — our communications team will email you the full order details shortly.
 
 **What's Next?**
 Would you like to:
