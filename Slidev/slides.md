@@ -146,7 +146,7 @@ from .sub_agents.discovery import discovery_agent
 
 root_agent = Agent(
     name="super_sales_agent",
-    model="gemini-2.0-flash",              # Google Gemini LLM
+    model="gemini-3-flash-preview",              # Google Gemini LLM
     instruction=ORCHESTRATOR_INSTRUCTION,   # Routing rules (see next slide)
     description="B2B Sales Orchestrator",
     sub_agents=[                            # ADK handles delegation natively
@@ -426,7 +426,7 @@ discovery_agent = agent_mod.discovery_agent  # Fresh instance for SuperAgent
 <v-clicks>
 
 - **Google ADK (Agent Development Kit)** — discovered through Google Cloud AI documentation; ADK's native multi-agent delegation was the key architectural choice
-- **Google Gemini API** — first-class integration with ADK; `gemini-2.0-flash` chosen for speed/cost balance
+- **Google Gemini API** — first-class integration with ADK; `gemini-3-flash-preview` chosen for speed/cost balance
 - **Telecom domain knowledge** — team members work at Comcast, giving direct familiarity with B2B sales workflows, serviceability checks, product catalogs, and fulfillment pipelines
 - **Academic research** — reviewed LLM multi-agent patterns (ReAct, Chain-of-Thought), decided on hierarchical orchestration over sequential pipelines
 - **Senior colleagues at Comcast** — provided guidance on realistic sales scenarios and data modeling for the prospect database

@@ -8,7 +8,7 @@
 | **Type** | Sub-Agent (Specialist) |
 | **Parent** | SuperAgent (root orchestrator) |
 | **Purpose** | Automated customer notifications via email and SMS throughout order lifecycle |
-| **Model** | `gemini-2.5-flash` (via `GEMINI_MODEL` env var) |
+| **Model** | `gemini-3-flash-preview` (via `GEMINI_MODEL` env var) |
 | **Temperature** | 0.0 (deterministic - no creativity needed) |
 | **Max Tokens** | 2048 |
 | **Tools** | 7 notification tools |

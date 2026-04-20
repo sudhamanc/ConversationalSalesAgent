@@ -36,6 +36,8 @@ _models_spec = importlib.util.spec_from_file_location(
     "customer_communication_agent.models",
     os.path.join(_COMM_PKG, "models", "__init__.py"),
 )
+if _models_spec is None or _models_spec.loader is None:
+    raise ImportError("Failed to load customer_communication_agent.models module spec")
 _models_mod = importlib.util.module_from_spec(_models_spec)
 sys.modules[_models_spec.name] = _models_mod
 _models_spec.loader.exec_module(_models_mod)
@@ -45,6 +47,8 @@ _utils_logger_spec = importlib.util.spec_from_file_location(
     "customer_communication_agent.utils.logger",
     os.path.join(_COMM_PKG, "utils", "logger.py"),
 )
+if _utils_logger_spec is None or _utils_logger_spec.loader is None:
+    raise ImportError("Failed to load customer_communication_agent.utils.logger module spec")
 _utils_logger_mod = importlib.util.module_from_spec(_utils_logger_spec)
 sys.modules[_utils_logger_spec.name] = _utils_logger_mod
 _utils_logger_spec.loader.exec_module(_utils_logger_mod)
@@ -54,6 +58,8 @@ _tools_spec = importlib.util.spec_from_file_location(
     "customer_communication_agent.tools",
     os.path.join(_COMM_PKG, "tools", "__init__.py"),
 )
+if _tools_spec is None or _tools_spec.loader is None:
+    raise ImportError("Failed to load customer_communication_agent.tools module spec")
 _tools_mod = importlib.util.module_from_spec(_tools_spec)
 sys.modules[_tools_spec.name] = _tools_mod
 _tools_spec.loader.exec_module(_tools_mod)
@@ -63,6 +69,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "customer_communication_agent.prompts",
     os.path.join(_COMM_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load customer_communication_agent.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -72,6 +80,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "customer_communication_agent.agent",
     os.path.join(_COMM_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load customer_communication_agent.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

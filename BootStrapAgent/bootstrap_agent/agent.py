@@ -315,7 +315,7 @@ custom_logger.info("Initializing root agent...")
 
 load_dotenv()
 
-agent_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+agent_model = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
 custom_logger.info(f"setting the agent model to {agent_model}")
 
 

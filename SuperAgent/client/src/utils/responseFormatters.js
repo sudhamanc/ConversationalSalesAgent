@@ -24,6 +24,32 @@ function extractJsonBlock(text) {
   return null;
 }
 
+export function parsePaymentConfirmation(text) {
+  const jsonBlock = extractJsonBlock(text);
+  if (!jsonBlock) return null;
+  try {
+    const parsed = JSON.parse(jsonBlock);
+    if (!parsed || parsed.payment_confirmation !== true) return null;
+    if (!parsed.transaction_id || !parsed.status) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function parseOrderConfirmation(text) {
+  const jsonBlock = extractJsonBlock(text);
+  if (!jsonBlock) return null;
+  try {
+    const parsed = JSON.parse(jsonBlock);
+    if (!parsed || parsed.order_confirmation !== true) return null;
+    if (!parsed.order_id || !parsed.customer) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function parseOfferQuote(text) {
   const jsonBlock = extractJsonBlock(text);
   if (!jsonBlock) return null;

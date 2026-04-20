@@ -1,15 +1,12 @@
-# 🤖 B2B Conversational Sales Agent
+# B2B Conversational Sales Agent
 
-** A Multi-Agent Orchestration System for B2B Telecom Sales **
+A multi-agent orchestration system for end-to-end B2B telecom sales conversations, built on Google ADK with Gemini.
 
-ADK-powered multi-agent orchestration for end-to-end B2B telecom sales conversations.
-
-**Drexel University – Senior Design Project**  
-**Winter/Spring 2026**
+**Drexel University – Senior Design Project — Winter/Spring 2026**
 
 ---
 
-## 📌 What This Project Is
+## What This Project Is
 
 This repository implements a **multi-agent orchestration system** — a hierarchical architecture where a central **SuperAgent** coordinates 10 specialized sub-agents to automate the full B2B telecom sales lifecycle, from initial prospect discovery through order fulfillment.
 
@@ -18,28 +15,21 @@ Built on **Google ADK (Agent Development Kit)** with **Google Gemini** as the ba
 - **LLM-driven reasoning** — intent classification, conversational routing, natural language generation
 - **Deterministic tool execution** — database lookups, pricing calculations, address validation, payment processing
 
-This separation is the core architectural principle: the LLM decides *what* to do, but *critical business data* (addresses, prices, orders) is always sourced from deterministic tools, never hallucinated.
+The LLM decides *what* to do; critical business data (addresses, prices, orders) is always sourced from deterministic tools, never hallucinated.
 
 ---
 
-## 🧠 Multi-Agent Orchestration Architecture
+## Architecture
 
 ![System Architecture](./architecture-diagram.png)
 
-*📊 For the interactive HTML version with detailed styling, open [architecture.html](./architecture.html) in your browser. Full documentation: [Architecture.md](./Architecture.md)*
+*Interactive version: open [architecture.html](./architecture.html) in your browser*
 
----
+```
+User → React Client → FastAPI → ADK Runner → SuperAgent → Sub-Agent → Tools → Infrastructure
+```
 
-### What Makes This a Multi-Agent System?
-
-Unlike a single-agent chatbot with many tools, this system decomposes the sales domain into **10 autonomous agents**, each with:
-
-- Its own **system prompt** (domain-specific instructions)
-- Its own **tools** (deterministic functions for its domain)
-- Its own **model configuration** (temperature, sampling parameters)
-- **Independent reasoning** within its delegated scope
-
-A central **SuperAgent** acts as the orchestrator — it never answers the user directly. Instead, it analyzes each message, determines which sub-agent should handle it, and delegates via ADK's native `transfer_to_agent` mechanism.
+Responses stream back to the browser via Server-Sent Events (SSE).
 
 ### Architectural Layers
 
@@ -63,12 +53,12 @@ A central **SuperAgent** acts as the orchestrator — it never answers the user 
 
 | Principle | Implementation |
 |-----------|----------------|
-| **Separation of concerns** | Each agent owns exactly one domain (e.g., pricing is *only* in OfferManagementAgent) |
-| **Zero-hallucination for critical data** | Addresses, prices, orders always come from deterministic tools, never LLM generation |
-| **Router-only orchestrator** | SuperAgent classifies intent and delegates — it never generates user-facing text |
-| **Temperature-stratified agents** | Conversational agents use temp 0.7; deterministic agents use temp 0.0 |
+| **Separation of concerns** | Each agent owns exactly one domain |
+| **Zero-hallucination for critical data** | Addresses, prices, orders always come from deterministic tools |
+| **Router-only orchestrator** | SuperAgent classifies intent and delegates — never generates user-facing text |
+| **Temperature-stratified agents** | Conversational agents use temp 0.7; transactional agents use temp 0.0 |
 | **Structured data contracts** | Tools return JSON (not prose) to prevent LLM rephrasing of critical values |
-| **Importlib isolation** | Sub-agents loaded without triggering their `__init__.py` to avoid ADK parent-binding conflicts |
+| **Importlib isolation** | Sub-agents loaded without triggering `__init__.py` to avoid ADK parent-binding conflicts |
 
 ### How Agents Communicate
 
@@ -86,74 +76,110 @@ User Message → SuperAgent (intent analysis)
 ```
 
 - **Delegation is ADK-native** — SuperAgent declares `sub_agents=[...]` and ADK handles the handoff
-- **No custom protocol** — we don't implement A2A or message queues; ADK's built-in delegation is sufficient
+- **No custom protocol** — ADK's built-in delegation replaces A2A or message queues
 - **Session state is shared** — all agents read/write to ADK's session context, enabling multi-turn flows
-- **Chained handoffs** — after DiscoveryAgent registers a company, the orchestrator auto-routes to ServiceabilityAgent on the next user turn
+- **Chained handoffs** — after DiscoveryAgent registers a company, the orchestrator auto-routes to ServiceabilityAgent
 
 ---
 
-## 🤖 Active Agent Registry
+## Agent Registry
 
-| Agent | Status | Primary Responsibility |
-|---|---|---|
-| SuperAgent | ✅ Active | Root orchestration and routing |
-| DiscoveryAgent | ✅ Active | Prospect/company identification and qualification context |
-| ServiceabilityAgent | ✅ Active | PRE-SALE address validation and infrastructure capability |
-| ProductAgent | ✅ Active | Deterministic product catalog lookup and technical comparison |
-| OfferManagementAgent | ✅ Active | Deterministic quote/pricing/discount computation |
-| OrderAgent | ✅ Active | Cart-first ordering, contract generation, order lifecycle |
-| PaymentAgent | ✅ Active | Credit checks and payment authorization |
-| ServiceFulfillmentAgent | ✅ Active | POST-SALE installation scheduling and activation workflow |
-| CustomerCommunicationAgent | ✅ Active | Notification dispatch and communication history |
-| GreetingAgent | ✅ Active | Greeting/intro conversational handling |
-| FAQAgent | ✅ Active | Policy/support/general product FAQ handling |
-
----
-
-## 🔄 Sales Conversation Flow
-
-Typical production-intent flow:
-
-1. Discovery: collect business/location context
-2. Serviceability: verify address + infra constraints
-3. Product: recommend technically compatible products
-4. Offer Management: compute quote JSON (pricing + discounts + totals)
-5. Order: cart/checkout and contract creation
-6. Payment: credit + authorization
-7. Fulfillment: schedule/install activation
-8. Customer Comms: confirmation/reminder notifications
-
-
-## 🧰 Technology Stack
-
-### Core
-
-- Python 3.12+
-- FastAPI
-- Google ADK (multi-agent runtime)
-- Google Gemini model 3.0 Flash preview (configured via `GEMINI_MODEL`)
-- React 19 + Vite + Tailwind CSS
-- SQLite
-
-### Runtime/Integration
-
-- SSE for token streaming between backend and frontend
-- ADK sub-agent delegation (no custom A2A protocol implementation required)
-- MCP-style deterministic tool integration for local/external data sources
+| Agent | Status | Responsibility | Infrastructure |
+|-------|--------|---------------|----------------|
+| **SuperAgent** | ✅ Active | Root orchestration and routing | — |
+| **DiscoveryAgent** | ✅ Active | Prospect/company identification and BANT qualification | SQLite (Prospect DB) |
+| **ServiceabilityAgent** | ✅ Active | PRE-SALE address validation and infrastructure capability | GIS API |
+| **ProductAgent** | ✅ Active | Deterministic product catalog lookup and technical comparison | JSON Catalog |
+| **OfferManagementAgent** | ✅ Active | Deterministic quote/pricing/discount computation | Pricing Engine API |
+| **OrderAgent** | ✅ Active | Cart-first ordering, contract generation, order lifecycle | SQLite (Orders DB) |
+| **PaymentAgent** | ✅ Active | Credit checks and payment authorization | Payment Gateway |
+| **ServiceFulfillmentAgent** | ✅ Active | POST-SALE installation scheduling and activation | Scheduler API |
+| **CustomerCommunicationAgent** | ✅ Active | Notification dispatch and communication history | Order DB |
+| **GreetingAgent** | ✅ Active | Initial contact and conversational handling | Static content |
+| **FAQAgent** | ✅ Active | Policy, support, and general product FAQ handling | Knowledge base |
 
 ---
 
-## 📁 Repository Layout (High-Level)
+## Example Conversation Flows
 
-```text
+### Discovery → Serviceability
+
+```
+User: "We're Crane.io at 123 Main St, Philadelphia PA"
+  ↓ SuperAgent routes to DiscoveryAgent
+  ↓ Discovery looks up company → adds to database (JSON)
+  ↓ "Welcome! Would you like a serviceability check?"
+
+User: "Yes"
+  ↓ SuperAgent routes to ServiceabilityAgent
+  ↓ Serviceability validates address via GIS API
+  ↓ "✅ Serviceable with Fiber 1G/5G/10G"
+```
+
+### Product → Offer → Order
+
+```
+User: "Fiber 5G pricing with SD-WAN?"
+  ↓ ProductAgent → Catalog lookup
+  ↓ OfferAgent → Pricing calculation (JSON quote)
+  ↓ "Quote #12345: $X,XXX/month"
+
+User: "Proceed"
+  ↓ OrderAgent → Create cart + order
+  ↓ PaymentAgent → Credit check + authorization
+  ↓ FulfillmentAgent → Schedule installation
+  ↓ "Order confirmed! Install: Feb 20, 9 AM"
+```
+
+---
+
+## Sales Conversation Flow
+
+Typical end-to-end flow:
+
+1. **Discovery** — collect business/location context
+2. **Serviceability** — verify address + infrastructure constraints
+3. **Product** — recommend technically compatible products
+4. **Offer Management** — compute quote JSON (pricing + discounts + totals)
+5. **Order** — cart/checkout and contract creation
+6. **Payment** — credit check + authorization
+7. **Fulfillment** — schedule installation and activation
+8. **Customer Comms** — confirmation and reminder notifications
+
+---
+
+## Technology Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19 + Vite + Tailwind CSS |
+| Backend | FastAPI + Python 3.12+ |
+| Agent Framework | Google ADK 1.20.0+ |
+| LLM | Gemini 3 Flash Preview (configured via `GEMINI_MODEL`) |
+| Streaming | Server-Sent Events (SSE) |
+| Database | SQLite |
+| Deployment | GCP Cloud Run |
+
+---
+
+## Repository Layout
+
+```
 ConversationalSalesAgent/
-├── AGENTS.md
-├── CLAUDE.md
-├── Scenarios.md
+├── AGENTS.md                        # Complete architecture and standards guide
+├── CLAUDE.md                        # Claude Code instructions
+├── Scenarios.md                     # Test cases and conversation flows
+├── GCP_DEPLOY.md                    # GCP Cloud Run deployment guide
+├── Dockerfile                       # Multi-stage container build
+├── entrypoint.sh                    # Container startup + GCS DB sync
 ├── SuperAgent/
-│   ├── client/                    # React UI
-│   ├── server/                    # FastAPI backend
-│   └── super_agent/               # ADK orchestrator + sub-agent wrappers
+│   ├── client/                      # React frontend
+│   ├── server/                      # FastAPI backend
+│   ├── super_agent/                 # ADK orchestrator + sub-agent wrappers
+│   ├── start_servers.sh             # Local dev startup script
+│   ├── start_cloud.sh               # Scale Cloud Run service up
+│   ├── shutdown_cloud.sh            # Scale Cloud Run service to zero
+│   └── deploy_cloud.sh              # Build, push, and redeploy to Cloud Run
 ├── DiscoveryAgent/
 ├── ServiceabilityAgent/
 ├── ProductAgent/
@@ -161,146 +187,87 @@ ConversationalSalesAgent/
 ├── OrderAgent/
 ├── PaymentAgent/
 ├── ServiceFulfillmentAgent/
-├── CustomerCommunicationAgent/
-└── BootStrapAgent/
+└── CustomerCommunicationAgent/
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started (Local)
 
 ### Prerequisites
 
 - Python 3.12+
 - Node.js 18+
-- Gemini API key (for model access)
+- Gemini API key
 
-### Recommended: Use the Startup Script
-
-The easiest way to start both the backend and frontend is with the provided `start_servers.sh` script:
+### Using the Startup Script (Recommended)
 
 ```bash
-# 1. Set up environment variables
+# 1. Configure environment
 cd SuperAgent/server
 cp .env.example .env
 # Edit .env: set GOOGLE_API_KEY and GEMINI_MODEL
 
-# 2. Run the startup script
-cd ..  # Back to SuperAgent/
+# 2. Run both servers
+cd ..
 ./start_servers.sh
 ```
 
-**What the script does:**
-
-- ✅ Auto-detects and uses Python venv if available (falls back to system python3)
-- ✅ Cleans up any stale processes on ports 8000 (backend) and 3000 (frontend)
-- ✅ Sets up organized logging with per-agent log files in `SuperAgent/logs/agents/`
-- ✅ Starts backend (FastAPI/uvicorn) on port 8000
-- ✅ Starts frontend (React/Vite) on port 3000
-- ✅ Provides real-time log splitting for each agent
-
-**After starting:**
+The script auto-detects your `.venv`, cleans up stale processes on ports 8000 and 3000, starts the FastAPI backend and React frontend, and sets up per-agent log splitting.
 
 - Frontend: `http://localhost:3000`
 - Backend health: `http://localhost:8000/health`
 
-**View logs:**
+### View Logs
 
 ```bash
-# All backend logs
 tail -f SuperAgent/logs/backend.log
-
-# Frontend logs
-tail -f SuperAgent/logs/frontend.log
-
-# Individual agent logs (examples)
 tail -f SuperAgent/logs/agents/discovery_agent.log
 tail -f SuperAgent/logs/agents/serviceability_agent.log
-tail -f SuperAgent/logs/agents/product_agent.log
 ```
 
-**Stop servers:**
+### Stop Servers
 
 ```bash
 pkill -9 -f 'uvicorn main:app'
 pkill -9 -f 'vite'
 ```
 
----
-
-### Alternative: Manual Startup
-
-If you prefer manual control:
-
-**Backend:**
+### Manual Startup
 
 ```bash
+# Backend
 cd SuperAgent/server
 pip install -e ..
 cp .env.example .env
-# Edit .env: set GOOGLE_API_KEY and GEMINI_MODEL
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
 
-**Frontend (in a separate terminal):**
-
-```bash
+# Frontend (separate terminal)
 cd SuperAgent/client
 npm install
 npm run dev
 ```
 
-**Open:**
+---
 
-- Frontend: `http://localhost:3000`
-- Backend health: `http://localhost:8000/health`
+## GCP Cloud Run Deployment
+
+See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for the full deployment guide including:
+
+- One-time GCP project setup (project, APIs, bucket, secrets, IAM)
+- Building and pushing the Docker image
+- Deploying to Cloud Run
+- Day-to-day operations (`start_cloud.sh`, `shutdown_cloud.sh`, `deploy_cloud.sh`)
+- Estimated cost (~$6–21/month with min-instances=0)
 
 ---
 
-## 📚 Project Documentation
+## Documentation
 
-- **System architecture diagram**: [Architecture.md](./Architecture.md) — Visual overview and architecture details
-- **Root architecture and standards**: [AGENTS.md](./AGENTS.md) — Complete multi-agent system guide
-- **SuperAgent implementation**: [SuperAgent/README.md](./SuperAgent/README.md) — Runtime and orchestration details
-- **Agent-specific guidance**: Each `<Agent>/AGENTS.md` — Individual agent documentation
-- **Validation scenarios**: [Scenarios.md](./Scenarios.md) — Test cases and user flows
-
----
-
-## 📄 License
-
-MIT (see `LICENSE` if present in your distribution).
-
----
-
-<p align="center"><strong>Built for deterministic, multi-agent B2B sales orchestration.</strong></p>
-
----
-
-## 🎨 Presentation Slides (Optional)
-
-The `Slidev/` directory contains a [Slidev](https://sli.dev) presentation for the project progress report. This is **optional** and not required to run the sales agent system.
-
-### Setup
-
-```bash
-cd Slidev
-npm install
-```
-
-### Run (local preview)
-
-```bash
-cd Slidev
-npm run dev
-# Opens at http://localhost:3030
-```
-
-### Export to PPTX
-
-```bash
-cd Slidev
-npx slidev export --format pptx --output ./progress-report.pptx
-```
-
-> **Note:** Exporting to PPTX requires `playwright-chromium`. Install it with `npm i -D playwright-chromium` if not already present.
+| File | Purpose |
+|------|---------|
+| [AGENTS.md](./AGENTS.md) | Complete multi-agent system guide and ADK standards |
+| [SuperAgent/README.md](./SuperAgent/README.md) | Runtime, API reference, and orchestration details |
+| [GCP_DEPLOY.md](./GCP_DEPLOY.md) | GCP Cloud Run deployment guide |
+| [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
+| Each `<Agent>/AGENTS.md` | Individual agent documentation |
