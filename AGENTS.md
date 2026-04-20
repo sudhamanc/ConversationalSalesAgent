@@ -172,9 +172,9 @@ def check_address_serviceability(address: str) -> dict:
 
 **Alternative Models Supported:**
 
-- `gemini-2.0-flash` (stable release)
-- `gemini-2.5-flash` (future)
-- `gemini-pro` (high-reasoning tasks)
+- `gemini-3-flash-preview` (stable release)
+- `gemini-3-flash-preview` (future)
+- `gemini-3-flash-preview` (high-reasoning tasks)
 
 ---
 

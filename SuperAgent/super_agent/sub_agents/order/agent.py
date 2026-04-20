@@ -57,6 +57,8 @@ _models_init_spec = importlib.util.spec_from_file_location(
     "order_agent.models",
     os.path.join(_ORDER_PKG, "models", "__init__.py"),
 )
+if _models_init_spec is None or _models_init_spec.loader is None:
+    raise ImportError("Failed to load order_agent.models module spec")
 _models_init_mod = importlib.util.module_from_spec(_models_init_spec)
 sys.modules[_models_init_spec.name] = _models_init_mod
 _models_init_spec.loader.exec_module(_models_init_mod)
@@ -73,6 +75,8 @@ _logger_spec = importlib.util.spec_from_file_location(
     "order_agent.utils.logger",
     os.path.join(_ORDER_PKG, "utils", "logger.py"),
 )
+if _logger_spec is None or _logger_spec.loader is None:
+    raise ImportError("Failed to load order_agent.utils.logger module spec")
 _logger_mod = importlib.util.module_from_spec(_logger_spec)
 sys.modules[_logger_spec.name] = _logger_mod
 _logger_spec.loader.exec_module(_logger_mod)
@@ -84,6 +88,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "order_agent.prompts",
     os.path.join(_ORDER_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load order_agent.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -101,6 +107,8 @@ _cart_tools_spec = importlib.util.spec_from_file_location(
     "order_agent.tools.cart_tools",
     os.path.join(_ORDER_PKG, "tools", "cart_tools.py"),
 )
+if _cart_tools_spec is None or _cart_tools_spec.loader is None:
+    raise ImportError("Failed to load order_agent.tools.cart_tools module spec")
 _cart_tools_mod = importlib.util.module_from_spec(_cart_tools_spec)
 sys.modules[_cart_tools_spec.name] = _cart_tools_mod
 _cart_tools_spec.loader.exec_module(_cart_tools_mod)
@@ -110,6 +118,8 @@ _order_tools_spec = importlib.util.spec_from_file_location(
     "order_agent.tools.order_tools",
     os.path.join(_ORDER_PKG, "tools", "order_tools.py"),
 )
+if _order_tools_spec is None or _order_tools_spec.loader is None:
+    raise ImportError("Failed to load order_agent.tools.order_tools module spec")
 _order_tools_mod = importlib.util.module_from_spec(_order_tools_spec)
 sys.modules[_order_tools_spec.name] = _order_tools_mod
 _order_tools_spec.loader.exec_module(_order_tools_mod)
@@ -121,6 +131,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "order_agent.agent",
     os.path.join(_ORDER_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load order_agent.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

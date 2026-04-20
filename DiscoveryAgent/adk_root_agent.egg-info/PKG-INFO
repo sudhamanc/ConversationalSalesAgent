@@ -142,7 +142,7 @@ GCP_SA_WIF_SA="github-actions-sa@your-project.iam.gserviceaccount.com"
 **Optional Variables:**
 ```bash
 ALL_REGIONS="us-central1,us-east4"              # For multi-region deployment
-GEMINI_MODEL="gemini-2.5-flash"                 # LLM model to use
+GEMINI_MODEL="gemini-3-flash-preview"                 # LLM model to use
 ```
 
 **Application-Specific Variables:**
@@ -208,7 +208,7 @@ import os
 from google.adk.agents import LlmAgent
 from google.genai import types
 
-agent_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+agent_model = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
 
 customer_service_agent = LlmAgent(
     name="customer_service_agent",

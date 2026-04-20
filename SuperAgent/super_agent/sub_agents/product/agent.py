@@ -52,6 +52,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "product_agent.prompts",
     os.path.join(_PRODUCT_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load product_agent.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -69,6 +71,8 @@ _logger_spec = importlib.util.spec_from_file_location(
     "product_agent.utils.logger",
     os.path.join(_PRODUCT_PKG, "utils", "logger.py"),
 )
+if _logger_spec is None or _logger_spec.loader is None:
+    raise ImportError("Failed to load product_agent.utils.logger module spec")
 _logger_mod = importlib.util.module_from_spec(_logger_spec)
 sys.modules[_logger_spec.name] = _logger_mod
 _logger_spec.loader.exec_module(_logger_mod)
@@ -78,6 +82,8 @@ _cache_spec = importlib.util.spec_from_file_location(
     "product_agent.utils.cache",
     os.path.join(_PRODUCT_PKG, "utils", "cache.py"),
 )
+if _cache_spec is None or _cache_spec.loader is None:
+    raise ImportError("Failed to load product_agent.utils.cache module spec")
 _cache_mod = importlib.util.module_from_spec(_cache_spec)
 sys.modules[_cache_spec.name] = _cache_mod
 _cache_spec.loader.exec_module(_cache_mod)
@@ -95,6 +101,8 @@ _schemas_spec = importlib.util.spec_from_file_location(
     "product_agent.models.schemas",
     os.path.join(_PRODUCT_PKG, "models", "schemas.py"),
 )
+if _schemas_spec is None or _schemas_spec.loader is None:
+    raise ImportError("Failed to load product_agent.models.schemas module spec")
 _schemas_mod = importlib.util.module_from_spec(_schemas_spec)
 sys.modules[_schemas_spec.name] = _schemas_mod
 _schemas_spec.loader.exec_module(_schemas_mod)
@@ -112,6 +120,8 @@ _product_tools_spec = importlib.util.spec_from_file_location(
     "product_agent.tools.product_tools",
     os.path.join(_PRODUCT_PKG, "tools", "product_tools.py"),
 )
+if _product_tools_spec is None or _product_tools_spec.loader is None:
+    raise ImportError("Failed to load product_agent.tools.product_tools module spec")
 _product_tools_mod = importlib.util.module_from_spec(_product_tools_spec)
 sys.modules[_product_tools_spec.name] = _product_tools_mod
 _product_tools_spec.loader.exec_module(_product_tools_mod)
@@ -121,6 +131,8 @@ _comparison_tools_spec = importlib.util.spec_from_file_location(
     "product_agent.tools.comparison_tools",
     os.path.join(_PRODUCT_PKG, "tools", "comparison_tools.py"),
 )
+if _comparison_tools_spec is None or _comparison_tools_spec.loader is None:
+    raise ImportError("Failed to load product_agent.tools.comparison_tools module spec")
 _comparison_tools_mod = importlib.util.module_from_spec(_comparison_tools_spec)
 sys.modules[_comparison_tools_spec.name] = _comparison_tools_mod
 _comparison_tools_spec.loader.exec_module(_comparison_tools_mod)
@@ -132,6 +144,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "product_agent.agent",
     os.path.join(_PRODUCT_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load product_agent.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

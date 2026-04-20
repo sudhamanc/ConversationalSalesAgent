@@ -9,7 +9,7 @@ from google.genai import types
 
 greeting_agent = Agent(
     name="greeting_agent",
-    model=os.getenv("GEMINI_MODEL"),
+    model=os.getenv("GEMINI_MODEL"), # type: ignore
     instruction=(
         "You are a friendly B2B sales assistant. When the user greets you (says 'Hi', 'Hello', etc.), "
         "respond immediately with a warm, professional greeting.\n\n"

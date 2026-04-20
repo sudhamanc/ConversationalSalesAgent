@@ -93,7 +93,7 @@ from google.adk.agents import Agent
 
 product_agent = Agent(
     name="product_agent",
-    model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+    model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
     instruction="...",
     description="...",
     tools=[],
@@ -355,7 +355,7 @@ class PaymentAgent(BaseAgent):
 ```python
 product_agent = Agent(
     name="product_agent",
-    model="gemini-2.0-flash",
+    model="gemini-3-flash-preview",
     instruction="...",
     description="...",
     tools=[...],
@@ -386,7 +386,7 @@ from .sub_agents.test.test_agent import test_agent_simple
 
 root_agent = Agent(
     name="adk_agent",
-    model="gemini-2.5-flash",
+    model="gemini-3-flash-preview",
     instruction="...",
     description="The main orchestrator...",
     sub_agents=[

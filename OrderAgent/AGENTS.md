@@ -2,6 +2,7 @@
 
 **B2B Conversational Sales Agent - Order Management System**
 
+
 ## Agent Overview
 
 **Name**: `order_agent`  
@@ -15,6 +16,7 @@
 ## Responsibilities
 
 ### What OrderAgent DOES (PRE-FULFILLMENT):
+
 ✅ Shopping cart management (create, add, remove, view, clear)  
 ✅ Order creation with **auto-generated customer IDs**  
 ✅ Order modification (draft and pending_payment orders only)  
@@ -23,6 +25,7 @@
 ✅ Order cancellation with reason tracking  
 
 ### What OrderAgent DOES NOT DO (POST-ORDER):
+
 ❌ Installation scheduling (ServiceFulfillmentAgent)  
 ❌ Equipment provisioning (ServiceFulfillmentAgent)  
 ❌ Technician dispatch (ServiceFulfillmentAgent)  
@@ -86,20 +89,25 @@ Creates a new shopping cart for a customer.
 ```
 
 #### 2. `add_to_cart(cart_id: str, service_type: str, price: float, quantity: int = 1)`
+
 Adds a service/product to the cart.
 
 **Example**:
+
 ```python
 add_to_cart("CART-123", "Business Fiber 10 Gbps", 999.0, 1)
 ```
 
 #### 3. `remove_from_cart(cart_id: str, service_type: str)`
+
 Removes a service/product from the cart.
 
 #### 4. `get_cart(cart_id: str)`
+
 Retrieves current cart contents.
 
 #### 5. `clear_cart(cart_id: str)`
+
 Empties all items from the cart.
 
 ---
@@ -107,9 +115,11 @@ Empties all items from the cart.
 ### Order Management Tools
 
 #### 1. `create_order(...)`
+
 Creates a new service order.
 
 **Parameters**:
+
 - `customer_name` (required): Customer or business name
 - `service_address` (required): Installation address
 - `service_type` (required): Type of service ordered
@@ -134,9 +144,11 @@ Creates a new service order.
 ```
 
 #### 2. `update_order_status(order_id: str, new_status: str, notes: str = None)`
+
 Updates order status.
 
 **Valid Statuses**:
+
 - `draft` - Initial state
 - `pending_payment` - Awaiting payment
 - `payment_approved` - Payment confirmed
@@ -145,19 +157,24 @@ Updates order status.
 - `failed` - Order failed
 
 #### 3. `get_order(order_id: str)`
+
 Retrieves order details.
 
 #### 4. `modify_order(order_id: str, service_type: str = None, price: float = None)`
+
 Modifies an existing order (only draft/pending_payment).
 
 **Restrictions**:
+
 - Only `draft` or `pending_payment` orders can be modified
 - `confirmed`, `cancelled`, `failed` orders cannot be changed
 
 #### 5. `generate_contract(order_id: str)`
+
 Generates a service contract for an order.
 
 **Returns**:
+
 ```json
 {
   "success": true,
@@ -176,6 +193,7 @@ Generates a service contract for an order.
 ```
 
 #### 6. `cancel_order(order_id: str, reason: str = None)`
+
 Cancels an order.
 
 ---
@@ -215,6 +233,7 @@ Alternative paths:
 ### Routing Rules
 
 **SuperAgent routes to OrderAgent when**:
+
 - User says: "I'd like to order [product]"
 - User says: "Create an order"
 - User says: "Add to cart"
@@ -253,6 +272,7 @@ Alternative paths:
 ## SuperAgent Integration Files
 
 ### 1. Wrapper (Importlib Isolation)
+
 **File**: `SuperAgent/super_agent/sub_agents/order/agent.py`
 
 ```python
@@ -263,6 +283,7 @@ order_agent = _agent_mod.order_agent
 ```
 
 ### 2. SuperAgent Updates
+
 **File**: `SuperAgent/super_agent/agent.py`
 
 ```python
@@ -291,7 +312,7 @@ Added routing rule #4 for order creation, cart management, contract generation, 
 
 ### Environment Variables
 Uses existing SuperAgent environment:
-- `GEMINI_MODEL` - e.g., `gemini-2.5-flash`
+- `GEMINI_MODEL` - e.g., `gemini-3-flash-preview`
 
 ### Agent Settings
 ```python

@@ -66,6 +66,8 @@ _db_spec = importlib.util.spec_from_file_location(
     "bootstrap_agent.sub_agents.discovery.db_tools",
     os.path.join(_DISCOVERY_PKG, "db_tools.py"),
 )
+if _db_spec is None or _db_spec.loader is None:
+    raise ImportError("Failed to load bootstrap_agent.sub_agents.discovery.db_tools module spec")
 _db_mod = importlib.util.module_from_spec(_db_spec)
 sys.modules[_db_spec.name] = _db_mod
 _db_spec.loader.exec_module(_db_mod)
@@ -78,6 +80,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "bootstrap_agent.sub_agents.discovery.discovery_agent",
     os.path.join(_DISCOVERY_PKG, "discovery_agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load bootstrap_agent.sub_agents.discovery.discovery_agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

@@ -192,7 +192,7 @@ cd ..  # Back to SuperAgent/
 
 **What the script does:**
 
-- ✅ Auto-detects and uses Python venv if available (falls back to system python3)
+- ✅ Auto-detects and uses Python .venv if available (falls back to system python3)
 - ✅ Cleans up any stale processes on ports 8000 (backend) and 3000 (frontend)
 - ✅ Sets up organized logging with per-agent log files in `SuperAgent/logs/agents/`
 - ✅ Starts backend (FastAPI/uvicorn) on port 8000

@@ -183,7 +183,7 @@ Everyone: Tests at live URL
 # Go to your project → Variables tab
 # Add environment variables:
 
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3-flash-preview
 GOOGLE_API_KEY=your-api-key-here
 ENVIRONMENT=production
 AGENT_NAME=b2b_sales_agents
@@ -370,7 +370,7 @@ gcloud run deploy payment-agent \
   --min-instances 0 \
   --max-instances 2 \
   --memory 1Gi \
-  --set-env-vars GEMINI_MODEL=gemini-2.5-flash
+  --set-env-vars GEMINI_MODEL=gemini-3-flash-preview
 
 # Deploy Service Fulfillment Agent
 gcloud run deploy service-agent \
@@ -659,10 +659,10 @@ max_instances: 2  # Limit maximum cost
 
 ```python
 # Development
-GEMINI_MODEL = "gemini-1.5-flash"  # Cheaper
+GEMINI_MODEL = "gemini-3-flash-preview"  # Cheaper
 
 # Production
-GEMINI_MODEL = "gemini-2.5-flash"  # More capable
+GEMINI_MODEL = "gemini-3-flash-preview"  # More capable
 ```
 
 ### 4. Cache API Responses
@@ -1082,7 +1082,7 @@ api_key = os.environ.get('GOOGLE_AI_STUDIO_API_KEY')
 genai.configure(api_key=api_key)
 
 # Use free tier model
-model = genai.GenerativeModel('gemini-2.0-flash-exp')
+model = genai.GenerativeModel('gemini-3-flash-preview')
 
 # Make request
 response = model.generate_content('Your prompt here')
@@ -1116,7 +1116,7 @@ aiplatform.init(
 )
 
 # Use Vertex AI model
-model = GenerativeModel('gemini-2.0-flash-001')
+model = GenerativeModel('gemini-3-flash-preview')
 
 # Make request
 response = model.generate_content('Your prompt here')

@@ -5,6 +5,7 @@ Discovery-phase agent for company identification, prospect lookup/creation, and 
 ## Overview
 
 The DiscoveryAgent handles early sales-intelligence tasks in the conversational flow:
+
 - company discovery and matching,
 - contact and insight retrieval,
 - lead qualification context,
@@ -15,6 +16,7 @@ It includes read/write database operations for company/contact/opportunity/insig
 ## Current Role
 
 The DiscoveryAgent is the first major business-context agent in the sales flow. It:
+
 - extracts company + location details from conversation,
 - looks up existing records in SQLite,
 - creates/updates prospect records when needed,
@@ -25,6 +27,7 @@ This agent is **active in SuperAgent**.
 ## Scope Boundaries
 
 ### DiscoveryAgent does
+
 - Prospect/company lookup and enrichment
 - New company/contact record creation
 - Qualification context capture (BANT-related fields)
@@ -32,6 +35,7 @@ This agent is **active in SuperAgent**.
 - Opportunity context updates for downstream sales stages
 
 ### DiscoveryAgent does not do
+
 - Serviceability verification (ServiceabilityAgent)
 - Product technical fit (ProductAgent)
 - Pricing/discounting (OfferManagementAgent)
@@ -40,6 +44,7 @@ This agent is **active in SuperAgent**.
 ## Data Model (High-Level)
 
 Primary SQLite entities used by Discovery flow:
+
 - `accounts`: company profile, region, customer/prospect status, products
 - `contacts`: stakeholders and decision roles
 - `opportunities`: BANT components, score, and prioritization bucket
@@ -94,7 +99,7 @@ python main.py
 
 ```bash
 cd /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent
-./venv/bin/python -m pytest DiscoveryAgent -q
+./.venv/bin/python -m pytest DiscoveryAgent -q
 ```
 
 ## References
