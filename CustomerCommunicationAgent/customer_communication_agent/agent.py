@@ -12,6 +12,7 @@ from .prompts import (
 )
 from .tools import (
     send_order_confirmation,
+    send_quote_confirmation,
     send_payment_notification,
     send_installation_reminder,
     send_service_activated_notification,
@@ -37,6 +38,7 @@ customer_communication_agent = Agent(
     tools=[
         # Order lifecycle notifications
         send_order_confirmation,
+        send_quote_confirmation,
         send_payment_notification,
         send_installation_reminder,
         send_service_activated_notification,

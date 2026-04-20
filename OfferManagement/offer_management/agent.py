@@ -7,7 +7,7 @@ from google.adk.agents import Agent
 from google.genai import types
 
 from .prompts import OFFER_MANAGEMENT_AGENT_INSTRUCTION, OFFER_MANAGEMENT_SHORT_DESCRIPTION
-from .tools.pricing_tools import find_best_bundle_offer, generate_offer_quote
+from .tools.pricing_tools import find_best_bundle_offer, generate_offer_quote, save_quote, get_saved_quote
 from .utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +26,8 @@ offer_management_agent = Agent(
     tools=[
         find_best_bundle_offer,
         generate_offer_quote,
+        save_quote,
+        get_saved_quote,
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,

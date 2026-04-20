@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from ..utils.cache import cache_result, get_cached_result
 from ..utils.logger import get_logger
+from ..utils.quote_db import insert_quote, get_quote, list_quotes_by_email
 
 logger = get_logger(__name__)
 
@@ -292,3 +295,162 @@ def generate_offer_quote(items: List[Dict[str, Any]], term_months: int = 12, ban
     cache_result(cache_key, result)
     logger.info("Generated offer quote %s for %d items (bant_score=%.1f)", result["offer_id"], len(priced_items), bant_score)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Quote persistence helpers
+# ---------------------------------------------------------------------------
+
+def _auto_send_quote_confirmation(
+    quote_id: str,
+    customer_name: str,
+    customer_email: str,
+    customer_phone: str,
+    items_summary: str,
+    monthly_total: float,
+    term_months: int,
+    total_discount: float,
+) -> Dict[str, Any]:
+    """
+    Automatically send a quote confirmation email/SMS immediately after a quote
+    is saved.  Uses sys.modules to call the already-loaded
+    CustomerCommunicationAgent notification tools without a hard cross-package
+    import dependency.
+    """
+    try:
+        notif_mod = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if notif_mod is None:
+            notif_mod = sys.modules.get("customer_communication_agent.tools")
+
+        if notif_mod is None or not hasattr(notif_mod, "send_quote_confirmation"):
+            logger.warning(
+                "CustomerCommunicationAgent notification tools not found in sys.modules; "
+                "quote confirmation email will not be sent automatically."
+            )
+            return {"success": False, "error": "Notification module unavailable"}
+
+        result = notif_mod.send_quote_confirmation(
+            quote_id=quote_id,
+            customer_name=customer_name,
+            customer_email=customer_email or None,
+            customer_phone=customer_phone or None,
+            items_summary=items_summary,
+            monthly_total=monthly_total,
+            term_months=term_months,
+            total_discount=total_discount,
+        )
+        logger.info(f"Auto quote confirmation triggered for {quote_id}: {result}")
+        return result
+    except Exception as exc:
+        logger.warning(f"Auto quote confirmation failed (non-fatal): {exc}")
+        return {"success": False, "error": str(exc)}
+
+
+def save_quote(
+    items: List[Dict[str, Any]],
+    term_months: int = 12,
+    bant_score: float = 0.0,
+    customer_name: str = None,
+    customer_email: str = None,
+    customer_phone: str = None,
+) -> Dict[str, Any]:
+    """
+    Generate a full quote and persist it to the QuoteDB.
+
+    This is a convenience wrapper around ``generate_offer_quote`` that also
+    saves the result to SQLite and sends a quote confirmation notification.
+
+    Args:
+        items: List of {"product_id": str, "quantity": int}
+        term_months: Contract duration (12, 24, or 36)
+        bant_score: Prospect BANT qualification score (0-100). Defaults to 0.
+        customer_name: Customer / company name (for notification)
+        customer_email: Contact email (for notification)
+        customer_phone: Contact phone (for notification)
+
+    Returns:
+        JSON dict with quote_id, full pricing breakdown, and notification status.
+    """
+    # 1. Generate the pricing quote
+    quote_data = generate_offer_quote(items, term_months, bant_score)
+    if not quote_data.get("offer_id"):
+        return quote_data  # Validation error – pass through
+
+    # 2. Derive a unique quote_id
+    now = datetime.now()
+    quote_id = f"QT-{now.strftime('%Y%m%d%H%M%S')}-{quote_data['offer_id'][-6:]}"
+    expires_at = (now + timedelta(days=30)).isoformat()
+
+    # Build human-readable items summary
+    product_names = [item.get("product_name", item.get("product_id", "?")) for item in quote_data.get("items", [])]
+    items_summary = ", ".join(product_names)
+
+    # 3. Persist to QuoteDB
+    try:
+        insert_quote(
+            quote_id=quote_id,
+            offer_id=quote_data["offer_id"],
+            customer_name=customer_name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            items=quote_data["items"],
+            term_months=quote_data.get("term_months", term_months),
+            bant_score=bant_score,
+            subtotal=quote_data["subtotal"],
+            total_discount=quote_data["total_discount"],
+            monthly_total=quote_data["monthly_total"],
+            yearly_total=quote_data["yearly_total"],
+            discount_breakdown=quote_data.get("discount_breakdown", []),
+            created_at=now.isoformat(),
+            expires_at=expires_at,
+        )
+        logger.info(f"Quote {quote_id} saved to QuoteDB")
+    except Exception as exc:
+        logger.error(f"Failed to persist quote: {exc}")
+        return {
+            "success": False,
+            "error": f"Quote generation succeeded but persistence failed: {exc}",
+            "quote_data": quote_data,
+        }
+
+    # 4. Auto-send quote confirmation notification
+    notif_result = _auto_send_quote_confirmation(
+        quote_id=quote_id,
+        customer_name=customer_name or "Valued Customer",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        items_summary=items_summary,
+        monthly_total=quote_data["monthly_total"],
+        term_months=quote_data.get("term_months", term_months),
+        total_discount=quote_data["total_discount"],
+    )
+
+    email_sent = bool(notif_result and notif_result.get("success"))
+    email_notification_id = notif_result.get("notification_id") if notif_result else None
+
+    # 5. Return combined result
+    return {
+        "success": True,
+        "quote_id": quote_id,
+        "expires_at": expires_at,
+        **quote_data,
+        "email_confirmation_sent": email_sent,
+        "email_notification_id": email_notification_id,
+        "message": f"Quote {quote_id} saved successfully. Valid for 30 days.",
+    }
+
+
+def get_saved_quote(quote_id: str) -> Dict[str, Any]:
+    """
+    Retrieve a previously saved quote by its quote_id.
+
+    Args:
+        quote_id: The quote identifier returned by save_quote.
+
+    Returns:
+        Quote details or an error dict if not found.
+    """
+    row = get_quote(quote_id)
+    if row is None:
+        return {"found": False, "error": f"No quote found with id {quote_id}"}
+    return {"found": True, **row}

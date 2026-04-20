@@ -10,6 +10,7 @@ from enum import Enum
 class NotificationType(str, Enum):
     """Notification type enumeration."""
     ORDER_CONFIRMATION = "order_confirmation"
+    QUOTE_SAVED = "quote_saved"
     PAYMENT_SUCCESS = "payment_success"
     PAYMENT_FAILED = "payment_failed"
     INSTALLATION_SCHEDULED = "installation_scheduled"

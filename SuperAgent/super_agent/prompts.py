@@ -99,6 +99,7 @@ You are the central orchestrator for a B2B sales system. Your ONLY job is to rou
    - "Show me the total price"
 
    Note: This agent is the only pricing source of truth. It returns JSON with offer_id, item price points, discounts, subtotal, total_discount, and total_price for order placement.
+   It also handles **saving quotes** — when a customer asks to save or email a quote, the agent persists it to the QuoteDB and automatically sends a confirmation email via CustomerCommunicationAgent.
 
 5. **Cart Management and Order Orchestration**
    Transfer to **order_agent** when a customer wants to:
@@ -169,6 +170,8 @@ You are the central orchestrator for a B2B sales system. Your ONLY job is to rou
    - "Resend payment confirmation"
    
    Note: **Order confirmation email is sent AUTOMATICALLY inside create_order** — the order_agent tool triggers it directly without any routing needed. Do NOT route here just because an order was created.
+   **Payment notifications are sent AUTOMATICALLY inside process_payment** — the payment_agent tool triggers them on success and failure.
+   **Quote confirmations are sent AUTOMATICALLY inside save_quote** — the offer_management_agent tool triggers them when a quote is saved.
 
 9. **Greetings and Small Talk**
    Transfer to **greeting_agent** for introductions, hellos, and casual conversation.

@@ -6,6 +6,7 @@ and payment method management.
 """
 
 import json
+import sys
 from typing import Dict, Any
 from ..utils.logger import get_logger
 
@@ -101,11 +102,58 @@ def validate_payment_method(
         }
 
 
+def _auto_send_payment_notification(
+    order_id: str,
+    customer_name: str,
+    customer_email: str,
+    customer_phone: str,
+    payment_status: str,
+    amount: float,
+    payment_method: str,
+) -> Dict[str, Any]:
+    """
+    Automatically send a payment success/failure notification immediately after
+    payment processing.  Uses sys.modules to call the already-loaded
+    CustomerCommunicationAgent notification tools without a hard cross-package
+    import dependency.
+    """
+    try:
+        notif_mod = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if notif_mod is None:
+            notif_mod = sys.modules.get("customer_communication_agent.tools")
+
+        if notif_mod is None or not hasattr(notif_mod, "send_payment_notification"):
+            logger.warning(
+                "CustomerCommunicationAgent notification tools not found in sys.modules; "
+                "payment notification will not be sent automatically."
+            )
+            return {"success": False, "error": "Notification module unavailable"}
+
+        result = notif_mod.send_payment_notification(
+            order_id=order_id or "",
+            customer_name=customer_name or "Valued Customer",
+            customer_email=customer_email or None,
+            customer_phone=customer_phone or None,
+            payment_status=payment_status,
+            amount=amount,
+            payment_method=payment_method,
+        )
+        logger.info(f"Auto payment notification triggered ({payment_status}): {result}")
+        return result
+    except Exception as exc:
+        logger.warning(f"Auto payment notification failed (non-fatal): {exc}")
+        return {"success": False, "error": str(exc)}
+
+
 def process_payment(
     amount: float,
     payment_method_token: str,
     description: str = None,
-    invoice_id: str = None
+    invoice_id: str = None,
+    order_id: str = None,
+    customer_name: str = None,
+    customer_email: str = None,
+    customer_phone: str = None,
 ) -> Dict[str, Any]:
     """
     Processes a payment transaction.
@@ -118,6 +166,10 @@ def process_payment(
         payment_method_token: Tokenized payment method reference
         description: Transaction description
         invoice_id: Associated invoice ID
+        order_id: Associated order ID (for notification)
+        customer_name: Customer name (for notification)
+        customer_email: Customer email (for notification)
+        customer_phone: Customer phone (for notification)
     
     Returns:
         Transaction result with status and details
@@ -138,6 +190,19 @@ def process_payment(
         if amount < 10000:
             transaction_id = f"TXN-{payment_method_token[-4:]}-{int(amount)}"
             
+            # Automatically send payment success notification
+            notif_result = {}
+            if customer_email or customer_phone:
+                notif_result = _auto_send_payment_notification(
+                    order_id=order_id or invoice_id or "",
+                    customer_name=customer_name or "",
+                    customer_email=customer_email or "",
+                    customer_phone=customer_phone or "",
+                    payment_status="success",
+                    amount=amount,
+                    payment_method=payment_method_token,
+                )
+
             return {
                 "success": True,
                 "transaction_id": transaction_id,
@@ -147,9 +212,23 @@ def process_payment(
                 "payment_method_token": payment_method_token,
                 "description": description,
                 "invoice_id": invoice_id,
+                "email_confirmation_sent": bool(notif_result.get("success")),
+                "email_notification_id": notif_result.get("notification_id"),
                 "message": f"Payment of ${amount:.2f} approved. Transaction ID: {transaction_id}"
             }
         else:
+            # Automatically send payment failure notification
+            if customer_email or customer_phone:
+                _auto_send_payment_notification(
+                    order_id=order_id or invoice_id or "",
+                    customer_name=customer_name or "",
+                    customer_email=customer_email or "",
+                    customer_phone=customer_phone or "",
+                    payment_status="failed",
+                    amount=amount,
+                    payment_method=payment_method_token,
+                )
+
             return {
                 "success": False,
                 "status": "declined",
