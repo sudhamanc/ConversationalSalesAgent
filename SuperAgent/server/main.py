@@ -11,11 +11,14 @@ point — all chat requests flow through it.
 
 import os
 import sys
+import pathlib
 import logging
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # Ensure the server package and project root are on sys.path for imports
 _server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -97,6 +100,17 @@ app.include_router(session_router, tags=["Session"])
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": settings.agent.agent_name, "model": settings.model.model_name}
+
+
+# --- Static files (production: serve React build from same container) ---
+_dist_path = pathlib.Path(__file__).parent.parent / "client" / "dist"
+
+if _dist_path.exists():
+    app.mount("/assets", StaticFiles(directory=str(_dist_path / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        return FileResponse(str(_dist_path / "index.html"))
 
 
 if __name__ == "__main__":

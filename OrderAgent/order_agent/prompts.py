@@ -87,29 +87,10 @@ Step 3: After order creation, check the tool's JSON response:
    - If `email_confirmation_sent` is false and contact_email was provided → note that email delivery failed
    - If no contact_email was available → omit the email line entirely
 
-   Respond with:
-   "✅ **Order Submitted Successfully!**
-   
-   **Order Details:**
-   • Order ID: [order_id]
-   • Customer: [customer_name]
-   • Service: [service_type]
-   • Address: [service_address]
-   • Monthly Total: $[price]/mo
-   • Installation Date: [scheduled_date from conversation]
-   • Payment Status: ✅ Paid
-   • Order Status: Confirmed
-   
-   📧 **Order confirmation sent to [contact_email]** — a full order summary including service details, total amount, and next steps has been emailed to the customer.
-   *(Omit this line if no email was available or email_confirmation_sent is false)*
-   
-   **What's Next?**
-   Would you like to:
-   1. **Track your installation** - Monitor equipment delivery and technician dispatch
-   2. **View order details** - Get your contract and order confirmation
-   3. **Contact support** - Questions about your order
-   
-   How can I help you further?"
+   Respond with (keep the JSON on one line):
+   "✅ Order Submitted Successfully!
+
+   {"order_confirmation": true, "order_id": "[order_id]", "customer": "[customer_name]", "service": "[service_type]", "address": "[service_address]", "monthly_total": [price as number], "installation_date": "[scheduled_date]", "payment_status": "Paid", "order_status": "Confirmed", "contact_email": "[contact_email or null]", "whats_next": ["Track your installation", "View order details", "Contact support"]}"
 
 **Phase 5: Service Fulfillment (Post-Order)**
 - If customer wants to track installation → Transfer to service_fulfillment_agent
@@ -168,27 +149,9 @@ Example 4 - After Payment Complete (AUTOMATIC ORDER SUBMISSION):
 [Control transferred to OrderAgent]
 Agent: [IMMEDIATELY calls create_order - NO USER INPUT NEEDED]
 Agent:
-"✅ **Order Submitted Successfully!**
+"✅ Order Submitted Successfully!
 
-**Order Details:**
-• Order ID: ORD-20260220-456
-• Customer: Pizza Hut
-• Service: Business Fiber 1 Gbps
-• Address: 123 Main St, Boston MA 02108
-• Monthly Total: $249.00/mo
-• Installation Date: February 22, 2026 (8AM-12PM)
-• Payment Status: ✅ Paid
-• Order Status: Confirmed
-
-📧 **Order confirmation sent to john@pizzahut.com** — a full order summary has been emailed to the customer.
-
-**What's Next?**
-Would you like to:
-1. **Track your installation** - Monitor equipment delivery and technician dispatch
-2. **View order details** - Get your contract and order confirmation
-3. **Contact support** - Questions about your order
-
-How can I help you further?"
+{"order_confirmation": true, "order_id": "ORD-20260220-456", "customer": "Pizza Hut", "service": "Business Fiber 1 Gbps", "address": "123 Main St, Boston MA 02108", "monthly_total": 249.00, "installation_date": "February 22, 2026 (8AM-12PM)", "payment_status": "Paid", "order_status": "Confirmed", "contact_email": "john@pizzahut.com", "whats_next": ["Track your installation", "View order details", "Contact support"]}"
 
 Example 5 - Track Installation (Post-Order):
 User: "Track my installation"
