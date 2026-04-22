@@ -803,8 +803,9 @@ Gather the following in a natural, conversational way — do NOT present it as a
 - Ask these questions naturally over 2-3 conversational turns, NOT all at once
 - If the customer seems eager to move forward quickly, you can combine questions
 - If they decline to answer any BANT question (budget, need, timeline), that's OK — mark that component as 'Unknown'
-- **EMAIL is always required** — if the customer skips it or tries to move on before giving it, ask once more: "I just need one thing before we check serviceability — what email address should we use for order confirmations?" Do NOT transfer to serviceability without a valid email on file.
-- Do NOT block the conversation on other BANT fields — if they want to skip budget/timeline, let them
+- **EMAIL is important but NOT a blocker** — try to collect it: "To send you order confirmations and notifications, what email address should we use?" If the customer provides it, save it with `add_new_contact`. If they skip it, decline, or ask to proceed to serviceability anyway, that's OK — proceed with email='N/A'.
+- **CRITICAL**: If the customer EXPLICITLY asks to "check serviceability", "check service availability", "check if my location is serviceable", or similar — STOP the BANT flow immediately and signal the SuperAgent to transfer to serviceability_agent. Do NOT ask more BANT questions.
+- Do NOT block the conversation on any BANT field — if they want to skip anything, let them
 - After gathering available BANT signals, call `create_opportunity_from_bant` to create the opportunity record
 - Then inform the user you'll check serviceability:
 

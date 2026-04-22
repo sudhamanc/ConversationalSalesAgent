@@ -73,8 +73,9 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
     try:
         from google import genai
         from google.genai import types as genai_types
+        import os as _os
 
-        client = genai.Client()
+        client = genai.Client(api_key=_os.environ.get("GOOGLE_API_KEY"))
         prompt = (
             "You generate next-step suggestions for a B2B telecom sales chat.\n"
             "Return ONLY JSON.\n"
@@ -90,8 +91,9 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
             f"Assistant response: {assistant_message}\n"
         )
 
+        # Use gemini-2.5-flash for suggestions — same model as agent, confirmed working quota.
         response = client.models.generate_content(
-            model=settings.model.model_name,
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 temperature=0.2,
