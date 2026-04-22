@@ -314,7 +314,7 @@ cd ServiceabilityAgent
 pip install -e .
 
 # Set environment variables
-export GEMINI_MODEL="gemini-2.0-flash"
+export GEMINI_MODEL="gemini-3-flash-preview"
 export AGENT_NAME="serviceability_agent"
 
 # Run agent

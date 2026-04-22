@@ -59,7 +59,7 @@ python main.py
 
 ```bash
 cd /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent
-./venv/bin/python -m pytest ServiceabilityAgent/tests -q
+./.venv/bin/python -m pytest ServiceabilityAgent/tests -q
 ```
 
 ## References

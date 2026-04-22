@@ -97,7 +97,7 @@ async def health():
     return {
         "status": "ok",
         "agent": APP_NAME,
-        "model": os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+        "model": os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
         "version": "1.0.0"
     }
 
@@ -235,7 +235,7 @@ async def startup():
     logger.info(
         f"Serviceability Agent server starting — "
         f"agent={APP_NAME}, "
-        f"model={os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')}, "
+        f"model={os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')}, "
         f"port={os.getenv('PORT', '8002')}"
     )
 

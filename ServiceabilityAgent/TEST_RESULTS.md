@@ -147,7 +147,7 @@ Ran comprehensive manual test (`test_manual.py`):
 
 ✅ TEST 6: Agent Initialization - PASSED
    - Agent name: serviceability_agent
-   - Model: gemini-2.0-flash
+   - Model: gemini-3-flash-preview
    - Tools: 6 registered
    - Temperature: 0.0 (deterministic)
 ```

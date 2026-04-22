@@ -53,6 +53,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "serviceability_agent.prompts",
     os.path.join(_SERVICEABILITY_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load serviceability_agent.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -69,6 +71,8 @@ _logger_spec = importlib.util.spec_from_file_location(
     "serviceability_agent.utils.logger",
     os.path.join(_SERVICEABILITY_PKG, "utils", "logger.py"),
 )
+if _logger_spec is None or _logger_spec.loader is None:
+    raise ImportError("Failed to load serviceability_agent.utils.logger module spec")
 _logger_mod = importlib.util.module_from_spec(_logger_spec)
 sys.modules[_logger_spec.name] = _logger_mod
 _logger_spec.loader.exec_module(_logger_mod)
@@ -86,6 +90,8 @@ _address_tools_spec = importlib.util.spec_from_file_location(
     "serviceability_agent.tools.address_tools",
     os.path.join(_SERVICEABILITY_PKG, "tools", "address_tools.py"),
 )
+if _address_tools_spec is None or _address_tools_spec.loader is None:
+    raise ImportError("Failed to load serviceability_agent.tools.address_tools module spec")
 _address_tools_mod = importlib.util.module_from_spec(_address_tools_spec)
 sys.modules[_address_tools_spec.name] = _address_tools_mod
 _address_tools_spec.loader.exec_module(_address_tools_mod)
@@ -95,6 +101,8 @@ _gis_tools_spec = importlib.util.spec_from_file_location(
     "serviceability_agent.tools.gis_tools",
     os.path.join(_SERVICEABILITY_PKG, "tools", "gis_tools.py"),
 )
+if _gis_tools_spec is None or _gis_tools_spec.loader is None:
+    raise ImportError("Failed to load serviceability_agent.tools.gis_tools module spec")
 _gis_tools_mod = importlib.util.module_from_spec(_gis_tools_spec)
 sys.modules[_gis_tools_spec.name] = _gis_tools_mod
 _gis_tools_spec.loader.exec_module(_gis_tools_mod)
@@ -106,6 +114,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "serviceability_agent.agent",
     os.path.join(_SERVICEABILITY_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load serviceability_agent.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

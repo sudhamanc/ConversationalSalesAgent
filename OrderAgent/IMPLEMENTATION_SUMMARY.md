@@ -254,7 +254,7 @@ pytest test_integration.py -v
 
 ### Environment Variables
 No new environment variables needed. OrderAgent uses existing:
-- `GEMINI_MODEL` - Model name (e.g., gemini-2.5-flash)
+- `GEMINI_MODEL` - Model name (e.g., gemini-3-flash-preview)
 
 ### Agent Configuration
 - Temperature: 0.0 (deterministic)

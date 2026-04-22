@@ -88,7 +88,7 @@ SuperAgent routes to OrderAgent when:
 ## Environment Configuration
 
 The agent uses environment variables from SuperAgent's `.env`:
-- `GEMINI_MODEL` - Model name (e.g., gemini-2.5-flash)
+- `GEMINI_MODEL` - Model name (e.g., gemini-3-flash-preview)
 - Temperature: 0.0 (deterministic)
 - Max tokens: 2048
 

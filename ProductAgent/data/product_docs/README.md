@@ -17,7 +17,7 @@ ProductAgent now uses deterministic in-repo catalog tools, not vector search.
 3. Run ProductAgent tests:
 
 ```bash
-GEMINI_MODEL=gemini-2.0-flash /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent/venv/bin/python -m pytest ProductAgent/tests/test_tools.py ProductAgent/tests/test_agent.py -q
+GEMINI_MODEL=gemini-3-flash-preview /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent/.venv/bin/python -m pytest ProductAgent/tests/test_tools.py ProductAgent/tests/test_agent.py -q
 ```
 
 ## Notes

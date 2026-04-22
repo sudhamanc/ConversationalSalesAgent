@@ -53,6 +53,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "payment_agent.prompts",
     os.path.join(_PAYMENT_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load payment_agent.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -69,6 +71,8 @@ _logger_spec = importlib.util.spec_from_file_location(
     "payment_agent.utils.logger",
     os.path.join(_PAYMENT_PKG, "utils", "logger.py"),
 )
+if _logger_spec is None or _logger_spec.loader is None:
+    raise ImportError("Failed to load payment_agent.utils.logger module spec")
 _logger_mod = importlib.util.module_from_spec(_logger_spec)
 sys.modules[_logger_spec.name] = _logger_mod
 _logger_spec.loader.exec_module(_logger_mod)
@@ -88,6 +92,8 @@ if os.path.exists(_schemas_path):
         "payment_agent.models.schemas",
         _schemas_path,
     )
+    if _schemas_spec is None or _schemas_spec.loader is None:
+        raise ImportError("Failed to load payment_agent.models.schemas module spec")
     _schemas_mod = importlib.util.module_from_spec(_schemas_spec)
     sys.modules[_schemas_spec.name] = _schemas_mod
     _schemas_spec.loader.exec_module(_schemas_mod)
@@ -105,6 +111,8 @@ _payment_tools_spec = importlib.util.spec_from_file_location(
     "payment_agent.tools.payment_tools",
     os.path.join(_PAYMENT_PKG, "tools", "payment_tools.py"),
 )
+if _payment_tools_spec is None or _payment_tools_spec.loader is None:
+    raise ImportError("Failed to load payment_agent.tools.payment_tools module spec")
 _payment_tools_mod = importlib.util.module_from_spec(_payment_tools_spec)
 sys.modules[_payment_tools_spec.name] = _payment_tools_mod
 _payment_tools_spec.loader.exec_module(_payment_tools_mod)
@@ -114,6 +122,8 @@ _credit_tools_spec = importlib.util.spec_from_file_location(
     "payment_agent.tools.credit_tools",
     os.path.join(_PAYMENT_PKG, "tools", "credit_tools.py"),
 )
+if _credit_tools_spec is None or _credit_tools_spec.loader is None:
+    raise ImportError("Failed to load payment_agent.tools.credit_tools module spec")
 _credit_tools_mod = importlib.util.module_from_spec(_credit_tools_spec)
 sys.modules[_credit_tools_spec.name] = _credit_tools_mod
 _credit_tools_spec.loader.exec_module(_credit_tools_mod)
@@ -123,6 +133,8 @@ _billing_tools_spec = importlib.util.spec_from_file_location(
     "payment_agent.tools.billing_tools",
     os.path.join(_PAYMENT_PKG, "tools", "billing_tools.py"),
 )
+if _billing_tools_spec is None or _billing_tools_spec.loader is None:
+    raise ImportError("Failed to load payment_agent.tools.billing_tools module spec")
 _billing_tools_mod = importlib.util.module_from_spec(_billing_tools_spec)
 sys.modules[_billing_tools_spec.name] = _billing_tools_mod
 _billing_tools_spec.loader.exec_module(_billing_tools_mod)
@@ -134,6 +146,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "payment_agent.agent",
     os.path.join(_PAYMENT_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load payment_agent.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

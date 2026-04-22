@@ -85,7 +85,7 @@ from google.genai import types
 
 new_agent = Agent(
     name="new_agent",
-    model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
+    model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
     instruction=(
         "You are a specialized agent that [clear task description]. "
         "\n\n**IMPORTANT GUIDELINES:**\n"

@@ -299,7 +299,7 @@ User: "Show notification history for john@pizzahut.com"
 Set in `SuperAgent/server/.env`:
 
 ```bash
-GEMINI_MODEL=gemini-2.5-flash  # Model for agent
+GEMINI_MODEL=gemini-3-flash-preview  # Model for agent
 ```
 
 ### Agent Parameters

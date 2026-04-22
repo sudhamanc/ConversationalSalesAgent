@@ -3,11 +3,15 @@ import { getAgentInfo } from "../utils/agentLabels";
 import QuoteCard from "./QuoteCard";
 import ServiceabilityCard from "./ServiceabilityCard";
 import ProductDetailsCard from "./ProductDetailsCard";
+import PaymentCard from "./PaymentCard";
+import OrderCard from "./OrderCard";
 import SuggestionCard from "./SuggestionCard";
 import {
   parseOfferQuote,
   parseProductAgentMessage,
   parseServiceabilityMessage,
+  parsePaymentConfirmation,
+  parseOrderConfirmation,
 } from "../utils/responseFormatters";
 import { getSuggestionsForMessage } from "../utils/suggestions";
 
@@ -27,7 +31,9 @@ function renderInlineFormatting(text) {
 }
 
 function renderFormattedText(content) {
-  const lines = (content || "").split("\n");
+  // Normalize inline bullet separators (• Item1 • Item2) to line-start bullets
+  const normalized = (content || "").replace(/(?<!\n)\s*•\s+/g, "\n• ");
+  const lines = normalized.split("\n");
 
   return lines.map((line, index) => {
     const trimmed = line.trim();
@@ -62,10 +68,20 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
     !isUser && !quote && !serviceabilityDetails
       ? parseProductAgentMessage(message.content)
       : null;
+  const paymentConfirmation =
+    !isUser && !quote && !serviceabilityDetails && !productDetails
+      ? parsePaymentConfirmation(message.content)
+      : null;
+  const orderConfirmation =
+    !isUser && !quote && !serviceabilityDetails && !productDetails && !paymentConfirmation
+      ? parseOrderConfirmation(message.content)
+      : null;
 
   const shouldRenderQuoteCard = Boolean(quote);
   const shouldRenderServiceabilityCard = Boolean(serviceabilityDetails);
   const shouldRenderProductCard = Boolean(productDetails);
+  const shouldRenderPaymentCard = Boolean(paymentConfirmation);
+  const shouldRenderOrderCard = Boolean(orderConfirmation);
   const assistantCardClass =
     "max-w-[90%] px-1 py-1 rounded-2xl text-sm leading-relaxed";
   const dynamicSuggestions =
@@ -98,7 +114,9 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
             className={
               shouldRenderQuoteCard ||
               shouldRenderServiceabilityCard ||
-              shouldRenderProductCard
+              shouldRenderProductCard ||
+              shouldRenderPaymentCard ||
+              shouldRenderOrderCard
                 ? assistantCardClass
                 : "max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap bg-slate-100 text-slate-800 rounded-bl-md"
             }
@@ -109,6 +127,10 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
               <ServiceabilityCard details={serviceabilityDetails} />
             ) : shouldRenderProductCard ? (
               <ProductDetailsCard payload={productDetails} />
+            ) : shouldRenderPaymentCard ? (
+              <PaymentCard payment={paymentConfirmation} />
+            ) : shouldRenderOrderCard ? (
+              <OrderCard order={orderConfirmation} />
             ) : (
               renderFormattedText(message.content)
             )}
