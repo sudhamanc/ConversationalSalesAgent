@@ -5,7 +5,7 @@ These tools handle service activation, testing, and verification.
 """
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from random import uniform
 from ..utils.logger import get_logger
@@ -74,7 +74,7 @@ def activate_service(
 
 def run_service_tests(
     circuit_id: str,
-    test_types: list = None
+    test_types: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Runs service tests to verify connectivity and performance.

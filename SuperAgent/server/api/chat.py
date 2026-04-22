@@ -12,6 +12,7 @@ Flow:
 import asyncio
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
@@ -26,10 +27,25 @@ logger = get_logger(__name__)
 logger.setLevel(logging.DEBUG)  # Enable debug logging for chat endpoint
 router = APIRouter()
 
+# Pure greeting words/phrases that should always route to greeting_agent
+# regardless of session history or prior conversation context.
+_GREETING_PATTERNS = frozenset([
+    "hi", "hello", "hey", "howdy", "greetings", "hiya", "yo",
+    "good morning", "good afternoon", "good evening", "good day",
+    "hi there", "hello there", "hey there",
+])
+
+
+def _is_pure_greeting(message: str) -> bool:
+    """Return True if the message is only a greeting with no other content."""
+    cleaned = re.sub(r'[!.,?\s]+$', '', message.lower().strip())
+    return cleaned in _GREETING_PATTERNS
+
 # These are set at startup by main.py — avoids circular imports.
 _runner = None
 _session_service = None
 _app_name = None
+_greeting_runner = None  # Isolated runner for pure greetings — no session history bias
 
 
 def _parse_suggestion_payload(raw_text: str) -> list[str]:
@@ -111,10 +127,27 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
 
 def init_runner(runner, session_service, app_name: str):
     """Called once from main.py at startup to inject the ADK runner."""
-    global _runner, _session_service, _app_name
+    global _runner, _session_service, _app_name, _greeting_runner
     _runner = runner
     _session_service = session_service
     _app_name = app_name
+
+    # Build a dedicated greeting runner backed by greeting_agent only.
+    # Its own InMemorySessionService means it never sees the main conversation history,
+    # so the orchestrator cannot re-route a pure greeting based on session context.
+    try:
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService as _GS
+        from super_agent.sub_agents.greeting.greeting_agent import greeting_agent as _ga
+        _greeting_runner = Runner(
+            agent=_ga,
+            app_name="greeting_app",
+            session_service=_GS(),
+        )
+        logger.info("Dedicated greeting runner initialized")
+    except Exception as exc:
+        logger.warning("Could not build greeting runner, falling back to main runner: %s", exc)
+        _greeting_runner = None
 
 
 async def _ensure_adk_session(user_id: str, session_id: str):
@@ -144,11 +177,48 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
     """
     Stream ADK agent responses via SSE.
 
+    For pure greetings (e.g. "Hi", "Hello"), uses a dedicated greeting runner
+    with no session history so routing is deterministic regardless of context.
     Retries on transient 503/429 errors ONLY if no content has been sent yet.
     Once tokens are streaming to the client, errors are passed through as-is.
     """
-    from google.adk.runners import RunConfig
+    # --- Dedicated greeting path: bypass orchestrator + session history entirely ---
+    if _greeting_runner and _is_pure_greeting(user_message):
+        logger.info("Pure greeting detected — using dedicated greeting runner")
+        async for chunk in _stream_from_runner(
+            runner=_greeting_runner,
+            user_id=user_id,
+            session_id=f"greet_{session_id}",  # isolated namespace
+            user_message=user_message,
+            author_override="greeting_agent",
+        ):
+            yield chunk
+        return
 
+    # --- Normal path ---
+    async for chunk in _stream_from_runner(
+        runner=_runner,
+        user_id=user_id,
+        session_id=session_id,
+        user_message=user_message,
+    ):
+        yield chunk
+
+
+async def _stream_from_runner(
+    runner,
+    user_id: str,
+    session_id: str,
+    user_message: str,
+    author_override: str | None = None,
+):
+    """Core SSE streaming logic for a given ADK runner."""
+    # Ensure session exists in the runner's own session service
+    svc = runner.session_service
+    app = runner.app_name
+    existing = await svc.get_session(app_name=app, user_id=user_id, session_id=session_id)
+    if not existing:
+        await svc.create_session(app_name=app, user_id=user_id, session_id=session_id)
     for attempt in range(_MAX_RETRIES):
         sent_content = False
         response_parts: list[str] = []
@@ -156,25 +226,20 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         _retry = False
 
         try:
-            await _ensure_adk_session(user_id, session_id)
-
             new_message = types.Content(
                 role="user",
                 parts=[types.Part(text=user_message)],
             )
 
-            run_config = RunConfig()
-
             logger.info(f"Processing user message: {user_message[:80]}")
             logger.debug(f"Full user message: {user_message}")
             logger.debug(f"Session ID: {session_id}, User ID: {user_id}")
-            logger.debug(f"Model: {_runner.agent.model}")
+            logger.debug(f"Model: {runner.agent.model}")
 
-            async for event in _runner.run_async(
+            async for event in runner.run_async(
                 user_id=user_id,
                 session_id=session_id,
                 new_message=new_message,
-                run_config=run_config,
             ):
                 if event.error_message:
                     # Suppress "Unknown error" when we already sent content — Gemini
@@ -204,13 +269,14 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                 if event.content and hasattr(event.content, 'parts') and event.content.parts:
                     for part in event.content.parts:
                         if hasattr(part, 'text') and part.text:
-                            logger.debug(f"Streaming token from {event.author}: {part.text[:50]}...")
+                            effective_author = author_override or event.author or "agent"
+                            logger.debug(f"Streaming token from {effective_author}: {part.text[:50]}...")
                             response_parts.append(part.text)
-                            last_text_author = event.author or last_text_author
+                            last_text_author = effective_author
                             payload = json.dumps({
                                 "type": "token",
                                 "content": part.text,
-                                "author": event.author or "agent",
+                                "author": effective_author,
                             })
                             yield f"data: {payload}\n\n"
                             sent_content = True
@@ -257,7 +323,7 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                                     logger.debug(f"Emitting cart_update from {fn_name}")
                                     yield f"data: {cart_payload}\n\n"
 
-                if event.turn_complete:
+                if event.is_final_response() or event.turn_complete:
                     logger.info(f"Turn complete from {event.author}")
                     if not sent_content:
                         logger.warning(f"Empty response from agent, sending fallback")

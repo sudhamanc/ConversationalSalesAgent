@@ -106,17 +106,24 @@ def _make_offer_id(payload: Dict[str, Any]) -> str:
     return f"OFF-{digest.upper()}"
 
 
-def find_best_bundle_offer(items: List[Dict[str, Any]], term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
+def find_best_bundle_offer(items: str, term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
     """
     Evaluate bundle, term, and BANT-score discount rates for selected products.
 
     Args:
-        items: List of {"product_id": str, "quantity": int}
+        items: JSON string — list of objects with product_id (str) and quantity (int).
+               Example: '[{"product_id": "FIB-5G", "quantity": 1}]'
         term_months: Contract duration (12, 24, or 36)
         bant_score: Prospect's BANT qualification score (0-100). Defaults to 0.
 
     Returns JSON-like dict with selected discount rates and generated offer id.
     """
+    # Parse items from JSON string (Gemini tool schemas don't support List[Dict])
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except (json.JSONDecodeError, ValueError):
+            return {"found": False, "error": "items must be a valid JSON array string"}
     normalized_items = _normalize_items(items)
     cache_key = f"bundle:{json.dumps(normalized_items)}:{term_months}:{bant_score}"
     cached = get_cached_result(cache_key)
@@ -164,17 +171,24 @@ def find_best_bundle_offer(items: List[Dict[str, Any]], term_months: int = 12, b
     return result
 
 
-def generate_offer_quote(items: List[Dict[str, Any]], term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
+def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
     """
     Generate an itemized quote with price points, discounts, and totals.
 
     Args:
-        items: List of {"product_id": str, "quantity": int}
+        items: JSON string — list of objects with product_id (str) and quantity (int).
+               Example: '[{"product_id": "FIB-5G", "quantity": 1}]'
         term_months: Contract duration (12, 24, or 36)
         bant_score: Prospect's BANT qualification score (0-100). Defaults to 0.
 
     Returns required JSON payload for downstream order placement.
     """
+    # Parse items from JSON string (Gemini tool schemas don't support List[Dict])
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except (json.JSONDecodeError, ValueError):
+            return {"found": False, "error": "items must be a valid JSON array string"}
     normalized_items = _normalize_items(items)
     bundle_result = find_best_bundle_offer(normalized_items, term_months, bant_score)
     if not bundle_result.get("found"):
@@ -347,7 +361,7 @@ def _auto_send_quote_confirmation(
 
 
 def save_quote(
-    items: List[Dict[str, Any]],
+    items: str,
     term_months: int = 12,
     bant_score: float = 0.0,
     customer_name: str = None,
@@ -361,7 +375,8 @@ def save_quote(
     saves the result to SQLite and sends a quote confirmation notification.
 
     Args:
-        items: List of {"product_id": str, "quantity": int}
+        items: JSON string — list of objects with product_id (str) and quantity (int).
+               Example: '[{"product_id": "FIB-5G", "quantity": 1}]'
         term_months: Contract duration (12, 24, or 36)
         bant_score: Prospect BANT qualification score (0-100). Defaults to 0.
         customer_name: Customer / company name (for notification)
@@ -371,6 +386,12 @@ def save_quote(
     Returns:
         JSON dict with quote_id, full pricing breakdown, and notification status.
     """
+    # Parse items from JSON string (Gemini tool schemas don't support List[Dict])
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except (json.JSONDecodeError, ValueError):
+            return {"success": False, "error": "items must be a valid JSON array string"}
     # 1. Generate the pricing quote
     quote_data = generate_offer_quote(items, term_months, bant_score)
     if not quote_data.get("offer_id"):
