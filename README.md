@@ -143,6 +143,17 @@ Typical production-intent flow:
 
 ---
 
+---
+
+## 🗃️ RAG / ChromaDB Knowledge Base
+
+The **ProductAgent** uses a vector database (ChromaDB) to answer deep product questions — SLAs, installation details, technology explanations, use-case fit, compliance — that are not captured in the structured product catalog.
+
+### How It Works
+
+When a customer asks a question like *"What is the uptime SLA for Business Fiber 10G?"* or *"Is coax suitable for a medical practice?"*, the ProductAgent calls the `search_product_knowledge` tool instead of a catalog tool. That tool performs a semantic similarity search over the vector store and returns the most relevant documentation chunks as context, which the agent uses to compose a grounded, accurate answer.
+
+
 ## 📁 Repository Layout (High-Level)
 
 ```text

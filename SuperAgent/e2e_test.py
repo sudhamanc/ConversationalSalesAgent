@@ -24,25 +24,30 @@ def post(path, body=None, token=None):
 
 def chat(message, token, session_id):
     """Send a chat message and collect the full streamed text response."""
-    body = {"message": message, "session_id": session_id}
-    raw = post("/api/chat", body, token)
+    body = json.dumps({"message": message, "session_id": session_id}).encode()
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    req = urllib.request.Request(f"{BASE}/api/chat", data=body, headers=headers, method="POST")
     texts = []
     author = None
     error = None
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line.startswith("data: "):
-            continue
-        try:
-            d = json.loads(line[6:])
-            if d.get("type") == "token" and d.get("text"):
-                texts.append(d["text"])
-            if d.get("author"):
-                author = d["author"]
-            if d.get("type") == "error":
-                error = d.get("message", "Unknown error")
-        except Exception:
-            pass
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            for raw_line in r:
+                line = raw_line.decode("utf-8").strip()
+                if not line.startswith("data: "):
+                    continue
+                try:
+                    d = json.loads(line[6:])
+                    if d.get("type") == "token" and d.get("content"):
+                        texts.append(d["content"])
+                    if d.get("author"):
+                        author = d["author"]
+                    if d.get("type") == "error":
+                        error = d.get("content", "Unknown error")
+                except Exception:
+                    pass
+    except urllib.error.HTTPError as e:
+        error = f"HTTP {e.code}: {e.read().decode()[:200]}"
     return "".join(texts), author, error
 
 

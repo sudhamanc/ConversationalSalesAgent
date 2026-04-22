@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 # Load .env from server directory
 _env_path = Path(__file__).parent.parent / "server" / ".env"
-load_dotenv(_env_path)
+load_dotenv(_env_path, override=True)
 
 
 @dataclass(frozen=True)
