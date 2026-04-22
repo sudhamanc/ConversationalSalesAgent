@@ -133,6 +133,35 @@ User: "Proceed"
 
 ---
 
+## 🗃️ RAG / ChromaDB Knowledge Base
+
+The **ProductAgent** uses a vector database (ChromaDB) to answer deep product questions — SLAs, installation details, technology explanations, use-case fit, compliance — that are not captured in the structured product catalog.
+
+### How It Works
+
+When a customer asks a question like *"What is the uptime SLA for Business Fiber 10G?"* or *"Is coax suitable for a medical practice?"*, the ProductAgent calls the `search_product_knowledge` tool instead of a catalog tool. That tool performs a semantic similarity search over the vector store and returns the most relevant documentation chunks as context, which the agent uses to compose a grounded, accurate answer.
+
+```
+User question
+  → ProductAgent decides: call search_product_knowledge()
+  → Query encoded to 384-dim vector (sentence-transformers)
+  → ChromaDB cosine similarity search → top 3 matching chunks
+  → Formatted as [Source N: filename — section] context block
+  → Agent reads context → composes natural-language response
+```
+
+### Initial Setup — Populate the Vector Store
+
+```bash
+pip install chromadb>=0.5.0 sentence-transformers>=2.7.0
+cd ProductAgent
+python scripts/ingest_knowledge.py
+```
+
+> **Note:** `ProductAgent/data/embeddings/` is in `.gitignore` — each developer runs ingestion locally after checkout.
+
+---
+
 ## Sales Conversation Flow
 
 Typical end-to-end flow:

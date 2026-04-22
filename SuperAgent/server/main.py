@@ -12,6 +12,16 @@ point — all chat requests flow through it.
 import os
 import sys
 import pathlib
+# Monkey-patch to fix google-adk 1.25.1 bug: passes unknown kwargs to Logger._log()
+import logging as _logging
+_orig_log = _logging.Logger._log
+_known_log_kwargs = {"exc_info", "stack_info", "stacklevel", "extra"}
+def _patched_log(self, level, msg, args, **kwargs):
+    for key in list(kwargs):
+        if key not in _known_log_kwargs:
+            kwargs.pop(key)
+    _orig_log(self, level, msg, args, **kwargs)
+_logging.Logger._log = _patched_log
 import logging
 import uvicorn
 from contextlib import asynccontextmanager
@@ -32,12 +42,13 @@ from api.chat import router as chat_router, init_runner
 from api.session import router as session_router
 from utils.logger import get_logger
 
-# Enable detailed Google GenAI SDK logging for Gemini API requests
-logging.basicConfig(level=logging.DEBUG)
+# Keep application-level logging at INFO; suppress verbose ADK/GenAI debug output
+logging.basicConfig(level=logging.INFO)
 genai_logger = logging.getLogger("google.genai")
-genai_logger.setLevel(logging.DEBUG)
+genai_logger.setLevel(logging.WARNING)
 adk_logger = logging.getLogger("google.adk")
-adk_logger.setLevel(logging.DEBUG)
+adk_logger.setLevel(logging.WARNING)
+logging.getLogger("google_adk").setLevel(logging.WARNING)
 
 logger = get_logger(__name__)
 
