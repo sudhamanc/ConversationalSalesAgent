@@ -9,8 +9,10 @@ Flow:
 5. Stream response tokens back as Server-Sent Events.
 """
 
+import asyncio
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
@@ -25,10 +27,25 @@ logger = get_logger(__name__)
 logger.setLevel(logging.DEBUG)  # Enable debug logging for chat endpoint
 router = APIRouter()
 
+# Pure greeting words/phrases that should always route to greeting_agent
+# regardless of session history or prior conversation context.
+_GREETING_PATTERNS = frozenset([
+    "hi", "hello", "hey", "howdy", "greetings", "hiya", "yo",
+    "good morning", "good afternoon", "good evening", "good day",
+    "hi there", "hello there", "hey there",
+])
+
+
+def _is_pure_greeting(message: str) -> bool:
+    """Return True if the message is only a greeting with no other content."""
+    cleaned = re.sub(r'[!.,?\s]+$', '', message.lower().strip())
+    return cleaned in _GREETING_PATTERNS
+
 # These are set at startup by main.py — avoids circular imports.
 _runner = None
 _session_service = None
 _app_name = None
+_greeting_runner = None  # Isolated runner for pure greetings — no session history bias
 
 
 def _parse_suggestion_payload(raw_text: str) -> list[str]:
@@ -72,8 +89,9 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
     try:
         from google import genai
         from google.genai import types as genai_types
+        import os as _os
 
-        client = genai.Client()
+        client = genai.Client(api_key=_os.environ.get("GOOGLE_API_KEY"))
         prompt = (
             "You generate next-step suggestions for a B2B telecom sales chat.\n"
             "Return ONLY JSON.\n"
@@ -89,8 +107,9 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
             f"Assistant response: {assistant_message}\n"
         )
 
+        # Use gemini-2.5-flash for suggestions — same model as agent, confirmed working quota.
         response = client.models.generate_content(
-            model=settings.model.model_name,
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 temperature=0.2,
@@ -108,10 +127,27 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
 
 def init_runner(runner, session_service, app_name: str):
     """Called once from main.py at startup to inject the ADK runner."""
-    global _runner, _session_service, _app_name
+    global _runner, _session_service, _app_name, _greeting_runner
     _runner = runner
     _session_service = session_service
     _app_name = app_name
+
+    # Build a dedicated greeting runner backed by greeting_agent only.
+    # Its own InMemorySessionService means it never sees the main conversation history,
+    # so the orchestrator cannot re-route a pure greeting based on session context.
+    try:
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService as _GS
+        from super_agent.sub_agents.greeting.greeting_agent import greeting_agent as _ga
+        _greeting_runner = Runner(
+            agent=_ga,
+            app_name="greeting_app",
+            session_service=_GS(),
+        )
+        logger.info("Dedicated greeting runner initialized")
+    except Exception as exc:
+        logger.warning("Could not build greeting runner, falling back to main runner: %s", exc)
+        _greeting_runner = None
 
 
 async def _ensure_adk_session(user_id: str, session_id: str):
@@ -127,174 +163,233 @@ async def _ensure_adk_session(user_id: str, session_id: str):
     )
 
 
+_MAX_RETRIES = 3
+_RETRY_DELAYS = [2, 5, 10]  # seconds between retries
+
+
+def _is_retryable(error_str: str) -> bool:
+    """Return True for transient errors that are safe to retry."""
+    retryable_codes = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED")
+    return any(code in error_str for code in retryable_codes)
+
+
 async def _stream_agent(user_id: str, session_id: str, user_message: str):
     """
     Stream ADK agent responses via SSE.
-    
-    Natural two-step workflow:
-    1. User provides company info → DiscoveryAgent responds and asks about serviceability
-    2. User says "yes" → SuperAgent routes to ServiceabilityAgent
-    
-    Each user message is one turn. No automatic recursive routing.
+
+    For pure greetings (e.g. "Hi", "Hello"), uses a dedicated greeting runner
+    with no session history so routing is deterministic regardless of context.
+    Retries on transient 503/429 errors ONLY if no content has been sent yet.
+    Once tokens are streaming to the client, errors are passed through as-is.
     """
-    from google.adk.runners import RunConfig
-    
-    try:
-        await _ensure_adk_session(user_id, session_id)
-        
-        new_message = types.Content(
-            role="user",
-            parts=[types.Part(text=user_message)],
-        )
-        
-        run_config = RunConfig()
-        
-        logger.info(f"Processing user message: {user_message[:80]}")
-        logger.debug(f"Full user message: {user_message}")
-        logger.debug(f"Session ID: {session_id}, User ID: {user_id}")
-        logger.debug(f"Model: {_runner.agent.model}")
-        
+    # --- Dedicated greeting path: bypass orchestrator + session history entirely ---
+    if _greeting_runner and _is_pure_greeting(user_message):
+        logger.info("Pure greeting detected — using dedicated greeting runner")
+        async for chunk in _stream_from_runner(
+            runner=_greeting_runner,
+            user_id=user_id,
+            session_id=f"greet_{session_id}",  # isolated namespace
+            user_message=user_message,
+            author_override="greeting_agent",
+        ):
+            yield chunk
+        return
+
+    # --- Normal path ---
+    async for chunk in _stream_from_runner(
+        runner=_runner,
+        user_id=user_id,
+        session_id=session_id,
+        user_message=user_message,
+    ):
+        yield chunk
+
+
+async def _stream_from_runner(
+    runner,
+    user_id: str,
+    session_id: str,
+    user_message: str,
+    author_override: str | None = None,
+):
+    """Core SSE streaming logic for a given ADK runner."""
+    # Ensure session exists in the runner's own session service
+    svc = runner.session_service
+    app = runner.app_name
+    existing = await svc.get_session(app_name=app, user_id=user_id, session_id=session_id)
+    if not existing:
+        await svc.create_session(app_name=app, user_id=user_id, session_id=session_id)
+    for attempt in range(_MAX_RETRIES):
         sent_content = False
         response_parts: list[str] = []
         last_text_author: str | None = None
-        async for event in _runner.run_async(
-            user_id=user_id,
-            session_id=session_id,
-            new_message=new_message,
-            run_config=run_config,
-        ):
-            if event.error_message:
-                # If we already streamed text content to the client and the error
-                # is "Unknown error." (caused by Gemini returning an empty
-                # response after a mixed text+function_call turn), treat the
-                # already-streamed text as the valid response instead of failing.
-                if sent_content and "Unknown error" in (event.error_message or ""):
-                    logger.warning(
-                        "Suppressing '%s' — text was already streamed (%d chars). "
-                        "Completing turn normally.",
-                        event.error_message,
-                        sum(len(p) for p in response_parts),
-                    )
-                    # Don't return — let the loop continue to hit turn_complete
-                    continue
-                logger.error(f"Agent error: {event.error_message}")
-                yield f"data: {json.dumps({'type': 'error', 'content': event.error_message})}\n\n"
-                return
-            
-            if event.content and hasattr(event.content, 'parts') and event.content.parts:
-                for part in event.content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        logger.debug(f"Streaming token from {event.author}: {part.text[:50]}...")
-                        response_parts.append(part.text)
-                        last_text_author = event.author or last_text_author
-                        payload = json.dumps({
+        _retry = False
+
+        try:
+            new_message = types.Content(
+                role="user",
+                parts=[types.Part(text=user_message)],
+            )
+
+            logger.info(f"Processing user message: {user_message[:80]}")
+            logger.debug(f"Full user message: {user_message}")
+            logger.debug(f"Session ID: {session_id}, User ID: {user_id}")
+            logger.debug(f"Model: {runner.agent.model}")
+
+            async for event in runner.run_async(
+                user_id=user_id,
+                session_id=session_id,
+                new_message=new_message,
+            ):
+                if event.error_message:
+                    # Suppress "Unknown error" when we already sent content — Gemini
+                    # sometimes fires this after a mixed text+function_call turn.
+                    if sent_content and "Unknown error" in (event.error_message or ""):
+                        logger.warning(
+                            "Suppressing '%s' — text was already streamed (%d chars). "
+                            "Completing turn normally.",
+                            event.error_message,
+                            sum(len(p) for p in response_parts),
+                        )
+                        continue
+                    # Retryable error AND nothing sent yet — retry the whole call.
+                    if not sent_content and _is_retryable(event.error_message) and attempt < _MAX_RETRIES - 1:
+                        delay = _RETRY_DELAYS[attempt]
+                        logger.warning(
+                            "Retryable error (attempt %d/%d), retrying in %ds: %s",
+                            attempt + 1, _MAX_RETRIES, delay, event.error_message[:120],
+                        )
+                        await asyncio.sleep(delay)
+                        _retry = True
+                        break
+                    logger.error(f"Agent error: {event.error_message}")
+                    yield f"data: {json.dumps({'type': 'error', 'content': event.error_message})}\n\n"
+                    return
+
+                if event.content and hasattr(event.content, 'parts') and event.content.parts:
+                    for part in event.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            effective_author = author_override or event.author or "agent"
+                            logger.debug(f"Streaming token from {effective_author}: {part.text[:50]}...")
+                            response_parts.append(part.text)
+                            last_text_author = effective_author
+                            payload = json.dumps({
+                                "type": "token",
+                                "content": part.text,
+                                "author": effective_author,
+                            })
+                            yield f"data: {payload}\n\n"
+                            sent_content = True
+
+                        # Emit cart_update events for cart/order tool responses
+                        if hasattr(part, 'function_response') and part.function_response:
+                            fn_name = getattr(part.function_response, 'name', '')
+                            fn_response = getattr(part.function_response, 'response', None)
+                            cart_tools = {'create_cart', 'add_to_cart', 'remove_from_cart', 'get_cart', 'clear_cart'}
+                            order_tools = {'create_order', 'modify_order', 'get_order'}
+                            if isinstance(fn_response, dict) and fn_response.get('success'):
+                                cart_data = None
+                                if fn_name in cart_tools:
+                                    cart_data = fn_response.get('cart', fn_response)
+                                elif fn_name in order_tools:
+                                    order_payload = fn_response.get('order') if isinstance(fn_response.get('order'), dict) else None
+                                    items = []
+                                    total_amount = fn_response.get('total_amount', 0)
+                                    cart_id = fn_response.get('order_id', '')
+
+                                    if order_payload:
+                                        if isinstance(order_payload.get('items'), list):
+                                            items = order_payload.get('items', [])
+                                        total_amount = order_payload.get('total_amount', total_amount)
+                                        cart_id = order_payload.get('order_id', cart_id)
+                                    elif isinstance(fn_response.get('items'), list):
+                                        items = fn_response.get('items', [])
+
+                                    if items:
+                                        cart_data = {
+                                            'cart_id': cart_id,
+                                            'items': items,
+                                            'total_amount': total_amount,
+                                        }
+                                    else:
+                                        logger.debug("Skipping cart_update for %s: no structured items in response", fn_name)
+                                if cart_data:
+                                    cart_payload = json.dumps({
+                                        "type": "cart_update",
+                                        "tool": fn_name,
+                                        "data": cart_data,
+                                        "author": event.author or "order_agent",
+                                    })
+                                    logger.debug(f"Emitting cart_update from {fn_name}")
+                                    yield f"data: {cart_payload}\n\n"
+
+                if event.is_final_response() or event.turn_complete:
+                    logger.info(f"Turn complete from {event.author}")
+                    if not sent_content:
+                        logger.warning(f"Empty response from agent, sending fallback")
+                        fallback_payload = json.dumps({
                             "type": "token",
-                            "content": part.text,
-                            "author": event.author or "agent",
+                            "content": "I'm ready to assist you! How can I help with your business telecommunications needs today?",
+                            "author": "agent",
                         })
-                        yield f"data: {payload}\n\n"
-                        sent_content = True
+                        yield f"data: {fallback_payload}\n\n"
+                    else:
+                        full_response = "".join(response_parts).strip()
+                        suggestion_items = _generate_dynamic_suggestions(
+                            user_message=user_message,
+                            assistant_message=full_response,
+                            author=last_text_author or event.author,
+                        )
+                        if suggestion_items:
+                            suggestion_payload = json.dumps({
+                                "type": "suggestions",
+                                "author": last_text_author or event.author or "agent",
+                                "data": suggestion_items,
+                            })
+                            yield f"data: {suggestion_payload}\n\n"
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    return
 
-                    # Emit cart_update events for cart/order tool responses
-                    if hasattr(part, 'function_response') and part.function_response:
-                        fn_name = getattr(part.function_response, 'name', '')
-                        fn_response = getattr(part.function_response, 'response', None)
-                        cart_tools = {'create_cart', 'add_to_cart', 'remove_from_cart', 'get_cart', 'clear_cart'}
-                        order_tools = {'create_order', 'modify_order', 'get_order'}
-                        if isinstance(fn_response, dict) and fn_response.get('success'):
-                            cart_data = None
-                            if fn_name in cart_tools:
-                                cart_data = fn_response.get('cart', fn_response)
-                            elif fn_name in order_tools:
-                                order_payload = fn_response.get('order') if isinstance(fn_response.get('order'), dict) else None
-                                items = []
-                                total_amount = fn_response.get('total_amount', 0)
-                                cart_id = fn_response.get('order_id', '')
-
-                                if order_payload:
-                                    if isinstance(order_payload.get('items'), list):
-                                        items = order_payload.get('items', [])
-                                    total_amount = order_payload.get('total_amount', total_amount)
-                                    cart_id = order_payload.get('order_id', cart_id)
-                                elif isinstance(fn_response.get('items'), list):
-                                    items = fn_response.get('items', [])
-
-                                if items:
-                                    cart_data = {
-                                        'cart_id': cart_id,
-                                        'items': items,
-                                        'total_amount': total_amount,
-                                    }
-                                else:
-                                    logger.debug("Skipping cart_update for %s: no structured items in response", fn_name)
-                            if cart_data:
-                                cart_payload = json.dumps({
-                                    "type": "cart_update",
-                                    "tool": fn_name,
-                                    "data": cart_data,
-                                    "author": event.author or "order_agent",
-                                })
-                                logger.debug(f"Emitting cart_update from {fn_name}")
-                                yield f"data: {cart_payload}\n\n"
-            
-            if event.turn_complete:
-                logger.info(f"Turn complete from {event.author}")
-                # If no content was sent, send a fallback message
-                if not sent_content:
-                    logger.warning(f"Empty response from agent, sending fallback")
-                    fallback_payload = json.dumps({
-                        "type": "token",
-                        "content": "I'm ready to assist you! How can I help with your business telecommunications needs today?",
-                        "author": "agent",
+        except Exception as e:
+            error_str = str(e)
+            # Suppress "Unknown error" when text was already streamed.
+            if sent_content and "Unknown error" in error_str:
+                logger.warning(
+                    "Suppressing exception '%s' — text was already streamed (%d chars). "
+                    "Completing turn with already-sent content.",
+                    error_str,
+                    sum(len(p) for p in response_parts),
+                )
+                full_response = "".join(response_parts).strip()
+                suggestion_items = _generate_dynamic_suggestions(
+                    user_message=user_message,
+                    assistant_message=full_response,
+                    author=last_text_author or "agent",
+                )
+                if suggestion_items:
+                    suggestion_payload = json.dumps({
+                        "type": "suggestions",
+                        "author": last_text_author or "agent",
+                        "data": suggestion_items,
                     })
-                    yield f"data: {fallback_payload}\n\n"
-                else:
-                    full_response = "".join(response_parts).strip()
-                    suggestion_items = _generate_dynamic_suggestions(
-                        user_message=user_message,
-                        assistant_message=full_response,
-                        author=last_text_author or event.author,
-                    )
-                    if suggestion_items:
-                        suggestion_payload = json.dumps({
-                            "type": "suggestions",
-                            "author": last_text_author or event.author or "agent",
-                            "data": suggestion_items,
-                        })
-                        yield f"data: {suggestion_payload}\n\n"
+                    yield f"data: {suggestion_payload}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
-
-    except Exception as e:
-        error_str = str(e)
-        # If text was already streamed and the exception is the "Unknown error"
-        # from Gemini returning an empty response after a mixed text+function_call,
-        # treat the already-streamed text as the complete response.
-        if sent_content and "Unknown error" in error_str:
-            logger.warning(
-                "Suppressing exception '%s' — text was already streamed (%d chars). "
-                "Completing turn with already-sent content.",
-                error_str,
-                sum(len(p) for p in response_parts),
-            )
-            full_response = "".join(response_parts).strip()
-            suggestion_items = _generate_dynamic_suggestions(
-                user_message=user_message,
-                assistant_message=full_response,
-                author=last_text_author or "agent",
-            )
-            if suggestion_items:
-                suggestion_payload = json.dumps({
-                    "type": "suggestions",
-                    "author": last_text_author or "agent",
-                    "data": suggestion_items,
-                })
-                yield f"data: {suggestion_payload}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            # Retryable exception AND nothing sent yet — retry.
+            if not sent_content and _is_retryable(error_str) and attempt < _MAX_RETRIES - 1:
+                delay = _RETRY_DELAYS[attempt]
+                logger.warning(
+                    "Retryable exception (attempt %d/%d), retrying in %ds: %s",
+                    attempt + 1, _MAX_RETRIES, delay, error_str[:120],
+                )
+                await asyncio.sleep(delay)
+                continue  # outer for-loop will retry
+            logger.error(f"Exception in _stream_agent: {type(e).__name__}: {error_str}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'content': f'Agent error: {error_str}'})}\n\n"
             return
-        logger.error(f"Exception in _stream_agent: {type(e).__name__}: {error_str}", exc_info=True)
-        error_msg = f"Agent error: {error_str}"
-        yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+
+        if not _retry:
+            return  # turn_complete already returned above; this is a safety catch
 
 
 @router.post("/api/chat")

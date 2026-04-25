@@ -5,7 +5,7 @@ These tools handle technician dispatch, installation tracking, and completion.
 """
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from ..utils.logger import get_logger
 
@@ -81,7 +81,7 @@ def update_installation_status(
     appointment_id: str,
     status: str,
     notes: str = None,
-    issues: list = None
+    issues: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Updates the status of an ongoing installation.
@@ -141,7 +141,7 @@ def update_installation_status(
 def complete_installation(
     appointment_id: str,
     order_id: str,
-    equipment_installed: list,
+    equipment_installed: List[str],
     tests_passed: bool = True,
     customer_signature: str = None,
     notes: str = None

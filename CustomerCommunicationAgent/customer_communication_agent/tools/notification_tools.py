@@ -13,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from ..utils.logger import get_logger
+from ..utils.db import store_notification, check_duplicate as db_check_duplicate, get_history as db_get_history, clear_all as db_clear_all
 from ..models import Notification, NotificationType, NotificationStatus
 
 logger = get_logger(__name__)
@@ -72,7 +73,9 @@ def _send_email(to_address: str, subject: str, body: str) -> dict:
         return {"sent": False, "detail": f"SMTP error: {exc}"}
 
 
-# In-memory notification storage (in production, use database)
+# In-memory mirrors kept for backward compatibility with tests that
+# reference _NOTIFICATIONS / _DEDUP_CACHE directly.  The canonical store
+# is now SQLite (see utils/db.py).
 _NOTIFICATIONS: Dict[str, Notification] = {}
 _DEDUP_CACHE: Dict[str, datetime] = {}  # Track recent notifications for deduplication
 
@@ -87,6 +90,9 @@ def _check_duplicate(notification_type: str, recipient: str, window_minutes: int
     """
     Check if a similar notification was sent recently.
     
+    Delegates to SQLite-backed dedup_cache for persistence across restarts.
+    Also updates the in-memory _DEDUP_CACHE mirror for backward compatibility.
+    
     Args:
         notification_type: Type of notification
         recipient: Recipient identifier
@@ -95,17 +101,29 @@ def _check_duplicate(notification_type: str, recipient: str, window_minutes: int
     Returns:
         True if duplicate found, False otherwise
     """
-    dedup_key = f"{notification_type}:{recipient}"
-    
-    if dedup_key in _DEDUP_CACHE:
-        last_sent = _DEDUP_CACHE[dedup_key]
-        if datetime.now() - last_sent < timedelta(minutes=window_minutes):
-            logger.warning(f"Duplicate notification blocked: {dedup_key}")
-            return True
-    
-    # Update cache
-    _DEDUP_CACHE[dedup_key] = datetime.now()
-    return False
+    is_dup = db_check_duplicate(notification_type, recipient, window_minutes)
+    # Keep in-memory mirror in sync
+    _DEDUP_CACHE[f"{notification_type}:{recipient}"] = datetime.now()
+    return is_dup
+
+
+def _persist_notification(notification: Notification) -> None:
+    """Write notification to both in-memory mirror and SQLite."""
+    _NOTIFICATIONS[notification.notification_id] = notification
+    store_notification(
+        notification_id=notification.notification_id,
+        notification_type=notification.notification_type,
+        recipient_email=notification.recipient_email,
+        recipient_phone=notification.recipient_phone,
+        subject=notification.subject,
+        message=notification.message,
+        metadata=notification.metadata,
+        status=notification.status,
+        channels=notification.channels,
+        created_at=notification.created_at,
+        sent_at=notification.sent_at,
+        error=notification.error,
+    )
 
 
 def send_order_confirmation(
@@ -210,7 +228,7 @@ Thank you for choosing our services!
             logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
         # Store notification
-        _NOTIFICATIONS[notification_id] = notification
+        _persist_notification(notification)
         
         return json.loads(json.dumps({
             "success": True,
@@ -229,6 +247,134 @@ Thank you for choosing our services!
         return json.loads(json.dumps({
             "success": False,
             "error": f"Notification error: {str(e)}"
+        }))
+
+
+def send_quote_confirmation(
+    quote_id: str,
+    customer_name: str,
+    customer_email: str = None,
+    customer_phone: str = None,
+    items_summary: str = None,
+    monthly_total: float = None,
+    term_months: int = None,
+    total_discount: float = None,
+) -> Dict[str, Any]:
+    """
+    Send quote confirmation notification when a quote is saved.
+
+    Args:
+        quote_id: Saved quote identifier
+        customer_name: Customer name
+        customer_email: Customer email address
+        customer_phone: Customer phone number
+        items_summary: Human-readable summary of quoted products
+        monthly_total: Monthly total price after discounts
+        term_months: Contract term in months
+        total_discount: Total monthly discount amount
+
+    Returns:
+        Notification result as JSON
+    """
+    logger.info(f"Sending quote confirmation for quote {quote_id} to {customer_name}")
+
+    try:
+        if not customer_email and not customer_phone:
+            return json.loads(json.dumps({
+                "success": False,
+                "error": "No contact information provided (email or phone required)",
+            }))
+
+        recipient = customer_email or customer_phone
+        if _check_duplicate(NotificationType.QUOTE_SAVED, recipient):
+            return json.loads(json.dumps({
+                "success": True,
+                "status": "deduped",
+                "message": "Duplicate notification prevented (already sent within 5 minutes)",
+            }))
+
+        notification_id = _generate_notification_id(NotificationType.QUOTE_SAVED, recipient)
+
+        term_display = f"{term_months} months" if term_months else "N/A"
+        discount_line = (
+            f"Your Savings: ${total_discount:.2f}/mo\n" if total_discount else ""
+        )
+
+        subject = f"Your Quote is Ready - {quote_id}"
+        message = f"""
+Dear {customer_name},
+
+Thank you for your interest! Your customised quote is ready.
+
+Quote Details:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Quote ID: {quote_id}
+Products: {items_summary or 'See attached quote'}
+Contract Term: {term_display}
+Monthly Total: ${f'{monthly_total:.2f}' if monthly_total is not None else 'TBD'}
+{discount_line}
+This quote is valid for 30 days.
+
+Next Steps:
+1. Review the quote details above
+2. Reply to this email or call 1-800-BUSINESS to proceed
+3. We'll handle installation scheduling and payment setup
+
+Questions? Contact us at 1-800-BUSINESS
+
+We look forward to serving your business!
+"""
+
+        notification = Notification(
+            notification_id=notification_id,
+            notification_type=NotificationType.QUOTE_SAVED,
+            recipient_email=customer_email,
+            recipient_phone=customer_phone,
+            subject=subject,
+            message=message,
+            metadata={
+                "quote_id": quote_id,
+                "customer_name": customer_name,
+                "items_summary": items_summary,
+                "monthly_total": monthly_total,
+                "term_months": term_months,
+                "total_discount": total_discount,
+            },
+        )
+
+        channels_sent = []
+        email_detail = None
+        if customer_email:
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
+
+        if customer_phone:
+            notification.mark_sent("sms")
+            channels_sent.append("sms")
+            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
+
+        _persist_notification(notification)
+
+        return json.loads(json.dumps({
+            "success": True,
+            "notification_id": notification_id,
+            "notification_type": NotificationType.QUOTE_SAVED,
+            "channels": channels_sent,
+            "recipient_email": customer_email,
+            "recipient_phone": customer_phone,
+            "status": "sent",
+            "email_delivery": email_detail,
+            "message": f"Quote confirmation sent successfully via {', '.join(channels_sent)}",
+        }))
+
+    except Exception as e:
+        logger.error(f"Error sending quote confirmation: {e}")
+        return json.loads(json.dumps({
+            "success": False,
+            "error": f"Notification error: {str(e)}",
         }))
 
 
@@ -341,7 +487,7 @@ Your order is on hold until payment is received.
             channels_sent.append("sms")
             logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
-        _NOTIFICATIONS[notification_id] = notification
+        _persist_notification(notification)
         
         return json.loads(json.dumps({
             "success": True,
@@ -457,7 +603,7 @@ See you tomorrow!
             channels_sent.append("sms")
             logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
-        _NOTIFICATIONS[notification_id] = notification
+        _persist_notification(notification)
         
         return json.loads(json.dumps({
             "success": True,
@@ -571,7 +717,7 @@ Welcome aboard! 🚀
             channels_sent.append("sms")
             logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
-        _NOTIFICATIONS[notification_id] = notification
+        _persist_notification(notification)
         
         return json.loads(json.dumps({
             "success": True,
@@ -681,7 +827,7 @@ P.S. Need help choosing the right service? Our sales team is standing by!
             # SMS only if explicitly opted in for marketing
             pass  # Skip SMS for marketing messages unless opt-in
         
-        _NOTIFICATIONS[notification_id] = notification
+        _persist_notification(notification)
         
         return json.loads(json.dumps({
             "success": True,
@@ -790,7 +936,7 @@ Questions? Contact us at 1-800-BUSINESS
             channels_sent.append("sms")
             logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
-        _NOTIFICATIONS[notification_id] = notification
+        _persist_notification(notification)
         
         return json.loads(json.dumps({
             "success": True,
@@ -837,22 +983,13 @@ def get_notification_history(
                 "error": "No contact information provided"
             }))
         
-        # Filter notifications
-        filtered = []
-        for notif in _NOTIFICATIONS.values():
-            if customer_email and notif.recipient_email != customer_email:
-                continue
-            if customer_phone and notif.recipient_phone != customer_phone:
-                continue
-            if notification_type and notif.notification_type != notification_type:
-                continue
-            filtered.append(notif.to_dict())
-        
-        # Sort by created_at descending
-        filtered.sort(key=lambda x: x["created_at"], reverse=True)
-        
-        # Limit results
-        filtered = filtered[:limit]
+        # Query from SQLite (persistent store)
+        filtered = db_get_history(
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            notification_type=notification_type,
+            limit=limit,
+        )
         
         return json.loads(json.dumps({
             "success": True,

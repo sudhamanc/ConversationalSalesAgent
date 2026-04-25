@@ -163,7 +163,7 @@ CustomerCommunicationAgent/
 ```python
 customer_communication_agent = Agent(
     name="customer_communication_agent",
-    model=os.getenv("GEMINI_MODEL"),  # gemini-2.5-flash
+    model=os.getenv("GEMINI_MODEL"),  # gemini-3-flash-preview
     instruction=CUSTOMER_COMMUNICATION_AGENT_INSTRUCTION,
     description=CUSTOMER_COMMUNICATION_SHORT_DESCRIPTION,
     tools=[7 notification tools],

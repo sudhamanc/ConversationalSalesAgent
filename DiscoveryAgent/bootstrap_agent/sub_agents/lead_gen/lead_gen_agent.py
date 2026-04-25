@@ -513,7 +513,7 @@ Data Gaps: {opp_data.get('BANT_Data_Gaps', 'None')}"""
 # Define the lead generation agent
 lead_gen_agent = Agent(
     name="lead_gen_agent",
-    model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+    model=os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview"),
     instruction="""You are a lead qualification and sales readiness specialist using BANT (Budget, Authority, Need, Timeline) methodology.
 
 Your primary responsibilities:

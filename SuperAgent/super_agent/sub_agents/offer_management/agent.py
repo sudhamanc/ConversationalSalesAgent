@@ -34,6 +34,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "offer_management.prompts",
     os.path.join(_OFFER_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load offer_management.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -47,6 +49,8 @@ _logger_spec = importlib.util.spec_from_file_location(
     "offer_management.utils.logger",
     os.path.join(_OFFER_PKG, "utils", "logger.py"),
 )
+if _logger_spec is None or _logger_spec.loader is None:
+    raise ImportError("Failed to load offer_management.utils.logger module spec")
 _logger_mod = importlib.util.module_from_spec(_logger_spec)
 sys.modules[_logger_spec.name] = _logger_mod
 _logger_spec.loader.exec_module(_logger_mod)
@@ -55,6 +59,8 @@ _cache_spec = importlib.util.spec_from_file_location(
     "offer_management.utils.cache",
     os.path.join(_OFFER_PKG, "utils", "cache.py"),
 )
+if _cache_spec is None or _cache_spec.loader is None:
+    raise ImportError("Failed to load offer_management.utils.cache module spec")
 _cache_mod = importlib.util.module_from_spec(_cache_spec)
 sys.modules[_cache_spec.name] = _cache_mod
 _cache_spec.loader.exec_module(_cache_mod)
@@ -68,6 +74,8 @@ _pricing_tools_spec = importlib.util.spec_from_file_location(
     "offer_management.tools.pricing_tools",
     os.path.join(_OFFER_PKG, "tools", "pricing_tools.py"),
 )
+if _pricing_tools_spec is None or _pricing_tools_spec.loader is None:
+    raise ImportError("Failed to load offer_management.tools.pricing_tools module spec")
 _pricing_tools_mod = importlib.util.module_from_spec(_pricing_tools_spec)
 sys.modules[_pricing_tools_spec.name] = _pricing_tools_mod
 _pricing_tools_spec.loader.exec_module(_pricing_tools_mod)
@@ -76,6 +84,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "offer_management.agent",
     os.path.join(_OFFER_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load offer_management.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

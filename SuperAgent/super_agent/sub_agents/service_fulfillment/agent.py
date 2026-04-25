@@ -53,6 +53,8 @@ _prompts_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.prompts",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "prompts.py"),
 )
+if _prompts_spec is None or _prompts_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.prompts module spec")
 _prompts_mod = importlib.util.module_from_spec(_prompts_spec)
 sys.modules[_prompts_spec.name] = _prompts_mod
 _prompts_spec.loader.exec_module(_prompts_mod)
@@ -69,6 +71,8 @@ _logger_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.utils.logger",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "utils", "logger.py"),
 )
+if _logger_spec is None or _logger_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.utils.logger module spec")
 _logger_mod = importlib.util.module_from_spec(_logger_spec)
 sys.modules[_logger_spec.name] = _logger_mod
 _logger_spec.loader.exec_module(_logger_mod)
@@ -88,6 +92,8 @@ if os.path.exists(_schemas_path):
         "service_fulfillment_agent.models.schemas",
         _schemas_path,
     )
+    if _schemas_spec is None or _schemas_spec.loader is None:
+        raise ImportError("Failed to load service_fulfillment_agent.models.schemas module spec")
     _schemas_mod = importlib.util.module_from_spec(_schemas_spec)
     sys.modules[_schemas_spec.name] = _schemas_mod
     _schemas_spec.loader.exec_module(_schemas_mod)
@@ -105,6 +111,8 @@ _scheduling_tools_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.tools.scheduling_tools",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "tools", "scheduling_tools.py"),
 )
+if _scheduling_tools_spec is None or _scheduling_tools_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.tools.scheduling_tools module spec")
 _scheduling_tools_mod = importlib.util.module_from_spec(_scheduling_tools_spec)
 sys.modules[_scheduling_tools_spec.name] = _scheduling_tools_mod
 _scheduling_tools_spec.loader.exec_module(_scheduling_tools_mod)
@@ -114,6 +122,8 @@ _equipment_tools_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.tools.equipment_tools",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "tools", "equipment_tools.py"),
 )
+if _equipment_tools_spec is None or _equipment_tools_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.tools.equipment_tools module spec")
 _equipment_tools_mod = importlib.util.module_from_spec(_equipment_tools_spec)
 sys.modules[_equipment_tools_spec.name] = _equipment_tools_mod
 _equipment_tools_spec.loader.exec_module(_equipment_tools_mod)
@@ -123,6 +133,8 @@ _installation_tools_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.tools.installation_tools",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "tools", "installation_tools.py"),
 )
+if _installation_tools_spec is None or _installation_tools_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.tools.installation_tools module spec")
 _installation_tools_mod = importlib.util.module_from_spec(_installation_tools_spec)
 sys.modules[_installation_tools_spec.name] = _installation_tools_mod
 _installation_tools_spec.loader.exec_module(_installation_tools_mod)
@@ -132,6 +144,8 @@ _activation_tools_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.tools.activation_tools",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "tools", "activation_tools.py"),
 )
+if _activation_tools_spec is None or _activation_tools_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.tools.activation_tools module spec")
 _activation_tools_mod = importlib.util.module_from_spec(_activation_tools_spec)
 sys.modules[_activation_tools_spec.name] = _activation_tools_mod
 _activation_tools_spec.loader.exec_module(_activation_tools_mod)
@@ -141,6 +155,8 @@ _order_tools_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.tools.order_tools",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "tools", "order_tools.py"),
 )
+if _order_tools_spec is None or _order_tools_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.tools.order_tools module spec")
 _order_tools_mod = importlib.util.module_from_spec(_order_tools_spec)
 sys.modules[_order_tools_spec.name] = _order_tools_mod
 _order_tools_spec.loader.exec_module(_order_tools_mod)
@@ -152,6 +168,8 @@ _agent_spec = importlib.util.spec_from_file_location(
     "service_fulfillment_agent.agent",
     os.path.join(_SERVICE_FULFILLMENT_PKG, "agent.py"),
 )
+if _agent_spec is None or _agent_spec.loader is None:
+    raise ImportError("Failed to load service_fulfillment_agent.agent module spec")
 _agent_mod = importlib.util.module_from_spec(_agent_spec)
 sys.modules[_agent_spec.name] = _agent_mod
 _agent_spec.loader.exec_module(_agent_mod)

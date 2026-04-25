@@ -14,16 +14,14 @@ SPLITTER_PID_FILE="$LOG_DIR/log_splitter.pid"
 echo "Starting SuperAgent servers..."
 echo "Project root: $PROJECT_ROOT"
 
-# Determine Python command: use venv if available, otherwise python3
-if [ -f "$PROJECT_ROOT/venv/bin/python" ]; then
-    PYTHON="$PROJECT_ROOT/venv/bin/python"
-    echo "Using venv Python: $PYTHON"
-elif [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
+# Determine Python command: require .venv for consistent runtime
+if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
     PYTHON="$PROJECT_ROOT/.venv/bin/python"
     echo "Using .venv Python: $PYTHON"
 else
-    PYTHON="python3"
-    echo "No venv found, using system python3"
+    echo "ERROR: .venv not found at $PROJECT_ROOT/.venv/bin/python"
+    echo "Create it with: python3 -m venv .venv && source .venv/bin/activate"
+    exit 1
 fi
 
 # Kill any existing processes

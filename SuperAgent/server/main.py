@@ -11,11 +11,24 @@ point — all chat requests flow through it.
 
 import os
 import sys
+import pathlib
+# Monkey-patch to fix google-adk 1.25.1 bug: passes unknown kwargs to Logger._log()
+import logging as _logging
+_orig_log = _logging.Logger._log
+_known_log_kwargs = {"exc_info", "stack_info", "stacklevel", "extra"}
+def _patched_log(self, level, msg, args, **kwargs):
+    for key in list(kwargs):
+        if key not in _known_log_kwargs:
+            kwargs.pop(key)
+    _orig_log(self, level, msg, args, **kwargs)
+_logging.Logger._log = _patched_log
 import logging
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # Ensure the server package and project root are on sys.path for imports
 _server_dir = os.path.dirname(os.path.abspath(__file__))
@@ -29,12 +42,13 @@ from api.chat import router as chat_router, init_runner
 from api.session import router as session_router
 from utils.logger import get_logger
 
-# Enable detailed Google GenAI SDK logging for Gemini API requests
-logging.basicConfig(level=logging.DEBUG)
+# Keep application-level logging at INFO; suppress verbose ADK/GenAI debug output
+logging.basicConfig(level=logging.INFO)
 genai_logger = logging.getLogger("google.genai")
-genai_logger.setLevel(logging.DEBUG)
+genai_logger.setLevel(logging.WARNING)
 adk_logger = logging.getLogger("google.adk")
-adk_logger.setLevel(logging.DEBUG)
+adk_logger.setLevel(logging.WARNING)
+logging.getLogger("google_adk").setLevel(logging.WARNING)
 
 logger = get_logger(__name__)
 
@@ -97,6 +111,17 @@ app.include_router(session_router, tags=["Session"])
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": settings.agent.agent_name, "model": settings.model.model_name}
+
+
+# --- Static files (production: serve React build from same container) ---
+_dist_path = pathlib.Path(__file__).parent.parent / "client" / "dist"
+
+if _dist_path.exists():
+    app.mount("/assets", StaticFiles(directory=str(_dist_path / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        return FileResponse(str(_dist_path / "index.html"))
 
 
 if __name__ == "__main__":

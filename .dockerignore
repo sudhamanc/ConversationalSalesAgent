@@ -1,0 +1,17 @@
+.venv/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+.git/
+**/node_modules/
+SuperAgent/client/dist/
+**/logs/
+**/.env
+**/tests/
+Slidev/
+**/.pytest_cache/
+openspec/
+docs/
+*.pptx
+*.html
+*.png

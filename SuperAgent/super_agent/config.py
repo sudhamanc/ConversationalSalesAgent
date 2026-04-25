@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 # Load .env from server directory
 _env_path = Path(__file__).parent.parent / "server" / ".env"
-load_dotenv(_env_path)
+load_dotenv(_env_path, override=True)
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class ModelConfig:
     """LLM model configuration."""
 
     provider: str = os.getenv("LLM_PROVIDER", "google")
-    model_name: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    model_name: str = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
     temperature: float = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
     top_p: float = float(os.getenv("MODEL_TOP_P", "0.9"))
     top_k: int = int(os.getenv("MODEL_TOP_K", "40"))

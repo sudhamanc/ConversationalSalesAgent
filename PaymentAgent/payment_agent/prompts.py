@@ -37,16 +37,10 @@ Step 6: Call process_payment with:
    - payment_method_token: token from step 3
    - description: "Payment for [service_type]"
    - invoice_id: Generate temp invoice ID
-Step 7: After successful payment, respond EXACTLY like this:
-   "✅ **Payment Processed Successfully!**
-   
-   **Payment Details:**
-   • Amount: $[amount]/mo
-   • Payment Method: [type] ending in [last_four]
-   • Transaction ID: [transaction_id]
-   • Status: Approved
-   
-   Your payment is complete! Let me finalize your order now."
+Step 7: After successful payment, respond EXACTLY like this (keep the JSON on one line):
+   "✅ Payment Processed Successfully! Your payment is complete! Let me finalize your order now.
+
+   {"payment_confirmation": true, "amount": [amount as number], "payment_method": "[type] ending in [last_four]", "transaction_id": "[transaction_id]", "status": "Approved"}"
 
 Step 8: **CRITICAL**: IMMEDIATELY after showing payment confirmation, call `transfer_to_agent` with `agent_name='order_agent'` to hand control back for order creation. DO NOT wait for user input.
 
@@ -83,15 +77,9 @@ Agent:
 [calls add_payment_method]
 [calls process_payment with cart total]
 
-"✅ **Payment Processed Successfully!**
+"✅ Payment Processed Successfully! Your payment is complete! Let me finalize your order now.
 
-**Payment Details:**
-• Amount: $249.00/mo
-• Payment Method: Visa ending in 1111
-• Transaction ID: TXN-20260220-001
-• Status: Approved
-
-Your payment is complete! Let me finalize your order now."
+{"payment_confirmation": true, "amount": 249.00, "payment_method": "Visa ending in 1111", "transaction_id": "TXN-20260220-001", "status": "Approved"}"
 
 [calls transfer_to_agent with agent_name='order_agent']
 

@@ -85,6 +85,12 @@ root_agent = Agent(
         top_k=_model.top_k,
         max_output_tokens=_model.max_output_tokens,
         safety_settings=_build_safety_settings(),
+        http_options=types.HttpOptions(
+            retry_options=types.HttpRetryOptions(
+                initial_delay=2.0,
+                attempts=3,
+            ),
+        ),
     ),
 )
 

@@ -4,6 +4,7 @@ Customer Communication Agent Tools Package.
 
 from .notification_tools import (
     send_order_confirmation,
+    send_quote_confirmation,
     send_payment_notification,
     send_installation_reminder,
     send_service_activated_notification,
@@ -14,6 +15,7 @@ from .notification_tools import (
 
 __all__ = [
     "send_order_confirmation",
+    "send_quote_confirmation",
     "send_payment_notification",
     "send_installation_reminder",
     "send_service_activated_notification",

@@ -26,6 +26,7 @@ from .tools.comparison_tools import (
     suggest_alternatives,
     get_best_value_product,
 )
+from .tools.rag_tools import search_product_knowledge
 from .utils.logger import get_logger
 
 # Load environment variables
@@ -57,6 +58,8 @@ product_agent = Agent(
         compare_products,
         suggest_alternatives,
         get_best_value_product,
+        # RAG knowledge base — narrative Q&A, SLAs, use cases, install details
+        search_product_knowledge,
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,  # Deterministic - no creativity needed for factual responses
