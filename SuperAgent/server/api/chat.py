@@ -164,6 +164,19 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
             run_config=run_config,
         ):
             if event.error_message:
+                # If we already streamed text content to the client and the error
+                # is "Unknown error." (caused by Gemini returning an empty
+                # response after a mixed text+function_call turn), treat the
+                # already-streamed text as the valid response instead of failing.
+                if sent_content and "Unknown error" in (event.error_message or ""):
+                    logger.warning(
+                        "Suppressing '%s' — text was already streamed (%d chars). "
+                        "Completing turn normally.",
+                        event.error_message,
+                        sum(len(p) for p in response_parts),
+                    )
+                    # Don't return — let the loop continue to hit turn_complete
+                    continue
                 logger.error(f"Agent error: {event.error_message}")
                 yield f"data: {json.dumps({'type': 'error', 'content': event.error_message})}\n\n"
                 return
@@ -253,8 +266,34 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
                 return
 
     except Exception as e:
-        logger.error(f"Exception in _stream_agent: {type(e).__name__}: {str(e)}", exc_info=True)
-        error_msg = f"Agent error: {str(e)}"
+        error_str = str(e)
+        # If text was already streamed and the exception is the "Unknown error"
+        # from Gemini returning an empty response after a mixed text+function_call,
+        # treat the already-streamed text as the complete response.
+        if sent_content and "Unknown error" in error_str:
+            logger.warning(
+                "Suppressing exception '%s' — text was already streamed (%d chars). "
+                "Completing turn with already-sent content.",
+                error_str,
+                sum(len(p) for p in response_parts),
+            )
+            full_response = "".join(response_parts).strip()
+            suggestion_items = _generate_dynamic_suggestions(
+                user_message=user_message,
+                assistant_message=full_response,
+                author=last_text_author or "agent",
+            )
+            if suggestion_items:
+                suggestion_payload = json.dumps({
+                    "type": "suggestions",
+                    "author": last_text_author or "agent",
+                    "data": suggestion_items,
+                })
+                yield f"data: {suggestion_payload}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
+        logger.error(f"Exception in _stream_agent: {type(e).__name__}: {error_str}", exc_info=True)
+        error_msg = f"Agent error: {error_str}"
         yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
 
 

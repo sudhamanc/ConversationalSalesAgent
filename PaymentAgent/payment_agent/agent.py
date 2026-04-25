@@ -105,8 +105,6 @@ payment_agent = Agent(
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,  # Deterministic - critical for payment accuracy
-        top_p=0.1,        # Low sampling for determinism
-        top_k=10,         # Restrict token selection
         max_output_tokens=2048,  # Sufficient for detailed responses
         safety_settings=[
             types.SafetySetting(

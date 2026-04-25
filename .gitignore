@@ -51,6 +51,7 @@ DiscoveryAgent/update_remaining_companies.py
 DiscoveryAgent/validate_lead_gen.py
 DiscoveryAgent/verify_all_products.py
 DsicoveryAgent/temp/
+temp/
 
 # Test files
 **/test_*

@@ -58,3 +58,11 @@ pytest-asyncio>=1.1.0
 pytest-timeout>=2.4.0
 pytest-xdist>=3.3.1
 rouge-score>=0.1.2
+
+# --- Presentation (Slidev) ---
+# Slidev is a Node.js tool. Install its dependencies via:
+#   cd Slidev && npm install
+# Run with:
+#   cd Slidev && npm run dev
+# Export to PPTX:
+#   cd Slidev && npx slidev export --format pptx

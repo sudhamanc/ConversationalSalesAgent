@@ -46,24 +46,22 @@ Route new customer conversations and prospecting queries to discovery_agent. Rou
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,
-        top_p=0.1,
-        top_k=10,
         safety_settings=[
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
         ],
     ),

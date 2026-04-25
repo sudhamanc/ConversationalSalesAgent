@@ -8,15 +8,57 @@ Moved from ServiceFulfillmentAgent to maintain proper separation of concerns:
 """
 
 import json
+import sys
 from typing import Dict, Any
 from datetime import datetime
 from ..utils.logger import get_logger
+from ..utils.database import save_order, load_order, load_orders_for_customer, update_order_field
 from ..models import Order, OrderStatus
 
 logger = get_logger(__name__)
 
-# In-memory order storage (in production, use database)
-_ORDERS: Dict[str, Order] = {}
+
+def _auto_send_order_confirmation(
+    order_id: str,
+    customer_name: str,
+    contact_email: str,
+    contact_phone: str,
+    service_type: str,
+    total_amount: float,
+) -> Dict[str, Any]:
+    """
+    Automatically send an order confirmation email/SMS immediately after order creation.
+
+    Uses sys.modules to call the already-loaded CustomerCommunicationAgent notification
+    tools without a hard cross-package import dependency.  All sub-agents are initialised
+    before the first user interaction, so the module is always present at call time.
+    """
+    try:
+        # Prefer the notification_tools submodule; fall back to the tools package itself
+        notif_mod = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if notif_mod is None:
+            notif_mod = sys.modules.get("customer_communication_agent.tools")
+
+        if notif_mod is None or not hasattr(notif_mod, "send_order_confirmation"):
+            logger.warning(
+                "CustomerCommunicationAgent notification tools not found in sys.modules; "
+                "order confirmation email will not be sent automatically."
+            )
+            return {"success": False, "error": "Notification module unavailable"}
+
+        result = notif_mod.send_order_confirmation(
+            order_id=order_id,
+            customer_name=customer_name,
+            customer_email=contact_email or None,
+            customer_phone=contact_phone or None,
+            service_type=service_type,
+            total_amount=total_amount,
+        )
+        logger.info(f"Auto order confirmation triggered for {order_id}: {result}")
+        return result
+    except Exception as exc:
+        logger.warning(f"Auto order confirmation failed (non-fatal): {exc}")
+        return {"success": False, "error": str(exc)}
 
 
 def create_order(
@@ -26,7 +68,8 @@ def create_order(
     contact_phone: str,
     customer_id: str = None,
     contact_email: str = None,
-    price: float = None
+    price: float = None,
+    offer_id: str = None
 ) -> Dict[str, Any]:
     """
     Creates a new service order from cart or direct input.
@@ -42,6 +85,7 @@ def create_order(
         customer_id: Customer identifier (auto-generated if not provided)
         contact_email: Customer contact email
         price: Service price (optional, for price tracking)
+        offer_id: Offer/quote identifier from OfferManagement (links order to quote)
     
     Returns:
         Created order details with JSON structure
@@ -65,6 +109,7 @@ def create_order(
             service_address=service_address,
             contact_phone=contact_phone,
             contact_email=contact_email,
+            offer_id=offer_id,
             status=OrderStatus.DRAFT,
         )
         
@@ -74,11 +119,27 @@ def create_order(
         else:
             order.add_item(service_type=service_type, price=0.0, quantity=1)
         
-        # Store order
-        _ORDERS[order_id] = order
+        # Persist order to SQLite
+        save_order(order.to_dict())
         
         logger.info(f"Order created: {order_id} for customer {customer_id}")
-        
+
+        # Automatically send order confirmation email/SMS
+        email_result = _auto_send_order_confirmation(
+            order_id=order_id,
+            customer_name=customer_name,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            service_type=service_type,
+            total_amount=price or 0.0,
+        )
+        email_sent = bool(
+            email_result
+            and email_result.get("success")
+            # "deduped" status means a notification was already sent recently — still counts
+        )
+        email_notification_id = email_result.get("notification_id") if email_result else None
+
         # Return JSON structure
         return json.loads(json.dumps({
             "success": True,
@@ -89,9 +150,12 @@ def create_order(
             "service_type": service_type,
             "contact_phone": contact_phone,
             "contact_email": contact_email,
+            "offer_id": offer_id,
             "status": order.status,
             "total_amount": order.total_amount,
             "created_at": order.created_at,
+            "email_confirmation_sent": email_sent,
+            "email_notification_id": email_notification_id,
             "message": f"Order {order_id} created successfully. Customer ID: {customer_id}"
         }))
     
@@ -137,16 +201,16 @@ def update_order_status(
                 "error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
             }))
         
-        if order_id not in _ORDERS:
+        order_dict = load_order(order_id)
+        if not order_dict:
             return json.loads(json.dumps({
                 "success": False,
                 "error": f"Order {order_id} not found"
             }))
         
-        order = _ORDERS[order_id]
-        old_status = order.status
-        order.status = new_status
-        order.updated_at = datetime.now().isoformat()
+        old_status = order_dict["status"]
+        now = datetime.now().isoformat()
+        update_order_field(order_id, status=new_status, updated_at=now)
         
         logger.info(f"Order {order_id} status updated: {old_status} -> {new_status}")
         
@@ -155,7 +219,7 @@ def update_order_status(
             "order_id": order_id,
             "old_status": old_status,
             "new_status": new_status,
-            "updated_at": order.updated_at,
+            "updated_at": now,
             "notes": notes,
             "message": f"Order status updated to {new_status}"
         }))
@@ -181,17 +245,16 @@ def get_order(order_id: str) -> Dict[str, Any]:
     logger.info(f"Getting order {order_id}")
     
     try:
-        if order_id not in _ORDERS:
+        order_dict = load_order(order_id)
+        if not order_dict:
             return json.loads(json.dumps({
                 "success": False,
                 "error": f"Order {order_id} not found"
             }))
         
-        order = _ORDERS[order_id]
-        
         return json.loads(json.dumps({
             "success": True,
-            "order": order.to_dict()
+            "order": order_dict
         }))
     
     except Exception as e:
@@ -222,35 +285,39 @@ def modify_order(
     logger.info(f"Modifying order {order_id}")
     
     try:
-        if order_id not in _ORDERS:
+        order_dict = load_order(order_id)
+        if not order_dict:
             return json.loads(json.dumps({
                 "success": False,
                 "error": f"Order {order_id} not found"
             }))
         
-        order = _ORDERS[order_id]
-        
         # Only allow modification of draft/pending orders
-        if order.status not in [OrderStatus.DRAFT, OrderStatus.PENDING_PAYMENT]:
+        if order_dict["status"] not in [OrderStatus.DRAFT, OrderStatus.PENDING_PAYMENT]:
             return json.loads(json.dumps({
                 "success": False,
-                "error": f"Cannot modify order in {order.status} status. Only draft or pending_payment orders can be modified."
+                "error": f"Cannot modify order in {order_dict['status']} status. Only draft or pending_payment orders can be modified."
             }))
         
         # Update service and price
         if service_type or price:
-            order.items = []  # Clear existing items
+            order_dict["items"] = []
             if service_type and price:
-                order.add_item(service_type=service_type, price=price, quantity=1)
+                order_dict["items"].append({"service_type": service_type, "price": price, "quantity": 1, "subtotal": price})
+                order_dict["total_amount"] = price
             elif service_type:
-                order.add_item(service_type=service_type, price=0.0, quantity=1)
+                order_dict["items"].append({"service_type": service_type, "price": 0.0, "quantity": 1, "subtotal": 0.0})
+                order_dict["total_amount"] = 0.0
+        
+        order_dict["updated_at"] = datetime.now().isoformat()
+        save_order(order_dict)
         
         logger.info(f"Order {order_id} modified successfully")
         
         return json.loads(json.dumps({
             "success": True,
             "order_id": order_id,
-            "order": order.to_dict(),
+            "order": order_dict,
             "message": f"Order {order_id} modified successfully"
         }))
     
@@ -275,26 +342,25 @@ def generate_contract(order_id: str) -> Dict[str, Any]:
     logger.info(f"Generating contract for order {order_id}")
     
     try:
-        if order_id not in _ORDERS:
+        order_dict = load_order(order_id)
+        if not order_dict:
             return json.loads(json.dumps({
                 "success": False,
                 "error": f"Order {order_id} not found"
             }))
         
-        order = _ORDERS[order_id]
-        
         contract = {
             "contract_id": f"CONT-{order_id}",
             "order_id": order_id,
-            "customer_name": order.customer_name,
-            "customer_id": order.customer_id,
-            "service_address": order.service_address,
-            "services": order.items,
-            "total_amount": order.total_amount,
+            "customer_name": order_dict["customer_name"],
+            "customer_id": order_dict["customer_id"],
+            "service_address": order_dict["service_address"],
+            "services": order_dict["items"],
+            "total_amount": order_dict["total_amount"],
             "terms": {
                 "duration": "12 months",
                 "auto_renewal": True,
-                "early_termination_fee": order.total_amount * 3,  # 3 months of service
+                "early_termination_fee": order_dict["total_amount"] * 3,  # 3 months of service
                 "billing_cycle": "monthly",
                 "payment_terms": "NET-30"
             },
@@ -332,22 +398,22 @@ def cancel_order(order_id: str, reason: str = None) -> Dict[str, Any]:
     logger.info(f"Cancelling order {order_id}")
     
     try:
-        if order_id not in _ORDERS:
+        order_dict = load_order(order_id)
+        if not order_dict:
             return json.loads(json.dumps({
                 "success": False,
                 "error": f"Order {order_id} not found"
             }))
         
-        order = _ORDERS[order_id]
-        order.status = OrderStatus.CANCELLED
-        order.updated_at = datetime.now().isoformat()
+        now = datetime.now().isoformat()
+        update_order_field(order_id, status=OrderStatus.CANCELLED, updated_at=now)
         
         logger.info(f"Order {order_id} cancelled. Reason: {reason}")
         
         return json.loads(json.dumps({
             "success": True,
             "order_id": order_id,
-            "status": order.status,
+            "status": OrderStatus.CANCELLED,
             "reason": reason,
             "message": f"Order {order_id} cancelled successfully"
         }))

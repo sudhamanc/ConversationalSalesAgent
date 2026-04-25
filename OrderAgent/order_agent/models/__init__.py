@@ -28,6 +28,7 @@ class Order:
         service_address: str,
         contact_phone: str,
         contact_email: Optional[str] = None,
+        offer_id: Optional[str] = None,
         status: str = OrderStatus.DRAFT,
     ):
         self.order_id = order_id
@@ -36,6 +37,7 @@ class Order:
         self.service_address = service_address
         self.contact_phone = contact_phone
         self.contact_email = contact_email
+        self.offer_id = offer_id
         self.status = status
         self.items: List[Dict[str, Any]] = []
         self.created_at = datetime.now().isoformat()
@@ -62,6 +64,7 @@ class Order:
             "service_address": self.service_address,
             "contact_phone": self.contact_phone,
             "contact_email": self.contact_email,
+            "offer_id": self.offer_id,
             "status": self.status,
             "items": self.items,
             "total_amount": self.total_amount,

@@ -6,7 +6,10 @@ for various customer communication scenarios.
 """
 
 import json
-import hashlib
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from ..utils.logger import get_logger
@@ -14,16 +17,70 @@ from ..models import Notification, NotificationType, NotificationStatus
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Email configuration (set via environment variables)
+# ---------------------------------------------------------------------------
+SMTP_ENABLED = os.getenv("SMTP_ENABLED", "false").lower() == "true"
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")  # Gmail: use App Password
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "B2B Sales Notifications")
+
+if SMTP_ENABLED:
+    if not SMTP_USER or not SMTP_PASSWORD:
+        logger.error("SMTP_ENABLED=true but SMTP_USER or SMTP_PASSWORD not set")
+        SMTP_ENABLED = False
+    else:
+        logger.info(f"Real email delivery enabled via {SMTP_HOST}:{SMTP_PORT}")
+else:
+    logger.info("Email delivery in simulation mode (set SMTP_ENABLED=true to send real emails)")
+
+
+def _send_email(to_address: str, subject: str, body: str) -> dict:
+    """
+    Send a real email via SMTP when SMTP_ENABLED=true, otherwise simulate.
+
+    Returns:
+        dict with "sent" (bool) and "detail" (str)
+    """
+    if not SMTP_ENABLED:
+        logger.info(f"[SIMULATED] Email to {to_address}: {subject}")
+        return {"sent": True, "detail": "simulated"}
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
+        msg["To"] = to_address
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_USER, [to_address], msg.as_string())
+
+        logger.info(f"Email delivered to {to_address}: {subject}")
+        return {"sent": True, "detail": "delivered"}
+    except smtplib.SMTPAuthenticationError as exc:
+        logger.error(f"SMTP auth failed: {exc}")
+        return {"sent": False, "detail": f"SMTP auth error: {exc}"}
+    except Exception as exc:
+        logger.error(f"Email send failed to {to_address}: {exc}")
+        return {"sent": False, "detail": f"SMTP error: {exc}"}
+
+
 # In-memory notification storage (in production, use database)
 _NOTIFICATIONS: Dict[str, Notification] = {}
 _DEDUP_CACHE: Dict[str, datetime] = {}  # Track recent notifications for deduplication
 
 
 def _generate_notification_id(notification_type: str, recipient: str) -> str:
-    """Generate unique notification ID."""
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    hash_suffix = hash(f"{recipient}{timestamp}") % 1000
-    return f"NOTIF-{timestamp}-{hash_suffix:03d}"
+    """Generate unique notification ID using microsecond precision to avoid collisions."""
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
+    return f"NOTIF-{timestamp}"
 
 
 def _check_duplicate(notification_type: str, recipient: str, window_minutes: int = 5) -> bool:
@@ -105,7 +162,7 @@ Order Details:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Order ID: {order_id}
 Service: {service_type or 'N/A'}
-Total Amount: ${total_amount:.2f if total_amount else 0}
+Total Amount: ${f'{total_amount:.2f}' if total_amount is not None else '0.00'}
 
 Your order has been confirmed and is now being processed.
 
@@ -136,19 +193,21 @@ Thank you for choosing our services!
             }
         )
         
-        # Simulate sending (in production: call email/SMS APIs)
+        # Send via real or simulated channels
         channels_sent = []
+        email_detail = None
         if customer_email:
-            # Simulate email send
-            notification.mark_sent("email")
-            channels_sent.append("email")
-            logger.info(f"Email sent to {customer_email}")
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
         
         if customer_phone:
-            # Simulate SMS send
+            # SMS remains simulated (real SMS requires Twilio or similar)
             notification.mark_sent("sms")
             channels_sent.append("sms")
-            logger.info(f"SMS sent to {customer_phone}")
+            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
         # Store notification
         _NOTIFICATIONS[notification_id] = notification
@@ -161,6 +220,7 @@ Thank you for choosing our services!
             "recipient_email": customer_email,
             "recipient_phone": customer_phone,
             "status": "sent",
+            "email_delivery": email_detail,
             "message": f"Order confirmation sent successfully via {', '.join(channels_sent)}"
         }))
     
@@ -227,7 +287,7 @@ Your payment has been processed successfully!
 Payment Details:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Order ID: {order_id}
-Amount: ${amount:.2f if amount else 'N/A'}
+Amount: ${f'{amount:.2f}' if amount is not None else 'N/A'}
 Payment Method: {payment_method or 'N/A'}
 Status: ✓ Paid
 
@@ -245,7 +305,7 @@ Dear {customer_name},
 We were unable to process your payment for order {order_id}.
 
 Order ID: {order_id}
-Amount: ${amount:.2f if amount else 'N/A'}
+Amount: ${f'{amount:.2f}' if amount is not None else 'N/A'}
 Status: ✗ Payment Failed
 
 Action Required:
@@ -269,12 +329,17 @@ Your order is on hold until payment is received.
         )
         
         channels_sent = []
+        email_detail = None
         if customer_email:
-            notification.mark_sent("email")
-            channels_sent.append("email")
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
         if customer_phone:
             notification.mark_sent("sms")
             channels_sent.append("sms")
+            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
         _NOTIFICATIONS[notification_id] = notification
         
@@ -284,6 +349,7 @@ Your order is on hold until payment is received.
             "notification_type": notif_type,
             "channels": channels_sent,
             "status": "sent",
+            "email_delivery": email_detail,
             "message": f"Payment notification sent via {', '.join(channels_sent)}"
         }))
     
@@ -379,12 +445,17 @@ See you tomorrow!
         )
         
         channels_sent = []
+        email_detail = None
         if customer_email:
-            notification.mark_sent("email")
-            channels_sent.append("email")
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
         if customer_phone:
             notification.mark_sent("sms")
             channels_sent.append("sms")
+            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
         _NOTIFICATIONS[notification_id] = notification
         
@@ -394,6 +465,7 @@ See you tomorrow!
             "notification_type": NotificationType.INSTALLATION_REMINDER,
             "channels": channels_sent,
             "status": "sent",
+            "email_delivery": email_detail,
             "message": f"Installation reminder sent via {', '.join(channels_sent)}"
         }))
     
@@ -487,12 +559,17 @@ Welcome aboard! 🚀
         )
         
         channels_sent = []
+        email_detail = None
         if customer_email:
-            notification.mark_sent("email")
-            channels_sent.append("email")
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
         if customer_phone:
             notification.mark_sent("sms")
             channels_sent.append("sms")
+            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
         _NOTIFICATIONS[notification_id] = notification
         
@@ -502,6 +579,7 @@ Welcome aboard! 🚀
             "notification_type": NotificationType.SERVICE_ACTIVATED,
             "channels": channels_sent,
             "status": "sent",
+            "email_delivery": email_detail,
             "message": f"Service activation notification sent via {', '.join(channels_sent)}"
         }))
     
@@ -564,7 +642,7 @@ Your Quote:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Cart ID: {cart_id}
 Items: {cart_items or 'Your selected services'}
-Total: ${total_amount:.2f if total_amount else 'TBD'}
+Total: ${f'{total_amount:.2f}' if total_amount is not None else 'TBD'}
 
 Don't miss out! This quote expires in 7 days.
 
@@ -592,9 +670,13 @@ P.S. Need help choosing the right service? Our sales team is standing by!
         )
         
         channels_sent = []
+        email_detail = None
         if customer_email:
-            notification.mark_sent("email")
-            channels_sent.append("email")
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
         if customer_phone:
             # SMS only if explicitly opted in for marketing
             pass  # Skip SMS for marketing messages unless opt-in
@@ -607,6 +689,7 @@ P.S. Need help choosing the right service? Our sales team is standing by!
             "notification_type": NotificationType.ABANDONED_CART,
             "channels": channels_sent,
             "status": "sent",
+            "email_delivery": email_detail,
             "message": f"Abandoned cart reminder sent via {', '.join(channels_sent)}" if channels_sent else "Abandoned cart reminder queued (email only)"
         }))
     
@@ -695,12 +778,17 @@ Questions? Contact us at 1-800-BUSINESS
         )
         
         channels_sent = []
+        email_detail = None
         if customer_email:
-            notification.mark_sent("email")
-            channels_sent.append("email")
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+            email_detail = email_result["detail"]
         if customer_phone:
             notification.mark_sent("sms")
             channels_sent.append("sms")
+            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
         
         _NOTIFICATIONS[notification_id] = notification
         
@@ -710,6 +798,7 @@ Questions? Contact us at 1-800-BUSINESS
             "notification_type": NotificationType.ORDER_STATUS_UPDATE,
             "channels": channels_sent,
             "status": "sent",
+            "email_delivery": email_detail,
             "message": f"Order status update sent via {', '.join(channels_sent)}"
         }))
     

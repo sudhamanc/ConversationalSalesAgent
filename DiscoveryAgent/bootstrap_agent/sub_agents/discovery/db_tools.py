@@ -47,24 +47,39 @@ class ProspectingDatabase:
         finally:
             conn.close()
     
-    def search_companies(self, company_name: str = None, industry: str = None, region: str = None, customer_status: str = None) -> List[Dict[str, Any]]:
+    def search_companies(self, company_name: str = None, industry: str = None, region: str = None,
+                          customer_status: str = None, street: str = None, city: str = None,
+                          state: str = None) -> List[Dict[str, Any]]:
         """Search for companies by name, industry, region, or customer status.
-        
+        Supports compound matching on company_name + address fields together.
+
         Args:
             company_name: Company name to search for
             industry: Industry to filter by
             region: Territory/Region to filter by
             customer_status: 'Y' for existing customers, 'N' for prospects, None for all
+            street: Street address to filter by (use with company_name for compound match)
+            city: City to filter by
+            state: State abbreviation to filter by
         """
         query = """SELECT "Company Name", "Parent Company", Industry, "Territory/Region",
-                   Street, City, State, zip_code, Website, "Existing Customer",
+                   Street, address_line2, City, State, zip_code, Website, "Existing Customer",
                    "Current Products", "Products of Interest" FROM accounts WHERE 1=1"""
         conditions = []
         params = []
-        
+
         if company_name:
             conditions.append("\"Company Name\" LIKE ?")
             params.append(f"%{company_name}%")
+        if street:
+            conditions.append("Street LIKE ?")
+            params.append(f"%{street}%")
+        if city:
+            conditions.append("City LIKE ?")
+            params.append(f"%{city}%")
+        if state:
+            conditions.append("State LIKE ?")
+            params.append(f"%{state}%")
         if industry:
             conditions.append("Industry LIKE ?")
             params.append(f"%{industry}%")
@@ -74,7 +89,7 @@ class ProspectingDatabase:
         if customer_status:
             conditions.append("\"Existing Customer\" = ?")
             params.append(customer_status)
-        
+
         if conditions:
             query += " AND " + " AND ".join(conditions)
         
@@ -84,7 +99,7 @@ class ProspectingDatabase:
         """Get detailed information about a specific company including location, customer status, and products."""
         query = """
         SELECT a."Company Name", a."Parent Company", a.Industry, a."Territory/Region",
-               a.Street, a.City, a.State, a.Website,
+               a.Street, a.address_line2, a.City, a.State, a.zip_code, a.Website,
                a."Existing Customer", a."Current Products", a."Products of Interest",
                s."Estimated Annual Spend", s.Digital, s.Programmatic, 
                s.TV, s.Audio, s.OOH, s.Search, s.Social, s."Primary Agency"
@@ -177,14 +192,15 @@ class ProspectingDatabase:
                    street: str, city: str, state: str, website: str,
                    parent_company: str = None, existing_customer: str = 'N',
                    current_products: str = None, products_of_interest: str = None,
-                   zip_code: str = None) -> bool:
+                   zip_code: str = None, address_line2: str = None) -> bool:
         """Add a new company to accounts table.
 
         Args:
             company_name: Company name (must be unique)
             industry: Industry classification
             region: Territory/Region
-            street: Street address
+            street: Street address (e.g. '123 Main St')
+            address_line2: Suite, floor, unit, building (e.g. 'Suite 400') — makes address unique
             city: City
             state: State abbreviation
             website: Company website
@@ -200,14 +216,14 @@ class ProspectingDatabase:
         query = """
         INSERT INTO accounts (
             "Company Name", "Parent Company", Industry, "Territory/Region",
-            Street, City, State, zip_code, Website, "Existing Customer",
+            Street, address_line2, City, State, zip_code, Website, "Existing Customer",
             "Current Products", "Products of Interest"
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
             rows = self._execute_write(query, (
                 company_name, parent_company, industry, region,
-                street, city, state, zip_code, website, existing_customer,
+                street, address_line2, city, state, zip_code, website, existing_customer,
                 current_products, products_of_interest
             ))
             return rows > 0
@@ -230,6 +246,7 @@ class ProspectingDatabase:
             'industry': 'Industry',
             'region': '"Territory/Region"',
             'street': 'Street',
+            'address_line2': 'address_line2',
             'city': 'City',
             'state': 'State',
             'zip_code': 'zip_code',

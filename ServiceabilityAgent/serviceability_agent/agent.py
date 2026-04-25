@@ -60,25 +60,23 @@ serviceability_agent = Agent(
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,  # Deterministic - no creativity needed
-        top_p=0.1,        # Low sampling for determinism
-        top_k=10,         # Restrict token selection
         max_output_tokens=2048,  # Sufficient for detailed responses
         safety_settings=[
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
         ],
     ),

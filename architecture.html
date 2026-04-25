@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>B2B Conversational Sales Agent — Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #F8F9FC;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'DM Sans', sans-serif;
+    padding: 20px;
+  }
+
+  .diagram-wrapper {
+    width: 1100px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    padding: 48px;
+    border: 1px solid #E2E5F1;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.04), 0 1px 4px rgba(0,0,0,0.02);
+    position: relative;
+  }
+
+  /* TITLE */
+  .title-block {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .title-block h1 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #1E2030;
+    letter-spacing: -0.5px;
+  }
+
+  .title-block .subtitle {
+    font-size: 13px;
+    color: #6B7280;
+    margin-top: 6px;
+    font-weight: 400;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .tech-stack {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .tech-pill {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: #F3F4F6;
+    border: 1px solid #E5E7EB;
+    color: #6B7280;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.3px;
+  }
+
+  /* USER ENTRY */
+  .user-entry {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 4px;
+  }
+
+  .user-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border-radius: 28px;
+    background: #F9FAFB;
+    border: 1.5px solid #D1D5DB;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .user-pill .icon { font-size: 17px; }
+
+  /* CONNECTING ARROWS */
+  .flow-connector {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 4px 0;
+    position: relative;
+  }
+
+  .flow-arrow-svg {
+    display: block;
+  }
+
+  /* LAYER SYSTEM */
+  .layer {
+    position: relative;
+    margin-bottom: 0;
+    border-radius: 14px;
+    padding: 20px 24px;
+  }
+
+  .layer-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .layer-label .label-bar {
+    width: 20px;
+    height: 3px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* PRESENTATION LAYER */
+  .layer-presentation {
+    background: #ECFDF5;
+    border: 1.5px solid #A7F3D0;
+  }
+  .layer-presentation .layer-label { color: #047857; }
+  .layer-presentation .label-bar { background: #10B981; }
+
+  /* ORCHESTRATION LAYER */
+  .layer-orchestration {
+    background: #EEF2FF;
+    border: 1.5px solid #C7D2FE;
+  }
+  .layer-orchestration .layer-label { color: #4338CA; }
+  .layer-orchestration .label-bar { background: #6366F1; }
+
+  /* AGENTS LAYER */
+  .layer-agents {
+    background: #FFFBEB;
+    border: 1.5px solid #FDE68A;
+    padding-bottom: 24px;
+  }
+  .layer-agents .layer-label { color: #92400E; }
+  .layer-agents .label-bar { background: #F59E0B; }
+
+  /* INFRASTRUCTURE LAYER */
+  .layer-infra {
+    background: #FEF2F2;
+    border: 1.5px solid #FECACA;
+  }
+  .layer-infra .layer-label { color: #991B1B; }
+  .layer-infra .label-bar { background: #EF4444; }
+
+  /* CARDS ROW */
+  .cards-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .card {
+    border-radius: 10px;
+    padding: 14px 18px;
+    flex: 1;
+    min-width: 130px;
+  }
+
+  .card-icon {
+    font-size: 18px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+
+  .card-desc {
+    font-size: 11px;
+    color: #6B7280;
+    line-height: 1.5;
+  }
+
+  /* Presentation cards */
+  .card-green {
+    background: #FFFFFF;
+    border: 1px solid #A7F3D0;
+  }
+  .card-green .card-title { color: #065F46; }
+
+  /* Infra cards */
+  .card-red {
+    background: #FFFFFF;
+    border: 1px solid #FECACA;
+  }
+  .card-red .card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #991B1B;
+  }
+  .card-red .card-desc { font-size: 10.5px; }
+
+  /* SUPER AGENT CARD */
+  .super-agent-card {
+    background: #FFFFFF;
+    border: 1.5px solid #C7D2FE;
+    border-radius: 12px;
+    padding: 20px 28px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    position: relative;
+  }
+
+  .super-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  }
+
+  .super-info h3 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1E1B4B;
+    margin-bottom: 3px;
+  }
+
+  .super-info p {
+    font-size: 12px;
+    color: #6366F1;
+    line-height: 1.4;
+  }
+
+  .super-badges {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .badge-router {
+    background: #EEF2FF;
+    color: #4338CA;
+    border: 1px solid #C7D2FE;
+  }
+
+  .badge-session {
+    background: #ECFDF5;
+    color: #047857;
+    border: 1px solid #A7F3D0;
+  }
+
+  .badge-adk {
+    background: #FFFBEB;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+  }
+
+  /* AGENT DOMAINS */
+  .agent-domains {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+
+  .domain-group {
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .domain-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+  }
+
+  /* Discovery */
+  .domain-discovery {
+    background: #EFF6FF;
+    border: 1.5px solid #BFDBFE;
+  }
+  .domain-discovery .domain-label {
+    color: #1E40AF;
+    border-bottom: 1px solid #BFDBFE;
+  }
+
+  /* Config */
+  .domain-config {
+    background: #F5F3FF;
+    border: 1.5px solid #DDD6FE;
+  }
+  .domain-config .domain-label {
+    color: #5B21B6;
+    border-bottom: 1px solid #DDD6FE;
+  }
+
+  /* Transaction */
+  .domain-transaction {
+    background: #FFF7ED;
+    border: 1.5px solid #FED7AA;
+  }
+  .domain-transaction .domain-label {
+    color: #9A3412;
+    border-bottom: 1px solid #FED7AA;
+  }
+
+  .agent-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .agent-chip:last-child { margin-bottom: 0; }
+
+  .domain-discovery .agent-chip {
+    background: #FFFFFF;
+    border: 1px solid #BFDBFE;
+    color: #1E40AF;
+  }
+  .domain-config .agent-chip {
+    background: #FFFFFF;
+    border: 1px solid #DDD6FE;
+    color: #5B21B6;
+  }
+  .domain-transaction .agent-chip {
+    background: #FFFFFF;
+    border: 1px solid #FED7AA;
+    color: #9A3412;
+  }
+
+  .chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .domain-discovery .chip-dot { background: #3B82F6; }
+  .domain-config .chip-dot { background: #8B5CF6; }
+  .domain-transaction .chip-dot { background: #F97316; }
+
+  /* DESIGN PRINCIPLES */
+  .principles-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #E5E7EB;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .principle {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 6px;
+    background: #F3F4F6;
+    border: 1px solid #E5E7EB;
+    color: #4B5563;
+    letter-spacing: 0.3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="diagram-wrapper">
+
+  <!-- TITLE -->
+  <div class="title-block">
+    <h1>B2B Conversational Sales Agent</h1>
+    <div class="subtitle">Multi-Agent Orchestration Architecture</div>
+    <div class="tech-stack">
+      <span class="tech-pill">Google ADK</span>
+      <span class="tech-pill">Gemini 3.0 Flash</span>
+      <span class="tech-pill">Python 3.12</span>
+      <span class="tech-pill">React 19</span>
+      <span class="tech-pill">FastAPI</span>
+      <span class="tech-pill">SQLite</span>
+    </div>
+  </div>
+
+  <!-- USER ENTRY -->
+  <div class="user-entry">
+    <div class="user-pill">
+      <span class="icon">👤</span>
+      <span>B2B Customer / Sales Rep</span>
+    </div>
+  </div>
+
+  <!-- ARROW: User → Presentation -->
+  <div class="flow-connector">
+    <svg class="flow-arrow-svg" width="40" height="36" viewBox="0 0 40 36">
+      <defs>
+        <marker id="ah1" markerWidth="10" markerHeight="8" refX="5" refY="4" orient="auto">
+          <path d="M0,0 L5,4 L0,8" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <line x1="20" y1="2" x2="20" y2="28" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" marker-end="url(#ah1)"/>
+    </svg>
+  </div>
+
+  <!-- PRESENTATION LAYER -->
+  <div class="layer layer-presentation">
+    <div class="layer-label"><span class="label-bar"></span>Presentation Layer</div>
+    <div class="cards-row">
+      <div class="card card-green">
+        <span class="card-icon">⚛️</span>
+        <div class="card-title">React 19 + Vite</div>
+        <div class="card-desc">Chat UI with Tailwind CSS</div>
+      </div>
+      <div class="card card-green">
+        <span class="card-icon">⚡</span>
+        <div class="card-title">FastAPI Backend</div>
+        <div class="card-desc">SSE token streaming</div>
+      </div>
+      <div class="card card-green">
+        <span class="card-icon">🔄</span>
+        <div class="card-title">SSE Transport</div>
+        <div class="card-desc">Real-time bidirectional comms</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARROW: Presentation → Orchestration -->
+  <div class="flow-connector">
+    <svg class="flow-arrow-svg" width="40" height="36" viewBox="0 0 40 36">
+      <defs>
+        <marker id="ah2" markerWidth="10" markerHeight="8" refX="5" refY="4" orient="auto">
+          <path d="M0,0 L5,4 L0,8" fill="none" stroke="#6366F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <line x1="20" y1="2" x2="20" y2="28" stroke="#6366F1" stroke-width="2.5" stroke-linecap="round" marker-end="url(#ah2)"/>
+    </svg>
+  </div>
+
+  <!-- ORCHESTRATION LAYER -->
+  <div class="layer layer-orchestration">
+    <div class="layer-label"><span class="label-bar"></span>Orchestration Layer</div>
+    <div class="super-agent-card">
+      <div class="super-icon">🧠</div>
+      <div class="super-info">
+        <h3>SuperAgent</h3>
+        <p>Intent classification → agent delegation via ADK transfer_to_agent. Never generates user-facing text.</p>
+      </div>
+      <div class="super-badges">
+        <span class="badge badge-router">ROUTER</span>
+        <span class="badge badge-session">SESSION STATE</span>
+        <span class="badge badge-adk">ADK NATIVE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARROW: Orchestration → Agents (wide fan-out) -->
+  <div class="flow-connector">
+    <svg class="flow-arrow-svg" width="700" height="44" viewBox="0 0 700 44">
+      <defs>
+        <marker id="ah3" markerWidth="8" markerHeight="7" refX="4" refY="3.5" orient="auto">
+          <path d="M0,0 L4,3.5 L0,7" fill="none" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <!-- Center trunk -->
+      <line x1="350" y1="2" x2="350" y2="18" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Horizontal bar -->
+      <line x1="100" y1="18" x2="600" y2="18" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Left branch -->
+      <line x1="100" y1="18" x2="100" y2="36" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" marker-end="url(#ah3)"/>
+      <!-- Center branch -->
+      <line x1="350" y1="18" x2="350" y2="36" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" marker-end="url(#ah3)"/>
+      <!-- Right branch -->
+      <line x1="600" y1="18" x2="600" y2="36" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" marker-end="url(#ah3)"/>
+      <!-- Labels -->
+      <text x="100" y="12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#92400E" font-weight="500">transfer_to_agent()</text>
+      <text x="350" y="12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#92400E" font-weight="500">transfer_to_agent()</text>
+      <text x="600" y="12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#92400E" font-weight="500">transfer_to_agent()</text>
+    </svg>
+  </div>
+
+  <!-- SPECIALIZED AGENTS LAYER -->
+  <div class="layer layer-agents">
+    <div class="layer-label"><span class="label-bar"></span>Specialized Agents — 10 Autonomous Sub-Agents</div>
+    <div class="agent-domains">
+
+      <!-- DISCOVERY DOMAIN -->
+      <div class="domain-group domain-discovery">
+        <div class="domain-label">🔍 Discovery Domain</div>
+        <div class="agent-chip"><span class="chip-dot"></span>DiscoveryAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>GreetingAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>FAQAgent</div>
+      </div>
+
+      <!-- CONFIGURATION DOMAIN -->
+      <div class="domain-group domain-config">
+        <div class="domain-label">⚙️ Configuration Domain</div>
+        <div class="agent-chip"><span class="chip-dot"></span>ServiceabilityAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>ProductAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>OfferManagementAgent</div>
+      </div>
+
+      <!-- TRANSACTION DOMAIN -->
+      <div class="domain-group domain-transaction">
+        <div class="domain-label">💳 Transaction Domain</div>
+        <div class="agent-chip"><span class="chip-dot"></span>OrderAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>PaymentAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>ServiceFulfillmentAgent</div>
+        <div class="agent-chip"><span class="chip-dot"></span>CustomerCommsAgent</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ARROW: Agents → Infrastructure -->
+  <div class="flow-connector">
+    <svg class="flow-arrow-svg" width="700" height="44" viewBox="0 0 700 44">
+      <defs>
+        <marker id="ah4" markerWidth="8" markerHeight="7" refX="4" refY="3.5" orient="auto">
+          <path d="M0,0 L4,3.5 L0,7" fill="none" stroke="#EF4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <!-- Three source points merging -->
+      <line x1="100" y1="2" x2="100" y2="16" stroke="#EF4444" stroke-width="2" stroke-linecap="round"/>
+      <line x1="350" y1="2" x2="350" y2="16" stroke="#EF4444" stroke-width="2" stroke-linecap="round"/>
+      <line x1="600" y1="2" x2="600" y2="16" stroke="#EF4444" stroke-width="2" stroke-linecap="round"/>
+      <!-- Horizontal bar -->
+      <line x1="100" y1="16" x2="600" y2="16" stroke="#EF4444" stroke-width="2" stroke-linecap="round"/>
+      <!-- Center down -->
+      <line x1="350" y1="16" x2="350" y2="36" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" marker-end="url(#ah4)"/>
+      <!-- Label -->
+      <text x="350" y="12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" fill="#991B1B" font-weight="500">Deterministic Tool Calls (JSON in / JSON out)</text>
+    </svg>
+  </div>
+
+  <!-- INFRASTRUCTURE LAYER -->
+  <div class="layer layer-infra">
+    <div class="layer-label"><span class="label-bar"></span>Infrastructure & Deterministic Tools</div>
+    <div class="cards-row">
+      <div class="card card-red">
+        <div class="card-title">SQLite</div>
+        <div class="card-desc">Orders, products, contracts</div>
+      </div>
+      <div class="card card-red">
+        <div class="card-title">GIS API</div>
+        <div class="card-desc">Address validation</div>
+      </div>
+      <div class="card card-red">
+        <div class="card-title">Pricing Engine</div>
+        <div class="card-desc">Quote computation</div>
+      </div>
+      <div class="card card-red">
+        <div class="card-title">Scheduler</div>
+        <div class="card-desc">Install & activation</div>
+      </div>
+      <div class="card card-red">
+        <div class="card-title">Notifications</div>
+        <div class="card-desc">Email / SMS dispatch</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DESIGN PRINCIPLES -->
+  <div class="principles-row">
+    <span class="principle">Zero Hallucination for Critical Data</span>
+    <span class="principle">Temperature-Stratified Agents</span>
+    <span class="principle">Router-Only Orchestrator</span>
+    <span class="principle">Structured JSON Contracts</span>
+    <span class="principle">Importlib Isolation</span>
+  </div>
+
+</div>
+</body>
+</html>

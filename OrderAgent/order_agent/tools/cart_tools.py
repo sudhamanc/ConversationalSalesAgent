@@ -1,16 +1,17 @@
 """
 Shopping cart management tools for the Order Agent.
+
+Carts are persisted in SQLite (OrderAgent/data/orders.db) so they survive
+process restarts and returning customers can resume where they left off.
 """
 
 import json
 from typing import Dict, Any, List
 from datetime import datetime
 from ..utils.logger import get_logger
+from ..utils.database import save_cart, load_cart, load_carts_for_customer, delete_cart
 
 logger = get_logger(__name__)
-
-# In-memory cart storage (in production, use Redis or database)
-_CARTS: Dict[str, Dict[str, Any]] = {}
 
 
 def create_cart(customer_id: str) -> Dict[str, Any]:
@@ -38,7 +39,7 @@ def create_cart(customer_id: str) -> Dict[str, Any]:
             "expires_at": None,  # Set to 30 minutes from last update
         }
         
-        _CARTS[cart_id] = cart
+        save_cart(cart)
         
         logger.info(f"Cart created: {cart_id}")
         return {
@@ -77,13 +78,12 @@ def add_to_cart(
     logger.info(f"Adding {service_type} to cart {cart_id}")
     
     try:
-        if cart_id not in _CARTS:
+        cart = load_cart(cart_id)
+        if not cart:
             return {
                 "success": False,
                 "error": f"Cart {cart_id} not found"
             }
-        
-        cart = _CARTS[cart_id]
         
         # Check if item already exists in cart
         existing_item = next((item for item in cart["items"] if item["service_type"] == service_type), None)
@@ -104,6 +104,8 @@ def add_to_cart(
         # Update total
         cart["total_amount"] = sum(item["subtotal"] for item in cart["items"])
         cart["updated_at"] = datetime.now().isoformat()
+        
+        save_cart(cart)
         
         logger.info(f"Cart {cart_id} updated: {len(cart['items'])} items, total ${cart['total_amount']}")
         
@@ -136,16 +138,18 @@ def remove_from_cart(cart_id: str, service_type: str) -> Dict[str, Any]:
     logger.info(f"Removing {service_type} from cart {cart_id}")
     
     try:
-        if cart_id not in _CARTS:
+        cart = load_cart(cart_id)
+        if not cart:
             return {
                 "success": False,
                 "error": f"Cart {cart_id} not found"
             }
         
-        cart = _CARTS[cart_id]
         cart["items"] = [item for item in cart["items"] if item["service_type"] != service_type]
         cart["total_amount"] = sum(item["subtotal"] for item in cart["items"])
         cart["updated_at"] = datetime.now().isoformat()
+        
+        save_cart(cart)
         
         logger.info(f"Removed {service_type} from cart {cart_id}")
         
@@ -177,7 +181,8 @@ def get_cart(cart_id: str) -> Dict[str, Any]:
     logger.info(f"Getting cart {cart_id}")
     
     try:
-        if cart_id not in _CARTS:
+        cart = load_cart(cart_id)
+        if not cart:
             return {
                 "success": False,
                 "error": f"Cart {cart_id} not found"
@@ -185,7 +190,7 @@ def get_cart(cart_id: str) -> Dict[str, Any]:
         
         return {
             "success": True,
-            "cart": _CARTS[cart_id]
+            "cart": cart
         }
     
     except Exception as e:
@@ -209,15 +214,18 @@ def clear_cart(cart_id: str) -> Dict[str, Any]:
     logger.info(f"Clearing cart {cart_id}")
     
     try:
-        if cart_id not in _CARTS:
+        cart = load_cart(cart_id)
+        if not cart:
             return {
                 "success": False,
                 "error": f"Cart {cart_id} not found"
             }
         
-        _CARTS[cart_id]["items"] = []
-        _CARTS[cart_id]["total_amount"] = 0.0
-        _CARTS[cart_id]["updated_at"] = datetime.now().isoformat()
+        cart["items"] = []
+        cart["total_amount"] = 0.0
+        cart["updated_at"] = datetime.now().isoformat()
+        
+        save_cart(cart)
         
         return {
             "success": True,

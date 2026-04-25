@@ -7,7 +7,7 @@ from google.adk.agents import Agent
 from google.genai import types
 
 from .prompts import OFFER_MANAGEMENT_AGENT_INSTRUCTION, OFFER_MANAGEMENT_SHORT_DESCRIPTION
-from .tools.pricing_tools import find_best_bundle_offer, generate_offer_quote
+from .tools.pricing_tools import find_best_bundle_offer, generate_offer_quote, get_existing_quotes, get_quote_details
 from .utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -26,28 +26,28 @@ offer_management_agent = Agent(
     tools=[
         find_best_bundle_offer,
         generate_offer_quote,
+        get_existing_quotes,
+        get_quote_details,
     ],
     generate_content_config=types.GenerateContentConfig(
         temperature=0.0,
-        top_p=0.1,
-        top_k=10,
         max_output_tokens=2048,
         safety_settings=[
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
             ),
         ],
     ),

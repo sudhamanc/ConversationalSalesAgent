@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 
 from ..utils.cache import cache_result, get_cached_result
 from ..utils.logger import get_logger
+from ..utils.quote_db import save_quote, load_quotes_for_customer, load_quote, mark_quote_ordered
 
 logger = get_logger(__name__)
 
@@ -291,4 +292,96 @@ def generate_offer_quote(items: List[Dict[str, Any]], term_months: int = 12, ban
 
     cache_result(cache_key, result)
     logger.info("Generated offer quote %s for %d items (bant_score=%.1f)", result["offer_id"], len(priced_items), bant_score)
+
+    # Persist quote to SQLite so returning customers can retrieve it later
+    try:
+        save_quote(result)
+    except Exception as exc:
+        logger.warning("Failed to persist quote %s (non-fatal): %s", result["offer_id"], exc)
+
     return result
+
+
+def get_existing_quotes(company_name: str = None, customer_id: str = None) -> Dict[str, Any]:
+    """
+    Retrieve previously generated quotes for a returning customer.
+
+    Use this tool when a customer returns and you want to check if they
+    already have active quotes they may want to proceed with or refresh.
+
+    Args:
+        company_name: The company name to search quotes for.
+        customer_id: The customer ID to search quotes for.
+
+    Returns:
+        JSON with a list of active quotes or an empty list.
+    """
+    if not company_name and not customer_id:
+        return {"success": False, "error": "Provide company_name or customer_id"}
+
+    try:
+        quotes = load_quotes_for_customer(
+            customer_id=customer_id,
+            company_name=company_name,
+            active_only=True,
+        )
+        if not quotes:
+            return {
+                "success": True,
+                "quotes": [],
+                "message": "No active quotes found for this customer."
+            }
+
+        # Return a summary for each quote (not the full nested payload)
+        summaries = []
+        for q in quotes:
+            summaries.append({
+                "offer_id": q["offer_id"],
+                "term_months": q["term_months"],
+                "total_price": q["total_price"],
+                "monthly_total": q["monthly_total"],
+                "yearly_total": q["yearly_total"],
+                "total_discount": q["total_discount"],
+                "items": q["items"],
+                "status": q["status"],
+                "created_at": q["created_at"],
+                "expires_at": q["expires_at"],
+            })
+
+        return {
+            "success": True,
+            "quotes": summaries,
+            "message": f"Found {len(summaries)} active quote(s) for this customer."
+        }
+    except Exception as exc:
+        logger.error("Error retrieving quotes: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+
+def get_quote_details(offer_id: str) -> Dict[str, Any]:
+    """
+    Retrieve full details of a specific quote by its offer_id.
+
+    Use this tool when a customer wants to review or proceed with
+    a previously generated quote.
+
+    Args:
+        offer_id: The offer/quote identifier (e.g. OFF-A1B2C3D4E5).
+
+    Returns:
+        The full quote payload or an error if not found.
+    """
+    try:
+        quote = load_quote(offer_id)
+        if not quote:
+            return {"success": False, "error": f"Quote {offer_id} not found"}
+        return {
+            "success": True,
+            "quote": quote["full_quote"],
+            "status": quote["status"],
+            "created_at": quote["created_at"],
+            "expires_at": quote["expires_at"],
+        }
+    except Exception as exc:
+        logger.error("Error loading quote %s: %s", offer_id, exc)
+        return {"success": False, "error": str(exc)}
