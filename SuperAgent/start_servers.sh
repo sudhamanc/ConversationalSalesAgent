@@ -75,6 +75,12 @@ done
 
 sleep 2
 
+# Ingest product knowledge into ChromaDB (idempotent — safe to run every start)
+echo "Ingesting product knowledge base into ChromaDB..."
+cd "$PROJECT_ROOT"
+$PYTHON ProductAgent/scripts/ingest_knowledge.py 2>&1 | tail -3
+echo "Product knowledge ingestion complete."
+
 # Start backend
 echo "Starting backend on port 8000..."
 cd "$SCRIPT_DIR/server"

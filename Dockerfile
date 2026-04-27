@@ -38,6 +38,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Ensure unified DB data directory exists (entrypoint downloads DB here from GCS)
 RUN mkdir -p /app/SuperAgent/data
 
+# Ingest product knowledge into ChromaDB at build time (baked into image)
+RUN python ProductAgent/scripts/ingest_knowledge.py
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
