@@ -8,23 +8,23 @@ This guide covers the full lifecycle of deploying the ConversationalSalesAgent t
 
 ```mermaid
 graph TB
-    subgraph DEV["🖥️ Developer Machine"]
-        CODE["Source Code\n(ConversationalSalesAgent/)"]
+    subgraph DEV["Developer Machine"]
+        CODE["Source Code"]
         DOCKER["Docker Build\n--platform linux/amd64"]
-        SCRIPTS["Scripts\ndeploy_cloud.sh\nstart_cloud.sh\nshutdown_cloud.sh"]
+        SCRIPTS["deploy_cloud.sh\nstart_cloud.sh\nshutdown_cloud.sh"]
     end
 
-    subgraph GCP["☁️ Google Cloud Platform"]
+    subgraph GCP["Google Cloud Platform"]
         subgraph AR["Artifact Registry"]
-            IMAGE["Container Image\nsales-agent:latest"]
+            IMAGE["sales-agent:latest"]
         end
 
         subgraph CR["Cloud Run"]
             subgraph CONTAINER["Single Container (port 8000)"]
-                FE["React SPA\n(static files at /)"]
+                FE["React SPA\n(static at /)"]
                 BE["FastAPI Backend\n(/api/*)"]
-                AGENTS["10 Sub-Agents\n(importlib loaded)"]
-                SQLITE_LOCAL["SQLite DB\n(local disk copy)"]
+                AGENTS["SuperAgent +\n10 Sub-Agents"]
+                SQLITE_LOCAL["sales_agent.db\n(17 tables, WAL mode)"]
                 BE --> FE
                 BE --> AGENTS
                 AGENTS --> SQLITE_LOCAL
@@ -37,62 +37,38 @@ graph TB
         end
 
         subgraph GCS["Cloud Storage"]
-            BUCKET["Bucket: project-data/\ndiscover_prospecting_clean.db"]
+            BUCKET["conversational-sales-agent-data/\nsales_agent.db"]
         end
 
         subgraph IAM["IAM / Service Account"]
-            SA["Compute Service Account\nPROJECT_NUMBER-compute@\ndeveloper.gserviceaccount.com"]
+            SA["Compute SA\nPROJECT_NUMBER-compute@\ndeveloper.gserviceaccount.com"]
         end
 
         subgraph LOG["Cloud Logging"]
-            LOGS["Container stdout/stderr\n(all agent logs)"]
+            LOGS["Container stdout/stderr"]
         end
     end
 
-    subgraph EXTERNAL["🌐 External APIs"]
-        GEMINI["Google Gemini API\ngenerativelanguage.googleapis.com"]
+    subgraph EXTERNAL["External APIs"]
+        GEMINI["Google Gemini API"]
     end
 
-    subgraph USERS["👤 Users"]
+    subgraph USERS["Users"]
         BROWSER["Browser"]
     end
 
-    %% Developer → GCP
     CODE --> DOCKER
     DOCKER --> IMAGE
     SCRIPTS -->|"gcloud run deploy"| CR
     IMAGE -->|"pulled on deploy"| CR
-
-    %% Users → Container
-    BROWSER -->|"HTTPS port 443"| CR
-
-    %% Secrets injected into container at startup
-    SM -->|"injected as env vars\nat container startup"| CONTAINER
-    SA -->|"grants access to\nSM + GCS"| SM
-    SA -->|"grants access to\nGCS bucket"| GCS
-
-    %% SQLite sync
-    SQLITE_LOCAL -->|"upload every 5 min\n+ on SIGTERM"| BUCKET
-    BUCKET -->|"download\non startup"| SQLITE_LOCAL
-
-    %% Gemini API call
-    BE -->|"GOOGLE_API_KEY\nHTTPS API call"| GEMINI
-
-    %% Logs
+    BROWSER -->|"HTTPS"| CR
+    SM -->|"env vars at startup"| CONTAINER
+    SA -->|"grants access"| SM
+    SA -->|"grants access"| GCS
+    SQLITE_LOCAL -->|"WAL checkpoint +\nupload every 5 min\n+ on SIGTERM"| BUCKET
+    BUCKET -->|"download on startup"| SQLITE_LOCAL
+    BE -->|"GOOGLE_API_KEY"| GEMINI
     CONTAINER -->|"stdout/stderr"| LOGS
-
-    %% Styling
-    classDef gcpService fill:#4285F4,color:#fff,stroke:#2a6dd9
-    classDef container fill:#34A853,color:#fff,stroke:#1e7e34
-    classDef external fill:#EA4335,color:#fff,stroke:#c62828
-    classDef dev fill:#FBBC04,color:#333,stroke:#f09d00
-    classDef user fill:#9C27B0,color:#fff,stroke:#6a0080
-
-    class AR,SM,GCS,IAM,LOG gcpService
-    class CR,CONTAINER,FE,BE,AGENTS,SQLITE_LOCAL container
-    class GEMINI external
-    class DEV,CODE,DOCKER,SCRIPTS dev
-    class USERS,BROWSER user
 ```
 
 ### What Gets Deployed
@@ -106,28 +82,32 @@ Browser → Cloud Run (single container, port 8000)
                ├── /api/session → session management
                └── /health      → health check
 
-SQLite Persistence:
-  DiscoveryAgent/data/discover_prospecting_clean.db  ← synced to/from GCS bucket
-  SuperAgent/data/embeddings/chroma.sqlite3          ← bundled in image (read-only)
+Unified SQLite Persistence (sales_agent.db):
+  17 tables across 7 domains (Discovery, Offer, Order,
+  Payment, Fulfillment, Customer, Communication)
+  WAL mode + FK enforcement
+  Synced to/from GCS bucket every 5 min + on SIGTERM
+  Path: /app/SuperAgent/data/sales_agent.db
 
-Secrets:
-  GOOGLE_API_KEY     → Google Secret Manager
-  SESSION_SECRET_KEY → Google Secret Manager
+Secrets (injected from Secret Manager):
+  GOOGLE_API_KEY     → Gemini API access
+  SESSION_SECRET_KEY → Session cookie signing
 ```
 
 ### How Gemini Is Accessed
 
 The container uses the `GOOGLE_API_KEY` (injected from Secret Manager) to call Google's Gemini API over the internet at `https://generativelanguage.googleapis.com`. Gemini does not run inside the container — it is a remote API call.
 
-### SQLite Data Persistence
+### Unified SQLite Data Persistence
 
-The DiscoveryAgent database is writable at runtime (agents INSERT/UPDATE prospect records). To persist data across container restarts:
+All 10 sub-agents share a single `sales_agent.db` file (17 tables, WAL mode, FK enforcement). The entrypoint script manages GCS synchronization with **WAL checkpoint before every upload** to prevent database corruption:
 
-- On **startup**: the container downloads `discover_prospecting_clean.db` from a GCS bucket
-- Every **5 minutes**: the DB is uploaded back to GCS
-- On **shutdown** (SIGTERM): a final upload runs before the container exits
+- **On startup:** downloads `sales_agent.db` from GCS bucket (`GCS_DATA_BUCKET`)
+- **Every 5 minutes:** runs `PRAGMA wal_checkpoint(TRUNCATE)` then uploads to GCS
+- **On shutdown** (SIGTERM): runs WAL checkpoint + final upload before container exits
+- **If no GCS bucket:** `init_db()` creates a fresh schema on first startup
 
-The `chroma.sqlite3` embeddings file is read-only and bundled directly in the Docker image.
+> **Why WAL checkpoint?** SQLite WAL mode writes changes to a separate `-wal` file. Uploading the `.db` without checkpointing first results in a corrupted/incomplete database. `PRAGMA wal_checkpoint(TRUNCATE)` consolidates all WAL changes into the main `.db` file before upload.
 
 ### Estimated Monthly Cost
 
@@ -212,12 +192,12 @@ export BUCKET_NAME="${PROJECT_ID}-data"
 # Create the bucket
 gcloud storage buckets create gs://$BUCKET_NAME --location=$REGION
 
-# Upload the initial SQLite DB (run from workspace root)
-gcloud storage cp DiscoveryAgent/data/discover_prospecting_clean.db \
-    gs://$BUCKET_NAME/discover_prospecting_clean.db
+# Upload the unified sales_agent.db (run from workspace root)
+gcloud storage cp SuperAgent/data/sales_agent.db \
+    gs://$BUCKET_NAME/sales_agent.db
 ```
 
-Verify the upload at [https://console.cloud.google.com/storage](https://console.cloud.google.com/storage) — click the bucket and confirm the `.db` file is present with a non-zero size.
+Verify the upload at [https://console.cloud.google.com/storage](https://console.cloud.google.com/storage) — click the bucket and confirm `sales_agent.db` is present with a non-zero size.
 
 ### Step 4 — Create Artifact Registry Repository
 
@@ -276,7 +256,8 @@ Make sure **Docker Desktop is running** before executing these commands.
 
 ```bash
 # From workspace root: ConversationalSalesAgent/
-gcloud auth configure-docker $REGION-docker.pkg.dev
+export CLOUDSDK_CORE_PROJECT=$PROJECT_ID
+gcloud auth configure-docker $REGION-docker.pkg.dev --quiet --project=$PROJECT_ID
 
 # Build for Linux/AMD64 (required on Apple Silicon Macs)
 docker build --platform linux/amd64 -t $IMAGE:latest .
@@ -285,12 +266,13 @@ docker build --platform linux/amd64 -t $IMAGE:latest .
 docker push $IMAGE:latest
 ```
 
-> The build takes several minutes — it installs Node.js dependencies, builds the React app, then installs all Python dependencies.
+> The build takes several minutes — it installs Node.js dependencies, builds the React app, then installs all Python dependencies. The image does **not** include the database; it is downloaded from GCS at container startup.
 
 ### Step 8 — Deploy to Cloud Run
 
 ```bash
 gcloud run deploy conversational-sales-agent \
+    --project=$PROJECT_ID \
     --image=$IMAGE:latest \
     --platform=managed \
     --region=$REGION \
@@ -298,6 +280,34 @@ gcloud run deploy conversational-sales-agent \
     --memory=4Gi \
     --cpu=2 \
     --min-instances=0 \
+    --max-instances=1 \
+    --concurrency=10 \
+    --timeout=300 \
+    --execution-environment=gen2 \
+    --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest,SESSION_SECRET_KEY=SESSION_SECRET_KEY:latest" \
+    --set-env-vars="\
+GEMINI_MODEL=gemini-3-flash-preview,\
+LLM_PROVIDER=google,\
+ENABLE_SUB_AGENTS=true,\
+SERVER_HOST=0.0.0.0,\
+SERVER_PORT=8000,\
+LOG_LEVEL=info,\
+DEBUG=false,\
+SMTP_ENABLED=false,\
+MODEL_TEMPERATURE=0.7,\
+MODEL_MAX_OUTPUT_TOKENS=2048,\
+RATE_LIMIT_RPM=20,\
+RATE_LIMIT_RPH=200,\
+GCS_DATA_BUCKET=${BUCKET_NAME},\
+SALES_AGENT_DB_PATH=/app/SuperAgent/data/sales_agent.db,\
+SAFETY_DANGEROUS=BLOCK_LOW_AND_ABOVE,\
+SAFETY_HARASSMENT=BLOCK_LOW_AND_ABOVE,\
+SAFETY_HATE_SPEECH=BLOCK_LOW_AND_ABOVE,\
+SAFETY_SEXUALLY_EXPLICIT=BLOCK_LOW_AND_ABOVE" \
+    --allow-unauthenticated
+```
+
+> **Note:** The `deploy_cloud.sh` script uses `CLOUDSDK_CORE_PROJECT` and `--project=` flags instead of `gcloud config set project` to avoid the quota-project mismatch warning that can hang the CLI.
     --max-instances=1 \
     --concurrency=10 \
     --timeout=300 \
@@ -332,17 +342,14 @@ https://conversational-sales-agent-<random-hash>-uc.a.run.app
 ### Step 9 — Set ALLOWED_ORIGINS to the Deployed URL
 
 > **Your service URLs (both are permanent and point to the same service):**
+> - `https://conversational-sales-agent-647996714470.us-central1.run.app` (new format)
 > - `https://conversational-sales-agent-enu5rlyquq-uc.a.run.app` (classic format)
-> - `https://conversational-sales-agent-647996714470.us-central1.run.app` (new format, project number = 647996714470)
 
 ```bash
 gcloud run services update conversational-sales-agent \
+    --project=$PROJECT_ID \
     --region=$REGION \
     --update-env-vars="ALLOWED_ORIGINS=https://conversational-sales-agent-647996714470.us-central1.run.app,https://conversational-sales-agent-enu5rlyquq-uc.a.run.app"
-
-echo "App is live at:"
-echo "  https://conversational-sales-agent-647996714470.us-central1.run.app"
-echo "  https://conversational-sales-agent-enu5rlyquq-uc.a.run.app"
 ```
 
 ---
@@ -357,17 +364,17 @@ curl https://conversational-sales-agent-647996714470.us-central1.run.app/health
 # Expected: {"status":"ok","agent":"super_sales_agent","model":"gemini-3-flash-preview"}
 
 # 2. Open the app in browser
-open $SERVICE_URL
+open https://conversational-sales-agent-647996714470.us-central1.run.app
 
 # 3. Verify SQLite DB is in GCS
-gcloud storage ls -l gs://$BUCKET_NAME
+gcloud storage ls -l gs://conversational-sales-agent-data/
 ```
 
 Then in the browser:
 1. The React UI should load at the root URL
 2. Start a chat — verify SSE streaming works (messages appear token by token)
 3. Ask about a prospect company — verify the DiscoveryAgent queries the SQLite DB
-4. Wait 5 minutes, then check GCS — the DB file's timestamp should have updated
+4. Wait 5 minutes, then check GCS — the `sales_agent.db` timestamp should have updated
 
 ---
 
@@ -418,12 +425,14 @@ After making any code changes, use the deploy script:
 ```
 
 This handles the full cycle automatically:
-1. Checks gcloud authentication
+1. Checks gcloud authentication (uses `CLOUDSDK_CORE_PROJECT` env var — no `gcloud config set`)
 2. Configures Docker for Artifact Registry
 3. Builds the Docker image (`--platform linux/amd64`)
 4. Pushes the image to Artifact Registry
-5. Deploys the new image to Cloud Run
-6. Prints the live URL
+5. Deploys the new image to Cloud Run with all env vars and secrets
+6. Prints the live URLs
+
+> **Note:** The deploy script avoids `gcloud config set project` which can hang due to quota-project mismatch warnings on some machines. It uses `export CLOUDSDK_CORE_PROJECT` and `--project=` flags instead.
 
 ### Viewing Logs
 
@@ -463,8 +472,27 @@ gcloud storage ls -l gs://conversational-sales-agent-data/
 
 # Download a copy locally for inspection
 gcloud storage cp \
-    gs://conversational-sales-agent-data/discover_prospecting_clean.db \
-    /tmp/discover_local.db
+    gs://conversational-sales-agent-data/sales_agent.db \
+    /tmp/sales_agent_cloud.db
+
+# Verify integrity
+sqlite3 /tmp/sales_agent_cloud.db "PRAGMA integrity_check;"
+
+# Check table counts
+sqlite3 /tmp/sales_agent_cloud.db "SELECT 'accounts', COUNT(*) FROM accounts UNION ALL SELECT 'orders', COUNT(*) FROM orders UNION ALL SELECT 'quotes', COUNT(*) FROM quotes;"
+```
+
+### Uploading a Local DB to GCS
+
+If you need to replace the cloud database with your local copy:
+
+```bash
+# IMPORTANT: Checkpoint WAL before uploading to prevent corruption
+sqlite3 SuperAgent/data/sales_agent.db "PRAGMA wal_checkpoint(TRUNCATE);"
+
+# Upload to GCS
+gcloud storage cp SuperAgent/data/sales_agent.db \
+    gs://conversational-sales-agent-data/sales_agent.db
 ```
 
 ---
@@ -482,6 +510,20 @@ gcloud storage cp \
 | Uvicorn workers | 1 | InMemorySessionService is not shared across processes |
 | Execution env | gen2 | Required for better networking and startup performance |
 
+### Environment Variables
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `GEMINI_MODEL` | `gemini-3-flash-preview` | LLM model for all agents |
+| `GCS_DATA_BUCKET` | `conversational-sales-agent-data` | GCS bucket for DB sync |
+| `SALES_AGENT_DB_PATH` | `/app/SuperAgent/data/sales_agent.db` | Unified DB path inside container |
+| `ENABLE_SUB_AGENTS` | `true` | Load all 10 sub-agents |
+| `LOG_LEVEL` | `info` | Logging verbosity |
+| `RATE_LIMIT_RPM` | `20` | API rate limit (requests/minute) |
+| `RATE_LIMIT_RPH` | `200` | API rate limit (requests/hour) |
+| `ALLOWED_ORIGINS` | `https://...run.app` | CORS allowed origins |
+| `SAFETY_*` | `BLOCK_LOW_AND_ABOVE` | Gemini safety filter settings |
+
 ---
 
 ## Architecture Notes
@@ -495,9 +537,53 @@ Both the React frontend (pre-built static files) and the FastAPI backend run in 
 
 This means the browser always talks to one URL — no CORS issues, no separate frontend hosting.
 
+### Why a Unified Database?
+
+All 10 sub-agents share a single `sales_agent.db` instead of separate per-agent databases. Benefits:
+- **Foreign key integrity** — orders reference quotes, payments reference orders, etc.
+- **Single GCS sync** — one file to upload/download instead of 4+
+- **Cross-agent queries** — `check_customer_state()` can query the full customer lifecycle
+- **WAL checkpoint safety** — one checkpoint covers all data
+
+### Entrypoint Script (entrypoint.sh)
+
+The container entrypoint handles the full DB lifecycle:
+
+```
+Container Start
+  └─ mkdir -p /app/SuperAgent/data
+  └─ export SALES_AGENT_DB_PATH=/app/SuperAgent/data/sales_agent.db
+  └─ if GCS_DATA_BUCKET set:
+       └─ Download sales_agent.db from GCS
+       └─ Start background sync loop (every 5 min):
+            └─ sqlite3 PRAGMA wal_checkpoint(TRUNCATE)
+            └─ Upload to GCS
+       └─ Register SIGTERM trap:
+            └─ Kill sync loop
+            └─ sqlite3 PRAGMA wal_checkpoint(TRUNCATE)
+            └─ Final upload to GCS
+  └─ exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+### Dockerfile (Multi-Stage Build)
+
+```
+Stage 1: frontend-builder (node:20-slim)
+  └─ npm ci + npm run build → produces dist/
+
+Stage 2: runtime (python:3.12-slim)
+  └─ COPY all agent directories (preserves workspace structure)
+  └─ COPY --from=frontend-builder dist/ → client/dist/
+  └─ pip install requirements.txt + google-cloud-storage
+  └─ mkdir -p /app/SuperAgent/data (empty — DB comes from GCS)
+  └─ ENTRYPOINT ["/entrypoint.sh"]
+```
+
+> **Important:** The Docker image does NOT contain the database. The `SuperAgent/data/` directory is created empty; the entrypoint downloads the DB from GCS at startup.
+
 ### Why Not Vertex AI?
 
-This project uses Google AI Studio (`GOOGLE_API_KEY`) to call Gemini directly. Vertex AI is a different Google service that also hosts Gemini but requires separate authentication and configuration. The `google-cloud-aiplatform` package in `requirements.txt` is an unused dependency from the BootStrapAgent template and is not used at runtime.
+This project uses Google AI Studio (`GOOGLE_API_KEY`) to call Gemini directly. Vertex AI is a different Google service that also hosts Gemini but requires separate authentication and configuration.
 
 ### Session State
 
@@ -532,10 +618,21 @@ Common causes:
 - Missing Python package — check if `requirements.txt` is complete
 - Build used wrong platform — always use `--platform linux/amd64`
 
+### "database disk image is malformed"
+Root cause: the DB was uploaded to GCS without WAL checkpointing first. Fix:
+1. Download a known-good local copy: `sqlite3 SuperAgent/data/sales_agent.db "PRAGMA integrity_check;"`
+2. Checkpoint WAL: `sqlite3 SuperAgent/data/sales_agent.db "PRAGMA wal_checkpoint(TRUNCATE);"`
+3. Upload: `gcloud storage cp SuperAgent/data/sales_agent.db gs://conversational-sales-agent-data/sales_agent.db`
+4. Redeploy or restart the Cloud Run service
+
 ### SQLite DB not loading
 - Verify the DB file exists in GCS: `gcloud storage ls gs://conversational-sales-agent-data/`
-- Check the `GCS_DATA_BUCKET` env var is set correctly on the Cloud Run service
+- Check the `GCS_DATA_BUCKET` env var is set on the Cloud Run service
 - Check logs for `[entrypoint]` messages on startup
+- If missing, upload: `gcloud storage cp SuperAgent/data/sales_agent.db gs://conversational-sales-agent-data/sales_agent.db`
+
+### `gcloud config set project` hangs
+Known issue: quota-project mismatch warning stalls the CLI. The `deploy_cloud.sh` script avoids this by using `export CLOUDSDK_CORE_PROJECT=conversational-sales-agent` and `--project=` flags on all gcloud commands.
 
 ### Cold start is slow
 Expected behaviour with `min-instances=0`. The first request after idle takes 5–10 seconds. Subsequent requests are fast. If this is unacceptable, set `--min-instances=1` (adds ~$90/month).
