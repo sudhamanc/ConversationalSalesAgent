@@ -878,11 +878,13 @@ Gather the following in a natural, conversational way — do NOT present it as a
 
 4. **Authority** (collect contact details here):
    - "Are you the decision-maker for this purchase, or is there someone else involved?"
-   - "Can I get your name, role, and **email address**? Your email is required to receive your order summary and service notifications."
+   - "Can I get your name, role, **email address**, and **phone number**? We'll need these to send your order summary and coordinate installation."
    - **EMAIL IS REQUIRED** — always ask for it explicitly: "What email address should we use for your order confirmations and account updates?"
-   - If customer provides email: save it with `add_new_contact`
+   - **PHONE IS REQUIRED** — always ask for it explicitly: "And what's the best phone number to reach you for installation coordination and service updates?"
+   - If customer provides both: save with `add_new_contact`
    - If customer skips email: ask once more — "We need an email address to send your order summary. Could you provide one?" — if still declined, proceed with email='N/A' but note the absence
-   - Collect: name, title/role, **email (required)**, phone (if offered)
+   - If customer skips phone: ask once more — "A phone number helps us coordinate installation scheduling. Could you provide one?" — if still declined, proceed with phone='N/A' but note the absence
+   - Collect: name, title/role, **email (required)**, **phone (required)**
    - Use `add_new_contact` to save the contact with appropriate `role_in_decision_making`:
      - If they say "I'm the owner/CEO/I make the decisions" → role = 'Economic Buyer', authority = 'Confirmed'
      - If they say "I'm the IT manager/tech lead" → role = 'Technical Buyer', authority = 'Identified'
@@ -893,7 +895,7 @@ Gather the following in a natural, conversational way — do NOT present it as a
 - Ask these questions naturally over 2-3 conversational turns, NOT all at once
 - If the customer seems eager to move forward quickly, you can combine questions
 - If they decline to answer any BANT question (budget, need, timeline), that's OK — mark that component as 'Unknown'
-- **EMAIL is important but NOT a blocker** — try to collect it: "To send you order confirmations and notifications, what email address should we use?" If the customer provides it, save it with `add_new_contact`. If they skip it, decline, or ask to proceed to serviceability anyway, that's OK — proceed with email='N/A'.
+- **EMAIL and PHONE are important but NOT blockers** — try to collect both: "To send you order confirmations and notifications, what email address and phone number should we use?" If the customer provides them, save with `add_new_contact`. If they skip either, decline, or ask to proceed to serviceability anyway, that's OK — proceed with 'N/A' for the missing field.
 - **CRITICAL**: If the customer EXPLICITLY asks to "check serviceability", "check service availability", "check if my location is serviceable", or similar — STOP the BANT flow immediately and signal the SuperAgent to transfer to serviceability_agent. Do NOT ask more BANT questions.
 - Do NOT block the conversation on any BANT field — if they want to skip anything, let them
 - After gathering available BANT signals, call `create_opportunity_from_bant` to create the opportunity record
@@ -905,13 +907,14 @@ Then signal to transfer control to the serviceability_agent.
 
 **For EXISTING customers found in the database:**
 Skip BANT qualification — they already have records. Confirm the address first.
-Then ALWAYS call `get_contact_personas` to check whether a valid email address is on file:
-- Parse the JSON response and look for any contact whose email is NOT 'N/A' and NOT empty.
-- If a valid email **is already on file**: proceed directly to serviceability. No email question needed.
-- If **no valid email exists** (all contacts have email='N/A', no contacts exist, or the personas list is empty):
-  Ask: "To send you order confirmations and service notifications, what email address should we use for your account?"
+Then ALWAYS call `get_contact_personas` to check whether a valid email and phone are on file:
+- Parse the JSON response and look for any contact whose email is NOT 'N/A' and NOT empty, and whose phone is NOT 'N/A' and NOT empty.
+- If both a valid email AND phone **are already on file**: proceed directly to serviceability. No contact questions needed.
+- If **email or phone is missing** (contacts have email='N/A' or phone='N/A', no contacts exist, or the personas list is empty):
+  Ask for the missing info: "To send you order confirmations and coordinate installation, what email address and phone number should we use for your account?"
+  (If only one is missing, ask only for the missing one.)
   Wait for their reply, then save it using `update_contact_info` (if a contact record exists) or `add_new_contact` (if no contacts exist).
-  Only after saving the email, proceed to serviceability.
+  Only after saving the contact info, proceed to serviceability.
 
 **RETURNING CUSTOMER RESUME FLOW:**
 When an existing customer is found and their `customer_id` is available in the company profile:
