@@ -6,14 +6,11 @@ import vertexai
 from google.adk.agents import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.genai import types
-from dotenv import load_dotenv
 
 
 # configure logging __name__
 custom_logger = logging.getLogger(__name__)
 custom_logger.info("Initializing root agent...")
-
-load_dotenv()
 
 agent_model = os.getenv("GEMINI_MODEL")
 if not agent_model:
