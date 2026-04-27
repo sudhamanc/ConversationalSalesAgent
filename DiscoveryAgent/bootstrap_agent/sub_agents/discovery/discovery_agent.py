@@ -4,6 +4,7 @@
 import os
 import json
 import logging
+import sys
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 from .db_tools import ProspectingDatabase
@@ -75,6 +76,7 @@ def search_companies(
             },
             "website": company['Website'],
             "customer_status": "Existing Customer" if company.get('Existing Customer') == 'Y' else "Prospect",
+            "customer_id": company.get('customer_id'),
             "current_products": company.get('Current Products'),
             "products_of_interest": company.get('Products of Interest')
         })
@@ -111,6 +113,7 @@ def get_company_profile(company_name: str) -> str:
         },
         "website": company['Website'],
         "customer_status": "Existing Customer" if company.get('Existing Customer') == 'Y' else "Prospect",
+        "customer_id": company.get('customer_id'),
         "current_products": company.get('Current Products'),
         "products_of_interest": company.get('Products of Interest')
     }
@@ -326,21 +329,22 @@ def add_new_company(
         zip_code: ZIP code (optional but recommended for serviceability checks)
 
     Returns:
-        Success or failure message
+        Success or failure message with customer_id
     """
-    success = db.add_company(
+    result = db.add_company(
         company_name, industry, region, street, city, state, website,
         parent_company, existing_customer, current_products, products_of_interest,
         zip_code, address_line2
     )
 
-    result = {
+    output = {
         "action": "add_company",
-        "success": success,
+        "success": result["success"],
+        "customer_id": result.get("customer_id"),
         "company_name": company_name,
-        "message": f"Successfully added company: {company_name}" if success else f"Failed to add company '{company_name}'. It may already exist in the database."
+        "message": result["message"],
     }
-    return json.dumps(result, indent=2)
+    return json.dumps(output, indent=2)
 
 
 def update_company_info(
@@ -617,6 +621,73 @@ def create_opportunity_from_bant(
     return json.dumps(result, indent=2)
 
 
+def check_customer_state(customer_id: str) -> str:
+    logger.info(f"DiscoveryAgent: check_customer_state called with customer_id={customer_id}")
+    """
+    Check the current pipeline state for a returning customer.
+
+    Queries all tables (quotes, carts, orders, payments, fulfillments, customer_master)
+    to return a summary of where this customer left off. Use this when a customer is
+    identified as existing and you want to offer to resume their previous activity.
+
+    Args:
+        customer_id: The customer identifier (e.g., CUST-20260415-001)
+
+    Returns:
+        JSON summary of the customer's current pipeline state including active quotes,
+        pending orders, payment status, and fulfillment progress.
+    """
+    # Import from the unified database module via sys.modules (loaded by SuperAgent)
+    db_mod = sys.modules.get("super_agent.utils.database")
+    if db_mod is None:
+        # Try direct import as fallback
+        try:
+            from super_agent.utils.database import check_customer_state as _check_state
+            result = _check_state(customer_id)
+            return json.dumps(result, indent=2)
+        except ImportError:
+            pass
+
+        # Final fallback: query DB directly
+        import sqlite3
+        db_path = os.getenv("SALES_AGENT_DB_PATH")
+        if not db_path:
+            return json.dumps({"error": "Database not configured", "customer_id": customer_id})
+
+        conn = sqlite3.connect(db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            result = {"customer_id": customer_id, "active_quotes": [], "pending_orders": [], "is_activated_customer": False}
+
+            for row in conn.execute(
+                "SELECT offer_id, total_price, status, created_at, expires_at "
+                "FROM quotes WHERE customer_id = ? AND status = 'active'",
+                (customer_id,),
+            ):
+                result["active_quotes"].append(dict(row))
+
+            for row in conn.execute(
+                "SELECT order_id, offer_id, status, total_amount, created_at "
+                "FROM orders WHERE customer_id = ? AND status IN ('draft','pending_payment','paid')",
+                (customer_id,),
+            ):
+                result["pending_orders"].append(dict(row))
+
+            cm = conn.execute(
+                "SELECT customer_id FROM customer_master WHERE customer_id = ?",
+                (customer_id,),
+            ).fetchone()
+            result["is_activated_customer"] = cm is not None
+
+            return json.dumps(result, indent=2)
+        finally:
+            conn.close()
+
+    result = db_mod.check_customer_state(customer_id)
+    return json.dumps(result, indent=2)
+
+
 # Define the discovery agent
 logger.info("DiscoveryAgent: Instantiating discovery_agent Agent object.")
 discovery_agent = Agent(
@@ -841,6 +912,21 @@ Then ALWAYS call `get_contact_personas` to check whether a valid email address i
   Ask: "To send you order confirmations and service notifications, what email address should we use for your account?"
   Wait for their reply, then save it using `update_contact_info` (if a contact record exists) or `add_new_contact` (if no contacts exist).
   Only after saving the email, proceed to serviceability.
+
+**RETURNING CUSTOMER RESUME FLOW:**
+When an existing customer is found and their `customer_id` is available in the company profile:
+1. Call `check_customer_state(customer_id)` to see if they have active quotes, pending orders, etc.
+2. If the result shows active_quotes, pending_orders, or in-progress fulfillments, inform the customer:
+   - Active quotes: "I see you have an active quote (offer_id) for $X/month. Would you like to proceed with that, or start fresh?"
+   - Pending orders: "You have a pending order (order_id) in status [status]. Would you like to continue with that?"
+   - In-progress fulfillment: "Your service installation is [status]. Would you like an update?"
+3. If `is_activated_customer` is True: "Welcome back! You're already an active customer. How can I help you today?"
+4. If no active pipeline items exist, proceed normally to serviceability check.
+
+**CRITICAL HANDOFF RULES after presenting resume options:**
+- If customer says "proceed with that quote", "yes use that quote", "proceed", "use the existing quote" → Signal that you are DONE. Say: "Great, I'll hand you over to our ordering team to proceed with quote [offer_id]." Then END your turn so the orchestrator routes to order_agent.
+- If customer says "start fresh" → Proceed to serviceability check as normal.
+- Do NOT keep the conversation stuck in discovery after presenting quote options. Your job is to identify intent and hand off.
 """,
     description="Specializes in customer discovery, identifying intent, analyzing company details, and mapping contact personas for sales prospecting.",
     tools=[
@@ -856,5 +942,6 @@ Then ALWAYS call `get_contact_personas` to check whether a valid email address i
         FunctionTool(update_contact_info),
         FunctionTool(add_or_update_insights),
         FunctionTool(create_opportunity_from_bant),
+        FunctionTool(check_customer_state),
     ],
 )

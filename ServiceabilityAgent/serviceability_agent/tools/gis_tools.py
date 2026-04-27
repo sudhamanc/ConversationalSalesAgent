@@ -604,7 +604,7 @@ def _sanitize_mock_coverage_data() -> None:
 _sanitize_mock_coverage_data()
 
 
-def check_service_availability(address: Dict[str, str]) -> Dict[str, Any]:
+def check_service_availability(street: str, city: str, state: str, zip_code: str) -> Dict[str, Any]:
     """
     Checks if telecom services are available at the given address.
     
@@ -615,34 +615,20 @@ def check_service_availability(address: Dict[str, str]) -> Dict[str, Any]:
     comes from the GIS API (or mock data in development).
     
     Args:
-        address: Dict with street, city, state, zip_code keys
+        street: Street address (e.g. "123 Market Street")
+        city: City name (e.g. "Philadelphia")
+        state: State abbreviation (e.g. "PA")
+        zip_code: ZIP code (e.g. "19107")
         
     Returns:
         ServiceabilityResult dict with availability status, infrastructure details,
         network elements (switch, cable pairs), and speed capabilities
-        
-    Example:
-        >>> check_service_availability({
-        ...     "street": "123 Market Street",
-        ...     "city": "Philadelphia",
-        ...     "state": "PA",
-        ...     "zip_code": "19107"
-        ... })
-        {
-            "serviceable": True,
-            "address": {...},
-            "infrastructure": {
-                "type": "Fiber",
-                "network_element": {"switch_id": "PHI-SW-001", ...},
-                "speed_capability": {"min_speed_mbps": 100, "max_speed_mbps": 10000}
-            },
-            "service_zone": "Metro-East-PA"
-        }
     """
-    logger.info(f"Checking serviceability for: {address['street']}, {address['city']}, {address['state']} {address['zip_code']}")
+    address = {"street": street, "city": city, "state": state, "zip_code": zip_code}
+    logger.info(f"Checking serviceability for: {street}, {city}, {state} {zip_code}")
     
     # Generate cache key
-    cache_key = f"serviceability:{address['zip_code']}:{address['street'].lower()}"
+    cache_key = f"serviceability:{zip_code}:{street.lower()}"
     
     # Check cache first (24-hour TTL)
     cached = get_cached_result(cache_key)

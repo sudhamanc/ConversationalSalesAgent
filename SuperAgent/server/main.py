@@ -24,6 +24,7 @@ def _patched_log(self, level, msg, args, **kwargs):
 _logging.Logger._log = _patched_log
 import logging
 import uvicorn
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +42,7 @@ from super_agent import get_agent
 from api.chat import router as chat_router, init_runner
 from api.session import router as session_router
 from utils.logger import get_logger
+from super_agent.utils.database import cleanup_stale_records
 
 # Keep application-level logging at INFO; suppress verbose ADK/GenAI debug output
 logging.basicConfig(level=logging.INFO)
@@ -82,8 +84,30 @@ async def lifespan(app: FastAPI):
         f"port={settings.server.port}, "
         f"sub_agents_enabled={settings.agent.enable_sub_agents}"
     )
+
+    # Run TTL cleanup for stale records from previous session
+    try:
+        counts = cleanup_stale_records()
+        logger.info(f"Startup cleanup complete: {counts}")
+    except Exception as exc:
+        logger.warning(f"Startup cleanup failed (non-fatal): {exc}")
+
+    # Schedule hourly background cleanup
+    async def _hourly_cleanup():
+        while True:
+            await asyncio.sleep(3600)  # 1 hour
+            try:
+                counts = cleanup_stale_records()
+                logger.info(f"Hourly cleanup: {counts}")
+            except Exception as exc:
+                logger.warning(f"Hourly cleanup failed (non-fatal): {exc}")
+
+    cleanup_task = asyncio.create_task(_hourly_cleanup())
+
     yield
+
     # Shutdown
+    cleanup_task.cancel()
     logger.info("SuperAgent server shutting down")
 
 app = FastAPI(

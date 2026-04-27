@@ -15,8 +15,11 @@ class NotificationType(str, Enum):
     PAYMENT_FAILED = "payment_failed"
     INSTALLATION_SCHEDULED = "installation_scheduled"
     INSTALLATION_REMINDER = "installation_reminder"
+    INSTALL_DISPATCHED = "install_dispatched"
+    INSTALL_COMPLETE = "install_complete"
     SERVICE_ACTIVATED = "service_activated"
     ORDER_STATUS_UPDATE = "order_status_update"
+    ORDER_CANCELLED = "order_cancelled"
     ABANDONED_CART = "abandoned_cart"
     GENERIC = "generic"
 

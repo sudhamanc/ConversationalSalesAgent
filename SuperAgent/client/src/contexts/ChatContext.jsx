@@ -31,6 +31,15 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([]);
   const [journeySteps, setJourneySteps] = useState([]);
   const [cart, setCart] = useState(null);
+  const [activities, setActivities] = useState({
+    customer: null,
+    quote: null,
+    order: null,
+    scheduling: null,
+    payment: null,
+    fulfillment: [],
+    notifications: [],
+  });
   const [isStreaming, setIsStreaming] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const abortRef = useRef(false);
@@ -221,6 +230,44 @@ export function ChatProvider({ children }) {
             }
             return updated;
           });
+        },
+        // onActivityUpdate
+        (event) => {
+          if (!event || !event.category || !event.data) return;
+          setActivities((prev) => {
+            const next = { ...prev };
+            if (event.category === "customer") {
+              next.customer = event.data;
+            } else if (event.category === "notification") {
+              next.notifications = [...prev.notifications, { tool: event.tool, ...event.data, _ts: Date.now() }];
+            } else if (event.category === "fulfillment") {
+              next.fulfillment = [...prev.fulfillment, { tool: event.tool, ...event.data, _ts: Date.now() }];
+            } else if (event.category === "quote") {
+              next.quote = event.data;
+            } else if (event.category === "order") {
+              next.order = { ...prev.order, ...event.data, tool: event.tool };
+            } else if (event.category === "scheduling") {
+              next.scheduling = event.data;
+            } else if (event.category === "payment") {
+              next.payment = { ...event.data, tool: event.tool, _ts: Date.now() };
+            }
+            return next;
+          });
+        },
+        // onStructuredCard — attach card data to the current assistant message
+        (event) => {
+          if (!event || !event.card_type || !event.data) return;
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                structuredCard: { type: event.card_type, data: event.data },
+              };
+            }
+            return updated;
+          });
         }
       );
     },
@@ -231,6 +278,7 @@ export function ChatProvider({ children }) {
     setMessages([]);
     setJourneySteps([]);
     setCart(null);
+    setActivities({ customer: null, quote: null, order: null, scheduling: null, payment: null, fulfillment: [], notifications: [] });
     setIsStreaming(false);
     abortRef.current = true;
     stepCountRef.current = 0;
@@ -248,6 +296,7 @@ export function ChatProvider({ children }) {
         clearChat,
         journeySteps,
         cart,
+        activities,
         isSidebarOpen,
         setIsSidebarOpen,
       }}

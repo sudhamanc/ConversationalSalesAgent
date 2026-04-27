@@ -32,13 +32,14 @@ _DEFAULT_EXPIRY_DAYS = 30
 
 
 def _get_db_path() -> str:
-    db_path = os.getenv("QUOTES_DB_PATH", _DEFAULT_DB_PATH)
+    # Prefer unified DB, then legacy env var, then default
+    db_path = os.getenv("SALES_AGENT_DB_PATH") or os.getenv("QUOTES_DB_PATH", _DEFAULT_DB_PATH)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     return db_path
 
 
 def _get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(_get_db_path())
+    conn = sqlite3.connect(_get_db_path(), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -65,6 +66,7 @@ def init_db() -> None:
                     full_quote_json TEXT NOT NULL,
                     status        TEXT NOT NULL DEFAULT 'active',
                     created_at    TEXT NOT NULL,
+                    updated_at    TEXT NOT NULL,
                     expires_at    TEXT NOT NULL
                 );
 
@@ -102,8 +104,8 @@ def save_quote(
                    (offer_id, customer_id, company_name, items_json, term_months,
                     bant_score, subtotal, total_discount, total_price,
                     monthly_total, yearly_total, full_quote_json, status,
-                    created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    created_at, updated_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     offer_id,
                     customer_id,
@@ -118,6 +120,7 @@ def save_quote(
                     quote_payload.get("yearly_total", 0.0),
                     json.dumps(quote_payload, default=str),
                     "active",
+                    now,
                     now,
                     expires,
                 ),
@@ -184,9 +187,10 @@ def mark_quote_ordered(offer_id: str) -> bool:
     with _lock:
         conn = _get_connection()
         try:
+            now = datetime.now().isoformat()
             cur = conn.execute(
-                "UPDATE quotes SET status = 'ordered' WHERE offer_id = ?",
-                (offer_id,),
+                "UPDATE quotes SET status = 'ordered', updated_at = ? WHERE offer_id = ?",
+                (now, offer_id),
             )
             conn.commit()
             return cur.rowcount > 0

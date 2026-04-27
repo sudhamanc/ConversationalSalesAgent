@@ -110,30 +110,27 @@ def validate_and_parse_address(address_string: str) -> Dict[str, Any]:
     }
 
 
-def normalize_address(address: Dict[str, str]) -> str:
+def normalize_address(street: str, city: str, state: str, zip_code: str) -> str:
     """
-    Normalizes an address dict to standard format for API calls.
+    Normalizes address components to standard format for API calls.
     
     Args:
-        address: Dict with street, city, state, zip_code keys
+        street: Street address (e.g. "123 market st")
+        city: City name (e.g. "philadelphia")
+        state: State abbreviation (e.g. "PA")
+        zip_code: ZIP code (e.g. "19107")
         
     Returns:
         Standardized address string
         
     Example:
-        >>> normalize_address({
-        ...     "street": "123 market st",
-        ...     "city": "philadelphia",
-        ...     "state": "PA",
-        ...     "zip_code": "19107"
-        ... })
+        >>> normalize_address("123 market st", "philadelphia", "PA", "19107")
         "123 Market St, Philadelphia, PA 19107"
     """
     # Title case for street and city
-    street = address['street'].title()
-    city = address['city'].title()
-    state = address['state'].upper()
-    zip_code = address['zip_code']
+    street = street.title()
+    city = city.title()
+    state = state.upper()
     
     normalized = f"{street}, {city}, {state} {zip_code}"
     logger.debug(f"Normalized address: {normalized}")

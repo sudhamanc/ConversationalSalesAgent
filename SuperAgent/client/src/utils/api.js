@@ -49,6 +49,8 @@ export function resetSession() {
  * @param {function} onError - Called on error with error message.
  * @param {function} [onCartUpdate] - Called with cart data when a cart_update event arrives.
  * @param {function} [onSuggestions] - Called with (suggestionsArray, authorString) for LLM suggestion events.
+ * @param {function} [onActivityUpdate] - Called with {category, tool, data} for activity panel events.
+ * @param {function} [onStructuredCard] - Called with {card_type, data} for inline structured cards in chat.
  */
 export async function streamChat(
   message,
@@ -56,7 +58,9 @@ export async function streamChat(
   onDone,
   onError,
   onCartUpdate,
-  onSuggestions
+  onSuggestions,
+  onActivityUpdate,
+  onStructuredCard
 ) {
   const token = await getToken();
 
@@ -73,7 +77,7 @@ export async function streamChat(
     if (res.status === 401) {
       // Session expired – create a new one and retry once
       await createSession();
-      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions);
+      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions, onActivityUpdate, onStructuredCard);
     }
 
     const reader = res.body.getReader();
@@ -99,6 +103,10 @@ export async function streamChat(
             onToken(payload.content, payload.author);
           } else if (payload.type === "cart_update") {
             onCartUpdate?.(payload.data);
+          } else if (payload.type === "activity_update") {
+            onActivityUpdate?.(payload);
+          } else if (payload.type === "structured_card") {
+            onStructuredCard?.(payload);
           } else if (payload.type === "suggestions") {
             onSuggestions?.(payload.data, payload.author);
           } else if (payload.type === "done") {

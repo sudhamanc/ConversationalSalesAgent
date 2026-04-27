@@ -3,7 +3,10 @@ function normalizeText(value) {
 }
 
 function extractJsonBlock(text) {
-  const input = normalizeText(text);
+  let input = normalizeText(text);
+  // Strip markdown code fences if present
+  const fenceMatch = input.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) input = fenceMatch[1].trim();
   if (!input.includes("{")) return null;
 
   let start = -1;
@@ -24,8 +27,37 @@ function extractJsonBlock(text) {
   return null;
 }
 
+/**
+ * Find a JSON block containing a specific key. Handles messages with multiple JSON objects.
+ */
+function findJsonBlockWithKey(text, key) {
+  let input = normalizeText(text);
+  const fenceMatch = input.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) input = fenceMatch[1].trim();
+  if (!input.includes("{")) return null;
+
+  let start = -1;
+  let depth = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (char === "{") {
+      if (start === -1) start = index;
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        const block = input.slice(start, index + 1);
+        if (block.includes(`"${key}"`)) return block;
+        // Reset and continue looking for next JSON block
+        start = -1;
+      }
+    }
+  }
+  return null;
+}
+
 export function parsePaymentConfirmation(text) {
-  const jsonBlock = extractJsonBlock(text);
+  const jsonBlock = findJsonBlockWithKey(text, "payment_confirmation");
   if (!jsonBlock) return null;
   try {
     const parsed = JSON.parse(jsonBlock);
@@ -38,7 +70,7 @@ export function parsePaymentConfirmation(text) {
 }
 
 export function parseOrderConfirmation(text) {
-  const jsonBlock = extractJsonBlock(text);
+  const jsonBlock = findJsonBlockWithKey(text, "order_confirmation");
   if (!jsonBlock) return null;
   try {
     const parsed = JSON.parse(jsonBlock);

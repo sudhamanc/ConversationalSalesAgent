@@ -2,6 +2,8 @@
 
 import sqlite3
 import os
+import re
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 import pandas as pd
 
@@ -11,15 +13,19 @@ class ProspectingDatabase:
     
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # Default to data folder relative to project root
+            # Prefer unified DB if SALES_AGENT_DB_PATH is set
+            db_path = os.getenv("SALES_AGENT_DB_PATH")
+        if db_path is None:
+            # Fallback to legacy Discovery-only DB
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
             db_path = os.path.join(project_root, "data", "discover_prospecting_clean.db")
         self.db_path = db_path
     
     def _execute_query(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
         """Execute a query and return results as list of dictionaries."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
         cursor = conn.cursor()
         
         try:
@@ -34,7 +40,8 @@ class ProspectingDatabase:
     
     def _execute_write(self, query: str, params: tuple = None) -> int:
         """Execute a write query (INSERT, UPDATE, DELETE) and return rows affected."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
         cursor = conn.cursor()
         
         try:
@@ -47,6 +54,21 @@ class ProspectingDatabase:
         finally:
             conn.close()
     
+    def _normalize_company_name(self, name: str) -> str:
+        """Strip trailing punctuation and normalize common suffixes for fuzzy matching.
+
+        'SpinDrift Inc.' → 'SpinDrift Inc'
+        'SpinDrift, Inc' → 'SpinDrift Inc'
+        'SpinDrift  Inc' → 'SpinDrift Inc'
+        """
+        if not name:
+            return name
+        # Remove trailing periods, commas, whitespace
+        name = name.strip().rstrip(".,;")
+        # Collapse multiple spaces
+        name = re.sub(r"\s+", " ", name)
+        return name
+
     def search_companies(self, company_name: str = None, industry: str = None, region: str = None,
                           customer_status: str = None, street: str = None, city: str = None,
                           state: str = None) -> List[Dict[str, Any]]:
@@ -64,11 +86,12 @@ class ProspectingDatabase:
         """
         query = """SELECT "Company Name", "Parent Company", Industry, "Territory/Region",
                    Street, address_line2, City, State, zip_code, Website, "Existing Customer",
-                   "Current Products", "Products of Interest" FROM accounts WHERE 1=1"""
+                   "Current Products", "Products of Interest", customer_id FROM accounts WHERE 1=1"""
         conditions = []
         params = []
 
         if company_name:
+            company_name = self._normalize_company_name(company_name)
             conditions.append("\"Company Name\" LIKE ?")
             params.append(f"%{company_name}%")
         if street:
@@ -97,10 +120,12 @@ class ProspectingDatabase:
     
     def get_company_details(self, company_name: str) -> Dict[str, Any]:
         """Get detailed information about a specific company including location, customer status, and products."""
+        company_name = self._normalize_company_name(company_name)
         query = """
         SELECT a."Company Name", a."Parent Company", a.Industry, a."Territory/Region",
                a.Street, a.address_line2, a.City, a.State, a.zip_code, a.Website,
                a."Existing Customer", a."Current Products", a."Products of Interest",
+               a.customer_id,
                s."Estimated Annual Spend", s.Digital, s.Programmatic, 
                s.TV, s.Audio, s.OOH, s.Search, s.Social, s."Primary Agency"
         FROM accounts a
@@ -188,11 +213,30 @@ class ProspectingDatabase:
         return self._execute_query(query, (keyword, keyword))    
     # ==================== WRITE OPERATIONS ====================
     
+    def _generate_customer_id(self) -> str:
+        """Generate a unique customer_id in format CUST-YYYYMMDD-XXX."""
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        try:
+            row = conn.execute(
+                "SELECT customer_id FROM accounts WHERE customer_id IS NOT NULL "
+                "ORDER BY customer_id DESC LIMIT 1"
+            ).fetchone()
+            next_idx = 1
+            if row and row[0]:
+                try:
+                    next_idx = int(row[0].split("-")[-1]) + 1
+                except (ValueError, IndexError):
+                    next_idx = 1
+            return f"CUST-{today}-{next_idx:03d}"
+        finally:
+            conn.close()
+
     def add_company(self, company_name: str, industry: str, region: str,
                    street: str, city: str, state: str, website: str,
                    parent_company: str = None, existing_customer: str = 'N',
                    current_products: str = None, products_of_interest: str = None,
-                   zip_code: str = None, address_line2: str = None) -> bool:
+                   zip_code: str = None, address_line2: str = None) -> Dict[str, Any]:
         """Add a new company to accounts table.
 
         Args:
@@ -211,24 +255,33 @@ class ProspectingDatabase:
             zip_code: ZIP code (optional)
 
         Returns:
-            True if successful, False otherwise
+            dict with 'success' (bool), 'customer_id' (str or None), and 'message' (str)
         """
+        now = datetime.now(timezone.utc).isoformat()
+        customer_id = self._generate_customer_id()
+
         query = """
         INSERT INTO accounts (
             "Company Name", "Parent Company", Industry, "Territory/Region",
             Street, address_line2, City, State, zip_code, Website, "Existing Customer",
-            "Current Products", "Products of Interest"
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "Current Products", "Products of Interest",
+            customer_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
             rows = self._execute_write(query, (
                 company_name, parent_company, industry, region,
                 street, address_line2, city, state, zip_code, website, existing_customer,
-                current_products, products_of_interest
+                current_products, products_of_interest,
+                customer_id, now, now
             ))
-            return rows > 0
+            if rows > 0:
+                return {"success": True, "customer_id": customer_id,
+                        "message": f"Company '{company_name}' added with customer_id {customer_id}"}
+            return {"success": False, "customer_id": None, "message": "Insert failed"}
         except sqlite3.IntegrityError:
-            return False  # Company already exists
+            return {"success": False, "customer_id": None,
+                    "message": f"Company '{company_name}' already exists"}
     
     def update_company(self, company_name: str, **kwargs) -> bool:
         """Update company information.
@@ -294,13 +347,14 @@ class ProspectingDatabase:
         query = """
         INSERT INTO contacts (
             "Company Name", "Name", Title, "Role in Decision Making",
-            Email, Phone, Notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            Email, Phone, Notes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         try:
+            now = datetime.now(timezone.utc).isoformat()
             rows = self._execute_write(query, (
                 company_name, contact_name, title, role_in_decision_making,
-                email, phone, notes
+                email, phone, notes, now
             ))
             return rows > 0
         except sqlite3.IntegrityError:

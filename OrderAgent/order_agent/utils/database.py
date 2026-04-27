@@ -33,13 +33,14 @@ _lock = threading.Lock()
 
 
 def _get_db_path() -> str:
-    db_path = os.getenv("ORDERS_DB_PATH", _DEFAULT_DB_PATH)
+    # Prefer unified DB, then legacy env var, then default
+    db_path = os.getenv("SALES_AGENT_DB_PATH") or os.getenv("ORDERS_DB_PATH", _DEFAULT_DB_PATH)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     return db_path
 
 
 def _get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(_get_db_path())
+    conn = sqlite3.connect(_get_db_path(), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -56,6 +57,7 @@ def init_db() -> None:
                     cart_id       TEXT PRIMARY KEY,
                     customer_id   TEXT NOT NULL,
                     total_amount  REAL NOT NULL DEFAULT 0.0,
+                    status        TEXT NOT NULL DEFAULT 'active',
                     created_at    TEXT NOT NULL,
                     updated_at    TEXT NOT NULL,
                     expires_at    TEXT
@@ -63,6 +65,9 @@ def init_db() -> None:
 
                 CREATE INDEX IF NOT EXISTS idx_carts_customer
                     ON carts(customer_id);
+
+                CREATE INDEX IF NOT EXISTS idx_carts_status
+                    ON carts(status);
 
                 CREATE TABLE IF NOT EXISTS cart_items (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +92,8 @@ def init_db() -> None:
                     status         TEXT NOT NULL DEFAULT 'draft',
                     total_amount   REAL NOT NULL DEFAULT 0.0,
                     created_at     TEXT NOT NULL,
-                    updated_at     TEXT NOT NULL
+                    updated_at     TEXT NOT NULL,
+                    expires_at     TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_orders_customer
@@ -95,6 +101,9 @@ def init_db() -> None:
 
                 CREATE INDEX IF NOT EXISTS idx_orders_offer
                     ON orders(offer_id);
+
+                CREATE INDEX IF NOT EXISTS idx_orders_status
+                    ON orders(status);
 
                 CREATE TABLE IF NOT EXISTS order_items (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,12 +134,13 @@ def save_cart(cart: Dict[str, Any]) -> None:
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO carts
-                   (cart_id, customer_id, total_amount, created_at, updated_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (cart_id, customer_id, total_amount, status, created_at, updated_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     cart["cart_id"],
                     cart["customer_id"],
                     cart["total_amount"],
+                    cart.get("status", "active"),
                     cart["created_at"],
                     cart["updated_at"],
                     cart.get("expires_at"),
@@ -167,6 +177,7 @@ def load_cart(cart_id: str) -> Optional[Dict[str, Any]]:
                 "cart_id": row["cart_id"],
                 "customer_id": row["customer_id"],
                 "total_amount": row["total_amount"],
+                "status": row["status"] if "status" in row.keys() else "active",
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "expires_at": row["expires_at"],
@@ -226,8 +237,8 @@ def save_order(order_dict: Dict[str, Any]) -> None:
                 """INSERT OR REPLACE INTO orders
                    (order_id, customer_name, customer_id, service_address,
                     contact_phone, contact_email, offer_id, status,
-                    total_amount, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    total_amount, created_at, updated_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     order_dict["order_id"],
                     order_dict["customer_name"],
@@ -240,6 +251,7 @@ def save_order(order_dict: Dict[str, Any]) -> None:
                     order_dict["total_amount"],
                     order_dict["created_at"],
                     order_dict["updated_at"],
+                    order_dict.get("expires_at"),
                 ),
             )
             conn.execute("DELETE FROM order_items WHERE order_id = ?", (order_dict["order_id"],))
@@ -304,6 +316,7 @@ def update_order_field(order_id: str, **fields) -> bool:
     allowed = {
         "customer_name", "customer_id", "service_address", "contact_phone",
         "contact_email", "offer_id", "status", "total_amount", "updated_at",
+        "expires_at",
     }
     bad = set(fields) - allowed
     if bad:

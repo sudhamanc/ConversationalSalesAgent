@@ -90,9 +90,9 @@ function fromOffer(content) {
 
 function fromOrder() {
   return [
-    { text: "Process payment for this order" },
+    { text: "Simulate install day" },
     { text: "Show my order summary" },
-    { text: "What are the next steps after order creation?" },
+    { text: "Send order confirmation to customer" },
   ];
 }
 
@@ -106,9 +106,9 @@ function fromPayment() {
 
 function fromFulfillment() {
   return [
-    { text: "Send installation confirmation to customer" },
-    { text: "Show activation status" },
-    { text: "Reschedule installation" },
+    { text: "Simulate install day" },
+    { text: "Activate my service" },
+    { text: "Show fulfillment status" },
   ];
 }
 

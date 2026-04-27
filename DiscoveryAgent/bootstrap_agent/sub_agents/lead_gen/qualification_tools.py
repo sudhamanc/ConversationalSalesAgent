@@ -18,8 +18,9 @@ class LeadQualificationDatabase:
     
     def _execute_query(self, query: str, params: tuple = None) -> List[Dict[str, Any]]:
         """Execute a query and return results as list of dictionaries."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
         cursor = conn.cursor()
         
         try:
@@ -34,7 +35,8 @@ class LeadQualificationDatabase:
     
     def _execute_write(self, query: str, params: tuple = None) -> int:
         """Execute a write query (INSERT, UPDATE, DELETE) and return rows affected."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
         cursor = conn.cursor()
         
         try:

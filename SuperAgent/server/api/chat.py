@@ -107,9 +107,9 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
             f"Assistant response: {assistant_message}\n"
         )
 
-        # Use gemini-2.5-flash for suggestions — same model as agent, confirmed working quota.
+        # Use configured model for suggestions
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 temperature=0.2,
@@ -224,6 +224,7 @@ async def _stream_from_runner(
         response_parts: list[str] = []
         last_text_author: str | None = None
         _retry = False
+        _provisioning_done = False
 
         try:
             new_message = types.Content(
@@ -241,6 +242,15 @@ async def _stream_from_runner(
                 session_id=session_id,
                 new_message=new_message,
             ):
+                # Debug: log every event for diagnosing empty response issues
+                logger.debug(
+                    f"ADK event: author={event.author}, "
+                    f"has_content={bool(event.content)}, "
+                    f"is_final={event.is_final_response() if hasattr(event, 'is_final_response') else '?'}, "
+                    f"turn_complete={getattr(event, 'turn_complete', '?')}, "
+                    f"error={event.error_message or None}, "
+                    f"parts_types={[type(p).__name__ for p in (event.content.parts if event.content and hasattr(event.content, 'parts') and event.content.parts else [])]}"
+                )
                 if event.error_message:
                     # Suppress "Unknown error" when we already sent content — Gemini
                     # sometimes fires this after a mixed text+function_call turn.
@@ -281,14 +291,155 @@ async def _stream_from_runner(
                             yield f"data: {payload}\n\n"
                             sent_content = True
 
+                        # Log function calls for debugging
+                        if hasattr(part, 'function_call') and part.function_call:
+                            fc = part.function_call
+                            logger.info(f"Tool call by {event.author}: {fc.name}({dict(fc.args) if fc.args else {}})")
+
                         # Emit cart_update events for cart/order tool responses
                         if hasattr(part, 'function_response') and part.function_response:
                             fn_name = getattr(part.function_response, 'name', '')
                             fn_response = getattr(part.function_response, 'response', None)
+                            logger.info(f"Tool response for {fn_name}: success={fn_response.get('success') if isinstance(fn_response, dict) else '?'}")
                             cart_tools = {'create_cart', 'add_to_cart', 'remove_from_cart', 'get_cart', 'clear_cart'}
-                            order_tools = {'create_order', 'modify_order', 'get_order'}
+                            order_tools = {'create_order', 'modify_order', 'get_order', 'update_order_status'}
+                            quote_tools = {'generate_offer', 'calculate_pricing', 'build_quote', 'generate_offer_quote'}
+                            scheduling_tools = {'schedule_installation', 'check_availability'}
+                            fulfillment_tools = {'provision_equipment', 'dispatch_technician', 'activate_service', 'run_service_tests'}
+                            payment_tools = {'process_payment', 'run_credit_check', 'authorize_payment'}
+                            notification_tools = {'send_order_confirmation', 'send_payment_notification', 'send_quote_confirmation', 'send_installation_reminder', 'send_service_activated_notification', 'send_order_status_update'}
+
                             if isinstance(fn_response, dict) and fn_response.get('success'):
+                                # --- Customer identity event ---
+                                if fn_response.get('customer_id') and fn_response.get('company_name'):
+                                    customer_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "customer",
+                                        "tool": fn_name,
+                                        "data": {"customer_id": fn_response["customer_id"], "company_name": fn_response["company_name"]},
+                                    })
+                                    yield f"data: {customer_payload}\n\n"
+
+                                # --- Activity panel events ---
+                                # Order
+                                if fn_name in order_tools:
+                                    activity_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "order",
+                                        "tool": fn_name,
+                                        "data": fn_response,
+                                    })
+                                    yield f"data: {activity_payload}\n\n"
+
+                                # Scheduling
+                                if fn_name in scheduling_tools:
+                                    activity_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "scheduling",
+                                        "tool": fn_name,
+                                        "data": fn_response,
+                                    })
+                                    yield f"data: {activity_payload}\n\n"
+
+                                # Fulfillment (provisioning + activation)
+                                if fn_name in fulfillment_tools:
+                                    try:
+                                        activity_payload = json.dumps({
+                                            "type": "activity_update",
+                                            "category": "fulfillment",
+                                            "tool": fn_name,
+                                            "data": fn_response,
+                                        })
+                                        yield f"data: {activity_payload}\n\n"
+                                        logger.info(f"[session:{session_id}] Emitted fulfillment activity_update for {fn_name}")
+                                    except (TypeError, ValueError) as ser_err:
+                                        logger.error(f"[session:{session_id}] Failed to serialize fulfillment activity for {fn_name}: {ser_err}")
+
+                                    # Track that provisioning Phase 1 completed (for activation suggestion)
+                                    if fn_name == "dispatch_technician":
+                                        _provisioning_done = True
+
+                                # Payment
+                                if fn_name in payment_tools:
+                                    activity_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "payment",
+                                        "tool": fn_name,
+                                        "data": fn_response,
+                                    })
+                                    yield f"data: {activity_payload}\n\n"
+                                    # Also update order status to reflect payment success
+                                    if fn_name == "process_payment" and fn_response.get("status") == "approved":
+                                        order_status_payload = json.dumps({
+                                            "type": "activity_update",
+                                            "category": "order",
+                                            "tool": "payment_update",
+                                            "data": {"payment_status": "paid", "status": "confirmed"},
+                                        })
+                                        yield f"data: {order_status_payload}\n\n"
+
+                                # Notifications (explicit tool calls)
+                                if fn_name in notification_tools:
+                                    activity_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "notification",
+                                        "tool": fn_name,
+                                        "data": fn_response,
+                                    })
+                                    yield f"data: {activity_payload}\n\n"
+
+                                # Auto-notifications embedded in other tools (create_order, process_payment)
+                                if fn_response.get('email_notification_id') or fn_response.get('notification_id'):
+                                    # Map source tool to proper notification label
+                                    _notif_tool_map = {
+                                        "create_order": "send_order_confirmation",
+                                        "process_payment": "send_payment_notification",
+                                    }
+                                    notif_data = {
+                                        "notification_id": fn_response.get('email_notification_id') or fn_response.get('notification_id'),
+                                        "triggered_by": fn_name,
+                                        "status": "sent",
+                                    }
+                                    activity_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "notification",
+                                        "tool": _notif_tool_map.get(fn_name, fn_name),
+                                        "data": notif_data,
+                                    })
+                                    yield f"data: {activity_payload}\n\n"
+
+                                # --- Cart update (existing logic) ---
                                 cart_data = None
+
+                            # Quote tools don't wrap in {success: true} — check for offer_id instead
+                            if isinstance(fn_response, dict) and fn_name in quote_tools and fn_response.get('offer_id'):
+                                activity_payload = json.dumps({
+                                    "type": "activity_update",
+                                    "category": "quote",
+                                    "tool": fn_name,
+                                    "data": fn_response,
+                                })
+                                yield f"data: {activity_payload}\n\n"
+                                # Also emit structured_card so the chat bubble renders a QuoteCard
+                                card_payload = json.dumps({
+                                    "type": "structured_card",
+                                    "card_type": "quote",
+                                    "data": fn_response,
+                                })
+                                yield f"data: {card_payload}\n\n"
+                                # Emit notification activity if quote auto-sent one
+                                if fn_response.get('notification_sent'):
+                                    ns = fn_response["notification_sent"]
+                                    notif_payload = json.dumps({
+                                        "type": "activity_update",
+                                        "category": "notification",
+                                        "tool": "send_quote_confirmation",
+                                        "data": {
+                                            "type": ns.get("type", "QUOTE_CONFIRMATION"),
+                                            "status": "sent",
+                                        },
+                                    })
+                                    yield f"data: {notif_payload}\n\n"
                                 if fn_name in cart_tools:
                                     cart_data = fn_response.get('cart', fn_response)
                                 elif fn_name in order_tools:
@@ -324,7 +475,7 @@ async def _stream_from_runner(
                                     yield f"data: {cart_payload}\n\n"
 
                 if event.is_final_response() or event.turn_complete:
-                    logger.info(f"Turn complete from {event.author}")
+                    logger.info(f"Turn complete from {event.author}, sent_content={sent_content}, parts_count={len(response_parts)}")
                     if not sent_content:
                         logger.warning(f"Empty response from agent, sending fallback")
                         fallback_payload = json.dumps({
@@ -335,11 +486,15 @@ async def _stream_from_runner(
                         yield f"data: {fallback_payload}\n\n"
                     else:
                         full_response = "".join(response_parts).strip()
-                        suggestion_items = _generate_dynamic_suggestions(
-                            user_message=user_message,
-                            assistant_message=full_response,
-                            author=last_text_author or event.author,
-                        )
+                        # If provisioning Phase 1 completed, use activation-focused suggestions
+                        if _provisioning_done:
+                            suggestion_items = ["Simulate install day", "Show order details", "Send installation confirmation"]
+                        else:
+                            suggestion_items = _generate_dynamic_suggestions(
+                                user_message=user_message,
+                                assistant_message=full_response,
+                                author=last_text_author or event.author,
+                            )
                         if suggestion_items:
                             suggestion_payload = json.dumps({
                                 "type": "suggestions",

@@ -5,12 +5,26 @@ These tools handle service activation, testing, and verification.
 """
 
 import json
+import os
+import sqlite3
+import sys
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from random import uniform
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _get_db_connection():
+    """Return a connection to the unified sales_agent.db, or None if not configured."""
+    db_path = os.getenv("SALES_AGENT_DB_PATH")
+    if not db_path:
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def activate_service(
@@ -62,6 +76,23 @@ def activate_service(
         }
         
         logger.info(f"Service activated: {circuit_id}")
+        
+        # Update fulfillment record in unified DB — mark as activated
+        _update_fulfillment_activation(
+            order_id=order_id,
+            activation_id=activation_id,
+            circuit_id=circuit_id,
+            account_id=activation["account_id"],
+        )
+
+        # Auto-send SERVICE_ACTIVATED notification
+        _auto_send_notification(
+            notification_type="SERVICE_ACTIVATED",
+            order_id=order_id,
+            metadata={"activation_id": activation_id, "circuit_id": circuit_id,
+                       "service_type": service_type, "account_id": activation["account_id"]},
+        )
+
         return activation
     
     except Exception as e:
@@ -255,3 +286,146 @@ def _get_service_parameters(service_type: str) -> Dict[str, Any]:
         params["vlan_id"] = 300
     
     return params
+
+
+# ---------------------------------------------------------------------------
+# DB persistence helpers
+# ---------------------------------------------------------------------------
+
+def _update_fulfillment_activation(
+    order_id: str,
+    activation_id: str,
+    circuit_id: str,
+    account_id: str,
+) -> None:
+    """Mark the fulfillment as 'activated' and populate customer_master.
+
+    This is the final lifecycle step — the prospect becomes a customer.
+    """
+    conn = _get_db_connection()
+    if conn is None:
+        return
+    try:
+        now = datetime.now().isoformat()
+
+        # Update fulfillment row (match by order_id since that's what we have)
+        conn.execute(
+            """UPDATE fulfillments
+               SET activation_id = ?, circuit_id = ?, account_id = ?,
+                   status = 'activated', updated_at = ?
+               WHERE order_id = ?""",
+            (activation_id, circuit_id, account_id, now, order_id),
+        )
+
+        # Look up order + account data to populate customer_master
+        order_row = conn.execute(
+            "SELECT customer_id, customer_name, service_address, contact_phone, "
+            "contact_email, total_amount FROM orders WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+
+        if order_row and order_row["customer_id"]:
+            cust_id = order_row["customer_id"]
+
+            # Look up account address
+            acct = conn.execute(
+                'SELECT "Company Name", Street, City, State, zip_code '
+                "FROM accounts WHERE customer_id = ?",
+                (cust_id,),
+            ).fetchone()
+
+            if acct:
+                # Get ordered service types from order_items
+                items = conn.execute(
+                    "SELECT service_type FROM order_items WHERE order_id = ?",
+                    (order_id,),
+                ).fetchall()
+                products = json.dumps([r["service_type"] for r in items])
+
+                conn.execute(
+                    """INSERT OR REPLACE INTO customer_master
+                       (customer_id, company_name, street, city, state, zip_code,
+                        contact_name, contact_email, contact_phone,
+                        first_order_id, circuit_id, account_id,
+                        contracted_products, monthly_revenue,
+                        activated_at, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        cust_id,
+                        acct["Company Name"],
+                        acct["Street"],
+                        acct["City"],
+                        acct["State"],
+                        acct["zip_code"],
+                        order_row["customer_name"],
+                        order_row["contact_email"],
+                        order_row["contact_phone"],
+                        order_id,
+                        circuit_id,
+                        account_id,
+                        products,
+                        order_row["total_amount"],
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+
+                # Mark prospect as existing customer
+                conn.execute(
+                    'UPDATE accounts SET "Existing Customer" = \'Y\', updated_at = ? '
+                    "WHERE customer_id = ?",
+                    (now, cust_id),
+                )
+
+                # Mark order as fulfilled
+                conn.execute(
+                    "UPDATE orders SET status = 'fulfilled', updated_at = ? WHERE order_id = ?",
+                    (now, order_id),
+                )
+
+                logger.info(
+                    f"Customer {cust_id} activated: customer_master created, "
+                    f"accounts.Existing Customer='Y', order={order_id} fulfilled"
+                )
+
+        conn.commit()
+    except Exception as exc:
+        logger.warning(f"Failed to update fulfillment activation (non-fatal): {exc}")
+    finally:
+        conn.close()
+
+
+def _auto_send_notification(
+    notification_type: str,
+    order_id: str,
+    metadata: dict,
+    customer_id: str = "",
+    recipient_email: str | None = None,
+) -> None:
+    """Send a notification via sys.modules dispatcher (best-effort, non-fatal)."""
+    try:
+        comms = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if comms is None:
+            return
+        if hasattr(comms, "send_notification"):
+            comms.send_notification(
+                notification_type=notification_type,
+                customer_id=customer_id,
+                order_id=order_id,
+                recipient_email=recipient_email,
+                metadata=metadata,
+            )
+            logger.info(f"Auto-sent {notification_type} notification")
+        elif notification_type == "SERVICE_ACTIVATED" and hasattr(comms, "send_service_activated_notification"):
+            comms.send_service_activated_notification(
+                order_id=order_id,
+                customer_name=customer_id,
+                customer_email=recipient_email,
+                service_type=metadata.get("service_type", ""),
+                account_number=metadata.get("account_id", ""),
+                circuit_id=metadata.get("circuit_id", ""),
+            )
+            logger.info(f"Auto-sent {notification_type} notification")
+    except Exception as exc:
+        logger.warning(f"Auto notification {notification_type} failed (non-fatal): {exc}")

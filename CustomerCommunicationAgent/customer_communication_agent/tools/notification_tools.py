@@ -1004,3 +1004,424 @@ def get_notification_history(
             "success": False,
             "error": f"Notification history error: {str(e)}"
         }))
+
+
+# ---------------------------------------------------------------------------
+# New notification functions for Phase 5 lifecycle events
+# ---------------------------------------------------------------------------
+
+def send_install_scheduled_notification(
+    order_id: str,
+    customer_name: str,
+    customer_email: str = None,
+    customer_phone: str = None,
+    appointment_date: str = None,
+    window: str = None,
+    service_address: str = None,
+) -> Dict[str, Any]:
+    """
+    Send notification when an installation is scheduled.
+
+    Args:
+        order_id: Order identifier
+        customer_name: Customer name
+        customer_email: Customer email
+        customer_phone: Customer phone
+        appointment_date: Scheduled installation date
+        window: Time window (AM/PM)
+        service_address: Installation address
+    """
+    logger.info(f"Sending INSTALL_SCHEDULED notification for order {order_id}")
+    try:
+        if not customer_email and not customer_phone:
+            return {"success": False, "error": "No contact information provided"}
+
+        recipient = customer_email or customer_phone
+        if _check_duplicate(NotificationType.INSTALLATION_SCHEDULED, recipient):
+            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
+
+        notification_id = _generate_notification_id(NotificationType.INSTALLATION_SCHEDULED, recipient)
+        subject = f"Installation Scheduled - Order {order_id}"
+        message = f"""Dear {customer_name},
+
+Your installation has been scheduled!
+
+Installation Details:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Order ID: {order_id}
+Date: {appointment_date or 'TBD'}
+Time Window: {window or 'TBD'}
+Address: {service_address or 'On file'}
+
+Our technician will call 30 minutes before arrival.
+
+Need to reschedule? Call 1-800-BUSINESS (48-hour notice required)
+"""
+        notification = Notification(
+            notification_id=notification_id,
+            notification_type=NotificationType.INSTALLATION_SCHEDULED,
+            recipient_email=customer_email,
+            recipient_phone=customer_phone,
+            subject=subject,
+            message=message,
+            metadata={"order_id": order_id, "appointment_date": appointment_date, "window": window},
+        )
+
+        channels_sent = []
+        if customer_email:
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+        if customer_phone:
+            notification.mark_sent("sms")
+            channels_sent.append("sms")
+
+        _persist_notification(notification)
+        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
+    except Exception as e:
+        logger.error(f"Error sending INSTALL_SCHEDULED: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def send_install_dispatched_notification(
+    order_id: str,
+    customer_name: str,
+    customer_email: str = None,
+    customer_phone: str = None,
+    technician_name: str = None,
+    technician_phone: str = None,
+) -> Dict[str, Any]:
+    """
+    Send notification when a technician is dispatched.
+
+    Args:
+        order_id: Order identifier
+        customer_name: Customer name
+        customer_email: Customer email
+        customer_phone: Customer phone
+        technician_name: Assigned technician name
+        technician_phone: Technician contact number
+    """
+    logger.info(f"Sending INSTALL_DISPATCHED notification for order {order_id}")
+    try:
+        if not customer_email and not customer_phone:
+            return {"success": False, "error": "No contact information provided"}
+
+        recipient = customer_email or customer_phone
+        if _check_duplicate(NotificationType.INSTALL_DISPATCHED, recipient):
+            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
+
+        notification_id = _generate_notification_id(NotificationType.INSTALL_DISPATCHED, recipient)
+        subject = f"Technician Dispatched - Order {order_id}"
+        message = f"""Dear {customer_name},
+
+Your technician is on the way!
+
+Dispatch Details:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Order ID: {order_id}
+Technician: {technician_name or 'Assigned'}
+Technician Phone: {technician_phone or 'Will call on arrival'}
+
+The technician will call 30 minutes before arrival.
+Please ensure access to the installation area is available.
+
+Questions? Call 1-800-BUSINESS
+"""
+        notification = Notification(
+            notification_id=notification_id,
+            notification_type=NotificationType.INSTALL_DISPATCHED,
+            recipient_email=customer_email,
+            recipient_phone=customer_phone,
+            subject=subject,
+            message=message,
+            metadata={"order_id": order_id, "technician_name": technician_name},
+        )
+
+        channels_sent = []
+        if customer_email:
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+        if customer_phone:
+            notification.mark_sent("sms")
+            channels_sent.append("sms")
+
+        _persist_notification(notification)
+        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
+    except Exception as e:
+        logger.error(f"Error sending INSTALL_DISPATCHED: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def send_install_complete_notification(
+    order_id: str,
+    customer_name: str,
+    customer_email: str = None,
+    customer_phone: str = None,
+    equipment_installed: list = None,
+) -> Dict[str, Any]:
+    """
+    Send notification when installation is complete.
+
+    Args:
+        order_id: Order identifier
+        customer_name: Customer name
+        customer_email: Customer email
+        customer_phone: Customer phone
+        equipment_installed: List of equipment installed
+    """
+    logger.info(f"Sending INSTALL_COMPLETE notification for order {order_id}")
+    try:
+        if not customer_email and not customer_phone:
+            return {"success": False, "error": "No contact information provided"}
+
+        recipient = customer_email or customer_phone
+        if _check_duplicate(NotificationType.INSTALL_COMPLETE, recipient):
+            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
+
+        notification_id = _generate_notification_id(NotificationType.INSTALL_COMPLETE, recipient)
+        equipment_list = ", ".join(equipment_installed) if equipment_installed else "Standard equipment"
+        subject = f"Installation Complete - Order {order_id}"
+        message = f"""Dear {customer_name},
+
+Your installation is complete!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Order ID: {order_id}
+Equipment Installed: {equipment_list}
+Status: ✓ Installation Complete
+
+Next Step: Service activation (usually within 1-2 hours)
+
+You'll receive another notification once your service is fully active.
+
+Questions? Call 1-800-BUSINESS
+"""
+        notification = Notification(
+            notification_id=notification_id,
+            notification_type=NotificationType.INSTALL_COMPLETE,
+            recipient_email=customer_email,
+            recipient_phone=customer_phone,
+            subject=subject,
+            message=message,
+            metadata={"order_id": order_id, "equipment_installed": equipment_installed},
+        )
+
+        channels_sent = []
+        if customer_email:
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+        if customer_phone:
+            notification.mark_sent("sms")
+            channels_sent.append("sms")
+
+        _persist_notification(notification)
+        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
+    except Exception as e:
+        logger.error(f"Error sending INSTALL_COMPLETE: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def send_order_cancelled_notification(
+    order_id: str,
+    customer_name: str,
+    customer_email: str = None,
+    customer_phone: str = None,
+    reason: str = None,
+) -> Dict[str, Any]:
+    """
+    Send notification when an order is cancelled (e.g., TTL expiry).
+
+    Args:
+        order_id: Order identifier
+        customer_name: Customer name
+        customer_email: Customer email
+        customer_phone: Customer phone
+        reason: Cancellation reason
+    """
+    logger.info(f"Sending ORDER_CANCELLED notification for order {order_id}")
+    try:
+        if not customer_email and not customer_phone:
+            return {"success": False, "error": "No contact information provided"}
+
+        recipient = customer_email or customer_phone
+        if _check_duplicate(NotificationType.ORDER_CANCELLED, recipient):
+            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
+
+        notification_id = _generate_notification_id(NotificationType.ORDER_CANCELLED, recipient)
+        subject = f"Order Cancelled - {order_id}"
+        message = f"""Dear {customer_name},
+
+Your order has been cancelled.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Order ID: {order_id}
+Reason: {reason or 'Payment not received within required timeframe'}
+
+If this was unintentional, please contact us to place a new order.
+We're happy to help you get started again.
+
+Contact: 1-800-BUSINESS
+"""
+        notification = Notification(
+            notification_id=notification_id,
+            notification_type=NotificationType.ORDER_CANCELLED,
+            recipient_email=customer_email,
+            recipient_phone=customer_phone,
+            subject=subject,
+            message=message,
+            metadata={"order_id": order_id, "reason": reason},
+        )
+
+        channels_sent = []
+        if customer_email:
+            email_result = _send_email(customer_email, subject, message)
+            if email_result["sent"]:
+                notification.mark_sent("email")
+                channels_sent.append("email")
+        if customer_phone:
+            notification.mark_sent("sms")
+            channels_sent.append("sms")
+
+        _persist_notification(notification)
+        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
+    except Exception as e:
+        logger.error(f"Error sending ORDER_CANCELLED: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# General-purpose dispatcher for cross-agent notification calls
+# ---------------------------------------------------------------------------
+
+def send_notification(
+    notification_type: str,
+    customer_id: str = "",
+    order_id: str = "",
+    recipient_email: str = None,
+    recipient_phone: str = None,
+    metadata: str = None,
+    **kwargs,
+) -> Dict[str, Any]:
+    """
+    General notification dispatcher used by other agents via sys.modules.
+
+    Routes to the appropriate specific notification function based on notification_type.
+    This is the single entry point for cleanup_stale_records() and other cross-agent callers.
+
+    Args:
+        notification_type: Type string (e.g., 'ABANDONED_CART', 'ORDER_CANCELLED')
+        customer_id: Customer identifier
+        order_id: Order identifier
+        recipient_email: Email address
+        recipient_phone: Phone number
+        metadata: JSON string or dict with additional context
+    """
+    # Parse metadata if it's a JSON string
+    meta = {}
+    if metadata:
+        if isinstance(metadata, str):
+            try:
+                meta = json.loads(metadata)
+            except (json.JSONDecodeError, TypeError):
+                meta = {"raw": metadata}
+        else:
+            meta = metadata
+
+    customer_name = meta.get("customer_name", meta.get("company_name", customer_id or "Customer"))
+
+    # Route to specific handlers
+    ntype = notification_type.upper().replace("-", "_")
+
+    if ntype == "ABANDONED_CART":
+        return send_abandoned_cart_reminder(
+            cart_id=meta.get("cart_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            cart_items=meta.get("cart_items"),
+            total_amount=meta.get("total_amount"),
+        )
+    elif ntype == "ORDER_CANCELLED":
+        return send_order_cancelled_notification(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            reason=meta.get("reason"),
+        )
+    elif ntype == "INSTALL_SCHEDULED" or ntype == "INSTALLATION_SCHEDULED":
+        return send_install_scheduled_notification(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            appointment_date=meta.get("appointment_date"),
+            window=meta.get("window"),
+            service_address=meta.get("service_address"),
+        )
+    elif ntype == "INSTALL_DISPATCHED":
+        return send_install_dispatched_notification(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            technician_name=meta.get("technician_name"),
+            technician_phone=meta.get("technician_phone"),
+        )
+    elif ntype == "INSTALL_COMPLETE":
+        return send_install_complete_notification(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            equipment_installed=meta.get("equipment_installed"),
+        )
+    elif ntype == "SERVICE_ACTIVATED":
+        return send_service_activated_notification(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            service_type=meta.get("service_type"),
+            account_number=meta.get("account_id", meta.get("account_number")),
+            circuit_id=meta.get("circuit_id"),
+        )
+    elif ntype == "ORDER_CONFIRMATION":
+        return send_order_confirmation(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            service_type=meta.get("service_type"),
+            total_amount=meta.get("total_amount"),
+        )
+    elif ntype in ("PAYMENT_SUCCESS", "PAYMENT_FAILED"):
+        return send_payment_notification(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            payment_status="success" if ntype == "PAYMENT_SUCCESS" else "failed",
+            amount=meta.get("amount"),
+            payment_method=meta.get("payment_method"),
+        )
+    elif ntype == "INSTALLATION_REMINDER":
+        return send_installation_reminder(
+            order_id=order_id or meta.get("order_id", ""),
+            customer_name=customer_name,
+            customer_email=recipient_email,
+            customer_phone=recipient_phone,
+            installation_date=meta.get("installation_date"),
+            installation_time=meta.get("installation_time"),
+            service_address=meta.get("service_address"),
+        )
+    else:
+        # Generic fallback
+        logger.warning(f"Unknown notification type '{notification_type}', using generic handler")
+        return {"success": False, "error": f"Unknown notification type: {notification_type}"}

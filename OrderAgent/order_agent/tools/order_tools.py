@@ -18,6 +18,19 @@ from ..models import Order, OrderStatus
 logger = get_logger(__name__)
 
 
+def _mark_quote_ordered(offer_id: str) -> None:
+    """Mark the source quote as 'ordered' via OfferManagement's quote_db (best-effort)."""
+    try:
+        quote_mod = sys.modules.get("offer_management.utils.quote_db")
+        if quote_mod and hasattr(quote_mod, "mark_quote_ordered"):
+            quote_mod.mark_quote_ordered(offer_id)
+            logger.info(f"Marked quote {offer_id} as ordered")
+        else:
+            logger.debug("offer_management.utils.quote_db not available for mark_quote_ordered")
+    except Exception as exc:
+        logger.warning(f"Failed to mark quote {offer_id} as ordered (non-fatal): {exc}")
+
+
 def _auto_send_order_confirmation(
     order_id: str,
     customer_name: str,
@@ -65,7 +78,7 @@ def create_order(
     customer_name: str,
     service_address: str,
     service_type: str,
-    contact_phone: str,
+    contact_phone: str = "Not provided",
     customer_id: str = None,
     contact_email: str = None,
     price: float = None,
@@ -81,7 +94,7 @@ def create_order(
         customer_name: Customer or business name
         service_address: Installation address
         service_type: Type of service to be ordered
-        contact_phone: Customer contact phone
+        contact_phone: Customer contact phone (optional, defaults to "Not provided")
         customer_id: Customer identifier (auto-generated if not provided)
         contact_email: Customer contact email
         price: Service price (optional, for price tracking)
@@ -101,7 +114,7 @@ def create_order(
         # Generate order ID
         order_id = f"ORD-{datetime.now().strftime('%Y%m%d')}-{hash(customer_name) % 1000:03d}"
         
-        # Create order instance
+        # Create order instance (starts as pending_payment — confirmed after payment)
         order = Order(
             order_id=order_id,
             customer_name=customer_name,
@@ -110,7 +123,7 @@ def create_order(
             contact_phone=contact_phone,
             contact_email=contact_email,
             offer_id=offer_id,
-            status=OrderStatus.DRAFT,
+            status=OrderStatus.PENDING_PAYMENT,
         )
         
         # Add service as order item
@@ -123,6 +136,10 @@ def create_order(
         save_order(order.to_dict())
         
         logger.info(f"Order created: {order_id} for customer {customer_id}")
+
+        # Mark the source quote as 'ordered' so it can't be reused
+        if offer_id:
+            _mark_quote_ordered(offer_id)
 
         # Automatically send order confirmation email/SMS
         email_result = _auto_send_order_confirmation(

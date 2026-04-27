@@ -6,11 +6,25 @@ and calendar management for installations.
 """
 
 import json
+import os
+import sqlite3
+import sys
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _get_db_connection():
+    """Return a connection to the unified sales_agent.db, or None if not configured."""
+    db_path = os.getenv("SALES_AGENT_DB_PATH")
+    if not db_path:
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def check_availability(
@@ -98,6 +112,7 @@ def schedule_installation(
     window: str,
     order_id: Optional[str] = None,
     cart_id: Optional[str] = None,
+    customer_id: Optional[str] = None,
     customer_name: Optional[str] = None,
     customer_contact: Optional[str] = None,
     customer_phone: Optional[str] = None,
@@ -115,6 +130,7 @@ def schedule_installation(
         window: Time window ('AM' or 'PM') (REQUIRED)
         order_id: Order identifier (optional - for post-order scheduling)
         cart_id: Cart identifier (optional - for pre-order scheduling)
+        customer_id: Customer identifier (optional - for linking fulfillment to customer)
         customer_name: Customer/company name (optional)
         customer_contact: On-site contact name (optional, defaults to customer_name)
         customer_phone: Contact phone number (optional, defaults to placeholder)
@@ -190,6 +206,26 @@ def schedule_installation(
         }
         
         logger.info(f"Appointment created: {appointment_id}")
+        
+        # Persist fulfillment record to unified DB
+        _persist_fulfillment(
+            fulfillment_id=appointment_id,
+            order_id=order_id or "",
+            customer_id=customer_id or "",
+            appointment_date=scheduled_date,
+            status="scheduled",
+        )
+
+        # Auto-send INSTALL_SCHEDULED notification
+        _auto_send_notification(
+            notification_type="INSTALL_SCHEDULED",
+            customer_id="",
+            order_id=order_id or "",
+            recipient_email=None,
+            metadata={"appointment_id": appointment_id, "appointment_date": scheduled_date,
+                       "window": window, "service_address": service_address},
+        )
+
         return appointment
     
     except Exception as e:
@@ -290,3 +326,70 @@ def cancel_appointment(
             "success": False,
             "error": f"Cancellation error: {str(e)}"
         }
+
+
+# ---------------------------------------------------------------------------
+# DB persistence helpers
+# ---------------------------------------------------------------------------
+
+def _persist_fulfillment(
+    fulfillment_id: str,
+    order_id: str,
+    customer_id: str,
+    appointment_date: str,
+    status: str = "scheduled",
+) -> None:
+    """INSERT a new fulfillment record (best-effort)."""
+    conn = _get_db_connection()
+    if conn is None:
+        return
+    try:
+        now = datetime.now().isoformat()
+        conn.execute(
+            """INSERT OR REPLACE INTO fulfillments
+               (fulfillment_id, order_id, customer_id, appointment_date,
+                status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (fulfillment_id, order_id, customer_id, appointment_date, status, now, now),
+        )
+        conn.commit()
+        logger.info(f"Fulfillment {fulfillment_id} persisted: status={status}")
+    except Exception as exc:
+        logger.warning(f"Failed to persist fulfillment (non-fatal): {exc}")
+    finally:
+        conn.close()
+
+
+def _auto_send_notification(
+    notification_type: str,
+    customer_id: str,
+    order_id: str,
+    recipient_email: str | None,
+    metadata: dict,
+) -> None:
+    """Send a notification via sys.modules dispatcher (best-effort, non-fatal)."""
+    try:
+        comms = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if comms is None:
+            return
+        if hasattr(comms, "send_notification"):
+            comms.send_notification(
+                notification_type=notification_type,
+                customer_id=customer_id,
+                order_id=order_id,
+                recipient_email=recipient_email,
+                metadata=metadata,
+            )
+            logger.info(f"Auto-sent {notification_type} notification")
+        elif notification_type == "INSTALL_SCHEDULED" and hasattr(comms, "send_install_scheduled_notification"):
+            comms.send_install_scheduled_notification(
+                order_id=order_id,
+                customer_name=customer_id,
+                customer_email=recipient_email,
+                appointment_date=metadata.get("appointment_date", ""),
+                window=metadata.get("window", ""),
+                service_address=metadata.get("service_address", ""),
+            )
+            logger.info(f"Auto-sent {notification_type} notification")
+    except Exception as exc:
+        logger.warning(f"Auto notification {notification_type} failed (non-fatal): {exc}")

@@ -35,6 +35,9 @@ COPY --from=frontend-builder /app/SuperAgent/client/dist ./SuperAgent/client/dis
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Ensure unified DB data directory exists (entrypoint downloads DB here from GCS)
+RUN mkdir -p /app/SuperAgent/data
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

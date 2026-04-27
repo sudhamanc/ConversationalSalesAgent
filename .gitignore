@@ -58,3 +58,5 @@ temp/
 **/tests/
 **/__tests__/
 **/verify_*
+*.db-shm
+*.db-wal

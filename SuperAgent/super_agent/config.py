@@ -15,7 +15,15 @@ from dotenv import load_dotenv
 
 # Load .env from server directory
 _env_path = Path(__file__).parent.parent / "server" / ".env"
+_server_dir = _env_path.parent
 load_dotenv(_env_path, override=True)
+
+# Resolve SALES_AGENT_DB_PATH to absolute (relative paths are relative to
+# the server/ directory where .env lives, so they stay portable across
+# machines and work identically in local dev and GCP).
+_raw_db_path = os.getenv("SALES_AGENT_DB_PATH")
+if _raw_db_path and not os.path.isabs(_raw_db_path):
+    os.environ["SALES_AGENT_DB_PATH"] = str((_server_dir / _raw_db_path).resolve())
 
 
 @dataclass(frozen=True)
@@ -109,3 +117,12 @@ class Settings:
 
 # Singleton – import this everywhere
 settings = Settings()
+
+# ---------------------------------------------------------------------------
+# Initialise the unified database schema BEFORE any agent module loads.
+# Agent-local init_db() calls use CREATE TABLE IF NOT EXISTS, which becomes
+# a harmless no-op once the full schema already exists.
+# ---------------------------------------------------------------------------
+from .utils.database import init_db as _init_unified_db  # noqa: E402
+
+_init_unified_db()

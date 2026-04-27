@@ -6,11 +6,77 @@ and payment method management.
 """
 
 import json
+import os
+import sqlite3
 import sys
+from datetime import datetime, timedelta
 from typing import Dict, Any
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _get_db_connection():
+    """Return a connection to the unified sales_agent.db, or None if not configured."""
+    db_path = os.getenv("SALES_AGENT_DB_PATH")
+    if not db_path:
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def _persist_payment(
+    order_id: str,
+    customer_id: str,
+    transaction_id: str | None,
+    amount: float,
+    status: str,
+    payment_method: str | None,
+    credit_score: int | None,
+) -> None:
+    """Write a payment record to the payments table (best-effort)."""
+    conn = _get_db_connection()
+    if conn is None:
+        return
+    try:
+        now = datetime.now().isoformat()
+        expires = (datetime.now() + timedelta(minutes=15)).isoformat() if status == "pending" else None
+        payment_id = f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{hash(order_id) % 10000:04d}"
+        conn.execute(
+            """INSERT OR REPLACE INTO payments
+               (payment_id, order_id, customer_id, transaction_id, amount,
+                status, credit_score, payment_method, created_at, updated_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (payment_id, order_id, customer_id, transaction_id, amount,
+             status, credit_score, payment_method, now, now, expires),
+        )
+        conn.commit()
+        logger.info(f"Payment {payment_id} persisted: status={status}, amount={amount}")
+    except Exception as exc:
+        logger.warning(f"Failed to persist payment (non-fatal): {exc}")
+    finally:
+        conn.close()
+
+
+def _update_order_status(order_id: str, new_status: str) -> None:
+    """Update an order's status in the orders table (best-effort)."""
+    conn = _get_db_connection()
+    if conn is None:
+        return
+    try:
+        now = datetime.now().isoformat()
+        conn.execute(
+            "UPDATE orders SET status = ?, updated_at = ? WHERE order_id = ?",
+            (new_status, now, order_id),
+        )
+        conn.commit()
+        logger.info(f"Order {order_id} status updated to '{new_status}'")
+    except Exception as exc:
+        logger.warning(f"Failed to update order status (non-fatal): {exc}")
+    finally:
+        conn.close()
 
 
 def validate_payment_method(
@@ -190,6 +256,37 @@ def process_payment(
         if amount < 10000:
             transaction_id = f"TXN-{payment_method_token[-4:]}-{int(amount)}"
             
+            # Look up customer_id from the order record
+            resolved_customer_id = ""
+            if order_id:
+                try:
+                    _conn = _get_db_connection()
+                    if _conn:
+                        _row = _conn.execute(
+                            "SELECT customer_id FROM orders WHERE order_id = ?",
+                            (order_id,),
+                        ).fetchone()
+                        if _row:
+                            resolved_customer_id = _row["customer_id"] or ""
+                        _conn.close()
+                except Exception:
+                    pass  # best-effort lookup
+
+            # Persist payment record to unified DB
+            _persist_payment(
+                order_id=order_id or invoice_id or "",
+                customer_id=resolved_customer_id,
+                transaction_id=transaction_id,
+                amount=amount,
+                status="completed",
+                payment_method=payment_method_token,
+                credit_score=None,
+            )
+
+            # Update order status to 'paid' if order_id is present
+            if order_id:
+                _update_order_status(order_id, "paid")
+
             # Automatically send payment success notification
             notif_result = {}
             if customer_email or customer_phone:
@@ -217,6 +314,17 @@ def process_payment(
                 "message": f"Payment of ${amount:.2f} approved. Transaction ID: {transaction_id}"
             }
         else:
+            # Persist failed payment record
+            _persist_payment(
+                order_id=order_id or invoice_id or "",
+                customer_id="",
+                transaction_id=None,
+                amount=amount,
+                status="failed",
+                payment_method=payment_method_token,
+                credit_score=None,
+            )
+
             # Automatically send payment failure notification
             if customer_email or customer_phone:
                 _auto_send_payment_notification(

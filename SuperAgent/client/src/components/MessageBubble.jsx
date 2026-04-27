@@ -1,4 +1,6 @@
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getAgentInfo } from "../utils/agentLabels";
 import QuoteCard from "./QuoteCard";
 import ServiceabilityCard from "./ServiceabilityCard";
@@ -30,7 +32,62 @@ function renderInlineFormatting(text) {
   });
 }
 
+function hasMarkdownTable(text) {
+  // Detects pipe-delimited markdown tables (header + separator + data rows)
+  return /\|.+\|[\s\S]*\|[-: |]+\|/.test(text || "");
+}
+
+function hasRichMarkdown(text) {
+  if (!text) return false;
+  // Headings (### ), horizontal rules (---), tables, or multi-line lists with bold formatting
+  return /^#{1,6}\s/m.test(text) || /^-{3,}$/m.test(text) || hasMarkdownTable(text) || (/\*\*[^*]+\*\*/m.test(text) && /^[\-*•]\s/m.test(text));
+}
+
+const markdownComponents = {
+  h1: ({ children }) => <h1 className="text-lg font-bold text-slate-900 mt-3 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-base font-bold text-slate-900 mt-3 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-bold text-slate-800 mt-2 mb-1">{children}</h3>,
+  hr: () => <hr className="my-2 border-slate-200" />,
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="min-w-full text-xs border-collapse border border-slate-300 rounded-lg">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead className="bg-primary-50">{children}</thead>
+  ),
+  th: ({ children }) => (
+    <th className="px-3 py-2 text-left font-semibold text-slate-700 border border-slate-300">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="px-3 py-2 text-slate-600 border border-slate-300">{children}</td>
+  ),
+  tr: ({ children }) => (
+    <tr className="even:bg-slate-50">{children}</tr>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-slate-900">{children}</strong>
+  ),
+  ul: ({ children }) => <ul className="list-disc pl-4 space-y-1">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-4 space-y-1">{children}</ol>,
+  li: ({ children }) => <li className="text-slate-700">{children}</li>,
+  p: ({ children }) => <div className="mb-1">{children}</div>,
+};
+
 function renderFormattedText(content) {
+  // Use react-markdown when content contains markdown tables or complex formatting
+  if (hasRichMarkdown(content)) {
+    return (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {content}
+      </ReactMarkdown>
+    );
+  }
+
   // Normalize inline bullet separators (• Item1 • Item2) to line-start bullets
   const normalized = (content || "").replace(/(?<!\n)\s*•\s+/g, "\n• ");
   const lines = normalized.split("\n");
@@ -61,20 +118,21 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
   const agentInfo =
     !isUser && message.author ? getAgentInfo(message.author) : null;
 
-  const quote = !isUser ? parseOfferQuote(message.content) : null;
-  const serviceabilityDetails =
-    !isUser && !quote ? parseServiceabilityMessage(message.content) : null;
-  const productDetails =
-    !isUser && !quote && !serviceabilityDetails
-      ? parseProductAgentMessage(message.content)
-      : null;
+  const quote = !isUser ? (message.structuredCard?.type === "quote" ? message.structuredCard.data : parseOfferQuote(message.content)) : null;
+  // Order/payment detection runs before product to avoid false positives from numbered lists
+  const orderConfirmation =
+    !isUser && !quote ? parseOrderConfirmation(message.content) : null;
   const paymentConfirmation =
-    !isUser && !quote && !serviceabilityDetails && !productDetails
+    !isUser && !quote && !orderConfirmation
       ? parsePaymentConfirmation(message.content)
       : null;
-  const orderConfirmation =
-    !isUser && !quote && !serviceabilityDetails && !productDetails && !paymentConfirmation
-      ? parseOrderConfirmation(message.content)
+  const serviceabilityDetails =
+    !isUser && !quote && !orderConfirmation && !paymentConfirmation
+      ? parseServiceabilityMessage(message.content)
+      : null;
+  const productDetails =
+    !isUser && !quote && !orderConfirmation && !paymentConfirmation && !serviceabilityDetails
+      ? parseProductAgentMessage(message.content)
       : null;
 
   const shouldRenderQuoteCard = Boolean(quote);
@@ -123,14 +181,14 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
           >
             {shouldRenderQuoteCard ? (
               <QuoteCard quote={quote} />
+            ) : shouldRenderOrderCard ? (
+              <OrderCard order={orderConfirmation} />
+            ) : shouldRenderPaymentCard ? (
+              <PaymentCard payment={paymentConfirmation} />
             ) : shouldRenderServiceabilityCard ? (
               <ServiceabilityCard details={serviceabilityDetails} />
             ) : shouldRenderProductCard ? (
               <ProductDetailsCard payload={productDetails} />
-            ) : shouldRenderPaymentCard ? (
-              <PaymentCard payment={paymentConfirmation} />
-            ) : shouldRenderOrderCard ? (
-              <OrderCard order={orderConfirmation} />
             ) : (
               renderFormattedText(message.content)
             )}

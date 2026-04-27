@@ -20,9 +20,13 @@ logger = get_logger(__name__)
 _DEFAULT_DB_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "data",
 )
-_DB_PATH = os.getenv(
-    "NOTIFICATION_DB_PATH",
-    os.path.join(_DEFAULT_DB_DIR, "notifications.db"),
+_DEFAULT_DB_PATH = os.path.join(_DEFAULT_DB_DIR, "notifications.db")
+
+# Prefer unified DB, then legacy env var, then default
+_DB_PATH = (
+    os.getenv("SALES_AGENT_DB_PATH")
+    or os.getenv("NOTIFICATION_DB_PATH")
+    or _DEFAULT_DB_PATH
 )
 
 _local = threading.local()
@@ -55,9 +59,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             subject           TEXT,
             message           TEXT,
             metadata_json     TEXT,
+            customer_id       TEXT,
+            order_id          TEXT,
             status            TEXT NOT NULL DEFAULT 'pending',
             channels_json     TEXT NOT NULL DEFAULT '[]',
             created_at        TEXT NOT NULL,
+            updated_at        TEXT,
             sent_at           TEXT,
             error             TEXT
         );
@@ -68,6 +75,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             ON notifications(recipient_phone);
         CREATE INDEX IF NOT EXISTS idx_notif_type
             ON notifications(notification_type);
+        CREATE INDEX IF NOT EXISTS idx_notif_customer
+            ON notifications(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_notif_order
+            ON notifications(order_id);
 
         CREATE TABLE IF NOT EXISTS dedup_cache (
             dedup_key  TEXT PRIMARY KEY,
@@ -94,6 +105,8 @@ def store_notification(
     created_at: str,
     sent_at: Optional[str],
     error: Optional[str],
+    customer_id: Optional[str] = None,
+    order_id: Optional[str] = None,
 ) -> None:
     """Persist a notification record (insert or replace)."""
     conn = _get_conn()
@@ -101,9 +114,10 @@ def store_notification(
         """
         INSERT OR REPLACE INTO notifications
             (notification_id, notification_type, recipient_email, recipient_phone,
-             subject, message, metadata_json, status, channels_json,
-             created_at, sent_at, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             subject, message, metadata_json, customer_id, order_id,
+             status, channels_json,
+             created_at, updated_at, sent_at, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             notification_id,
@@ -113,9 +127,12 @@ def store_notification(
             subject,
             message,
             json.dumps(metadata) if metadata else "{}",
+            customer_id,
+            order_id,
             status,
             json.dumps(channels),
             created_at,
+            created_at,  # updated_at = created_at on first insert
             sent_at,
             error,
         ),
@@ -183,6 +200,8 @@ def get_history(
             "subject": row["subject"],
             "message": row["message"],
             "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+            "customer_id": row["customer_id"] if "customer_id" in row.keys() else None,
+            "order_id": row["order_id"] if "order_id" in row.keys() else None,
             "status": row["status"],
             "channels": json.loads(row["channels_json"]) if row["channels_json"] else [],
             "created_at": row["created_at"],

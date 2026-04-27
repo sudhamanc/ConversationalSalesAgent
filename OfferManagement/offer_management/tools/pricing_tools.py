@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from typing import Any, Dict, List
 
 from ..utils.cache import cache_result, get_cached_result
@@ -104,17 +105,19 @@ def _make_offer_id(payload: Dict[str, Any]) -> str:
     return f"OFF-{digest.upper()}"
 
 
-def find_best_bundle_offer(items: List[Dict[str, Any]], term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
+def find_best_bundle_offer(items: str, term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
     """
     Evaluate bundle, term, and BANT-score discount rates for selected products.
 
     Args:
-        items: List of {"product_id": str, "quantity": int}
+        items: JSON string of list, e.g. '[{"product_id": "FIBER_1G", "quantity": 1}]'
         term_months: Contract duration (12, 24, or 36)
         bant_score: Prospect's BANT qualification score (0-100). Defaults to 0.
 
     Returns JSON-like dict with selected discount rates and generated offer id.
     """
+    if isinstance(items, str):
+        items = json.loads(items)
     normalized_items = _normalize_items(items)
     cache_key = f"bundle:{json.dumps(normalized_items)}:{term_months}:{bant_score}"
     cached = get_cached_result(cache_key)
@@ -162,17 +165,22 @@ def find_best_bundle_offer(items: List[Dict[str, Any]], term_months: int = 12, b
     return result
 
 
-def generate_offer_quote(items: List[Dict[str, Any]], term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
+def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 0.0, customer_id: str = None, company_name: str = None, customer_email: str = None) -> Dict[str, Any]:
     """
     Generate an itemized quote with price points, discounts, and totals.
 
     Args:
-        items: List of {"product_id": str, "quantity": int}
+        items: JSON string of list, e.g. '[{"product_id": "FIBER_1G", "quantity": 1}]'
         term_months: Contract duration (12, 24, or 36)
         bant_score: Prospect's BANT qualification score (0-100). Defaults to 0.
+        customer_id: Customer identifier from Discovery (e.g., CUST-20260415-001). Links quote to customer.
+        company_name: Company name from Discovery. Used for quote lookup.
+        customer_email: Customer email address for sending quote confirmation notification.
 
     Returns required JSON payload for downstream order placement.
     """
+    if isinstance(items, str):
+        items = json.loads(items)
     normalized_items = _normalize_items(items)
     bundle_result = find_best_bundle_offer(normalized_items, term_months, bant_score)
     if not bundle_result.get("found"):
@@ -280,6 +288,8 @@ def generate_offer_quote(items: List[Dict[str, Any]], term_months: int = 12, ban
 
     result = {
         "offer_id": bundle_result["offer_id"],
+        "customer_id": customer_id,
+        "company_name": company_name,
         "term_months": term_months if term_months in TERM_DISCOUNTS else 12,
         "items": priced_items,
         "subtotal": subtotal,
@@ -295,9 +305,32 @@ def generate_offer_quote(items: List[Dict[str, Any]], term_months: int = 12, ban
 
     # Persist quote to SQLite so returning customers can retrieve it later
     try:
-        save_quote(result)
+        save_quote(result, customer_id=customer_id, company_name=company_name)
     except Exception as exc:
         logger.warning("Failed to persist quote %s (non-fatal): %s", result["offer_id"], exc)
+
+    # Auto-send QUOTE_CONFIRMATION notification
+    try:
+        comms = sys.modules.get("customer_communication_agent.tools.notification_tools")
+        if comms and hasattr(comms, "send_quote_confirmation") and customer_email:
+            comms.send_quote_confirmation(
+                quote_id=result["offer_id"],
+                customer_name=company_name or "",
+                customer_email=customer_email,
+                customer_phone=None,
+                items_summary=", ".join(i["product_name"] for i in priced_items),
+                monthly_total=result["monthly_total"],
+                term_months=result.get("term_months", 12),
+                total_discount=result["total_discount"],
+            )
+            logger.info("Auto-sent QUOTE_CONFIRMATION for %s to %s", result["offer_id"], customer_email)
+            result["notification_sent"] = {
+                "type": "QUOTE_CONFIRMATION",
+                "recipient": customer_email,
+                "quote_id": result["offer_id"],
+            }
+    except Exception as exc:
+        logger.warning("QUOTE_CONFIRMATION notification failed (non-fatal): %s", exc)
 
     return result
 
