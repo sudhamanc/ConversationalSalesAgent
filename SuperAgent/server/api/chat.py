@@ -93,33 +93,40 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
 
         client = genai.Client(api_key=_os.environ.get("GOOGLE_API_KEY"))
         prompt = (
-            "You generate next-step suggestions for a B2B telecom sales chat.\n"
-            "Return ONLY JSON.\n"
-            "Output format: {\"suggestions\": [\"...\", \"...\", \"...\"]}\n"
-            "Rules:\n"
-            "- Exactly 3 suggestions\n"
-            "- Suggestions must be generic and editable templates\n"
-            "- Do NOT include specific addresses, IDs, account numbers, emails, phone numbers, or names\n"
-            "- Keep each suggestion under 80 characters\n"
-            "- Keep suggestions actionable and relevant to the assistant response\n"
-            f"Agent author: {author or 'agent'}\n"
-            f"User message: {user_message}\n"
-            f"Assistant response: {assistant_message}\n"
+            "You are a JSON API. Output ONLY a JSON object, nothing else.\n"
+            "Generate 3 short next-step suggestions for a B2B telecom sales chat.\n"
+            "Output: {\"suggestions\": [\"action1\", \"action2\", \"action3\"]}\n"
+            "Rules: each suggestion under 60 chars, generic (no names/addresses/IDs), actionable.\n"
+            f"Agent: {author or 'agent'}\n"
+            f"User: {user_message[:200]}\n"
+            f"Response: {assistant_message[:300]}\n"
         )
 
-        # Use configured model for suggestions
+        # Use configured model for suggestions; disable thinking to avoid
+        # budget consumption, and bump token limit for reliable JSON output.
         response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
+            model=_os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
             contents=prompt,
             config=genai_types.GenerateContentConfig(
                 temperature=0.2,
-                max_output_tokens=180,
-                response_mime_type="application/json",
+                max_output_tokens=1024,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
             ),
         )
 
         response_text = getattr(response, "text", "") or ""
-        return _parse_suggestion_payload(response_text)
+        # Try direct parse; fall back to extracting JSON from markdown/preamble
+        result = _parse_suggestion_payload(response_text)
+        if not result:
+            import re as _re
+            match = _re.search(r'\{[^{}]*"suggestions"\s*:\s*\[.*?\]\s*\}', response_text, _re.DOTALL)
+            if match:
+                result = _parse_suggestion_payload(match.group())
+        if result:
+            logger.info("Dynamic suggestions generated: %s", result)
+        else:
+            logger.warning("Dynamic suggestions: LLM returned unparseable response: %s", response_text[:200])
+        return result
     except Exception as error:
         logger.warning("Dynamic suggestion generation failed: %s", error)
         return []
