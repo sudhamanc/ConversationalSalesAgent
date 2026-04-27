@@ -120,12 +120,13 @@
 | 4.2 | Company search — found | "We're DonutCoffeeRecord Inc" | Finds existing company, returns profile as JSON |
 | 4.3 | Company search — not found | "We're BrandNewStartup LLC" | Reports not found, offers to register |
 | 4.4 | Multi-turn slot filling | Turn 1: "I'm John" → Turn 2: "From Acme Corp" → Turn 3: "at 123 Main St, Philly PA 19107" | Progressively builds profile, asks for missing fields |
-| 4.5 | Contact creation | "My email is john@acme.com, phone 215-555-1234" | Creates contact in `contacts` table linked to account |
+| 4.5 | Contact creation | "My email is john@acme.com, phone 215-555-1234" | Creates contact in `contacts` table with email and phone (both required) |
 | 4.6 | BANT scoring | Budget $500+/mo, Decision-maker, Immediate need | Computes score (0-100), stores in `accounts` |
 | 4.7 | Address with ZIP required | "123 Main St, Philadelphia, PA" (no ZIP) | Asks for ZIP code before proceeding |
 | 4.8 | Serviceability prompt | After registering company with full address | Asks "Would you like me to check if this address is serviceable?" |
 | 4.9 | Spend data recording | "Our current telecom spend is $2000/mo" | Records in `spend` table |
 | 4.10 | Opportunity tracking | Qualified lead identified | Creates entry in `opportunities` table |
+| 4.11 | Phone number explicitly asked | During BANT Authority phase | Agent asks: "What's the best phone number to reach you for installation coordination?" |
 
 #### Negative Cases
 
@@ -136,6 +137,8 @@
 | 4.13 | Duplicate company | Adding company that already exists | Returns existing record instead of creating duplicate |
 | 4.14 | JSON tool responses | All tool returns | All tools return structured JSON (hallucination prevention) |
 | 4.15 | Empty company name | "" or whitespace only | Validation error, asks for company name |
+| 4.16 | Skipping email | User declines to provide email after 2 asks | Proceeds with email='N/A', notes absence |
+| 4.17 | Skipping phone | User declines to provide phone after 2 asks | Proceeds with phone='N/A', notes absence |
 
 ---
 

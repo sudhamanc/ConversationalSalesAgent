@@ -103,6 +103,7 @@ DiscoveryAgent/
 - **Auto-generated customer_id** (UUID) on company creation
 - **BANT scoring** — automatic weighted score (0-100) with priority bucketing (A/B/C)
 - **Zip code validation** — NOT NULL constraint enforced
+- **Email & phone collection** — both required during BANT Authority phase; asked explicitly, retried once if skipped
 - **JSON tool outputs** — all tools return structured JSON to prevent LLM hallucination
 
 ---
