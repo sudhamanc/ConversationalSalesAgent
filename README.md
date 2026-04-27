@@ -82,21 +82,377 @@ User Message → SuperAgent (intent analysis)
 
 ---
 
-## Agent Registry
+## Agent Architecture
 
-| Agent | Status | Responsibility | Infrastructure |
-|-------|--------|---------------|----------------|
-| **SuperAgent** | ✅ Active | Root orchestration and routing | — |
-| **DiscoveryAgent** | ✅ Active | Prospect/company identification and BANT qualification | SQLite (Prospect DB) |
-| **ServiceabilityAgent** | ✅ Active | PRE-SALE address validation and infrastructure capability | GIS API |
-| **ProductAgent** | ✅ Active | Deterministic product catalog lookup and technical comparison | JSON Catalog |
-| **OfferManagementAgent** | ✅ Active | Deterministic quote/pricing/discount computation | Pricing Engine API |
-| **OrderAgent** | ✅ Active | Cart-first ordering, contract generation, order lifecycle | SQLite (Orders DB) |
-| **PaymentAgent** | ✅ Active | Credit checks and payment authorization | Payment Gateway |
-| **ServiceFulfillmentAgent** | ✅ Active | POST-SALE installation scheduling and activation | Scheduler API |
-| **CustomerCommunicationAgent** | ✅ Active | Notification dispatch and communication history | Order DB |
-| **GreetingAgent** | ✅ Active | Initial contact and conversational handling | Static content |
-| **FAQAgent** | ✅ Active | Policy, support, and general product FAQ handling | Knowledge base |
+### Super Agent / Sub-Agent Hierarchy
+
+The system implements a **hierarchical orchestration pattern** where a root SuperAgent delegates to 10 specialized sub-agents using ADK's native `sub_agents=[]` mechanism:
+
+```
+                         ┌─────────────────────┐
+                         │     SuperAgent       │
+                         │  (Root Orchestrator) │
+                         │                      │
+                         │  • Intent Analysis   │
+                         │  • Routing Rules     │
+                         │  • Session State     │
+                         │  • Guardrails        │
+                         └──────────┬───────────┘
+                                    │
+           ┌────────────────────────┼────────────────────────┐
+           │                        │                        │
+   ┌───────▼────────┐     ┌────────▼────────┐     ┌────────▼─────────┐
+   │   DISCOVERY     │     │  CONFIGURATION  │     │   TRANSACTION    │
+   │   CLUSTER       │     │  CLUSTER        │     │   CLUSTER        │
+   ├─────────────────┤     ├─────────────────┤     ├──────────────────┤
+   │ GreetingAgent   │     │ Serviceability  │     │ OrderAgent       │
+   │  └ phone script │     │  Agent          │     │  └ carts, orders │
+   │                 │     │  └ GIS/coverage  │     │                  │
+   │ DiscoveryAgent  │     │                 │     │ PaymentAgent     │
+   │  └ prospect DB  │     │ ProductAgent    │     │  └ credit, auth  │
+   │                 │     │  └ catalog+RAG   │     │                  │
+   │ FAQAgent        │     │                 │     │ ServiceFulfill.  │
+   │  └ knowledge    │     │ OfferManagement │     │  └ scheduling    │
+   │    base         │     │  └ pricing,     │     │  └ dispatch      │
+   │                 │     │    quotes       │     │  └ activation    │
+   │                 │     │                 │     │                  │
+   │                 │     │                 │     │ CustomerComms    │
+   │                 │     │                 │     │  └ notifications │
+   └─────────────────┘     └─────────────────┘     └──────────────────┘
+```
+
+### Agent Registry
+
+| Agent | Cluster | DB Tables Owned | Infrastructure |
+|-------|---------|----------------|----------------|
+| **SuperAgent** | Orchestrator | — (routes only) | ADK Runner |
+| **GreetingAgent** | Discovery | — | Static content |
+| **DiscoveryAgent** | Discovery | `accounts`, `contacts`, `spend`, `opportunities`, `insights`, `actions` | Unified SQLite |
+| **FAQAgent** | Discovery | — | Knowledge base |
+| **ServiceabilityAgent** | Configuration | — (stateless) | GIS API (mock) |
+| **ProductAgent** | Configuration | — | JSON Catalog + ChromaDB |
+| **OfferManagementAgent** | Configuration | `quotes` | Unified SQLite |
+| **OrderAgent** | Transaction | `carts`, `cart_items`, `orders`, `order_items` | Unified SQLite |
+| **PaymentAgent** | Transaction | `payments` | Unified SQLite + Payment Gateway |
+| **ServiceFulfillmentAgent** | Transaction | `fulfillments`, `customer_master` | Unified SQLite + Scheduler |
+| **CustomerCommunicationAgent** | Transaction | `notifications`, `dedup_cache` | Unified SQLite + SMTP |
+
+### Agent Routing Priority
+
+SuperAgent routes user messages in this priority order:
+
+| Priority | Intent Pattern | Target Agent |
+|----------|---------------|--------------|
+| 1 | Company/business identification | DiscoveryAgent |
+| 2 | Address validation, coverage check | ServiceabilityAgent |
+| 3 | Product catalog, specs, SLA questions | ProductAgent |
+| 4 | Pricing, quotes, discounts | OfferManagementAgent |
+| 5 | Cart, checkout, order placement | OrderAgent |
+| 6 | Payment, credit check | PaymentAgent |
+| 7 | Installation, scheduling, activation | ServiceFulfillmentAgent |
+| 8 | Send notification, show history | CustomerCommunicationAgent |
+| 9 | Greetings ("Hi", "Hello") | GreetingAgent |
+| 10 | Policy, SLA, general questions | FAQAgent |
+
+---
+
+## Unified Database Architecture
+
+All agents share a **single SQLite database** (`sales_agent.db`) with WAL mode and foreign key enforcement. This replaces the earlier per-agent database design (separate `discover_prospecting_clean.db`, `orders.db`, `quotes.db`, `notifications.db`) with a consolidated schema of **17 tables across 7 domains**.
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     sales_agent.db  (SQLite + WAL)                       │
+├──────────────┬───────────┬───────────┬──────────┬────────┬──────────────┤
+│  DISCOVERY   │   OFFER   │   ORDER   │ PAYMENT  │FULFILL │    COMMS     │
+│  (6 tables)  │ (1 table) │ (4 tables)│(1 table) │(1 tbl) │  (2 tables)  │
+│              │           │           │          │        │              │
+│ accounts     │ quotes    │ carts     │ payments │fulfill-│ notifications│
+│ contacts     │           │ cart_items│          │ ments  │ dedup_cache  │
+│ spend        │           │ orders    │          │        │              │
+│ opportunities│           │ order_    │          │        │              │
+│ insights     │           │   items   │          │        │              │
+│ actions      │           │           │          │        │              │
+├──────────────┴───────────┴───────────┴──────────┴────────┴──────────────┤
+│                 CUSTOMER DOMAIN (1 table — post-fulfillment only)        │
+│                              customer_master                             │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Configuration:** Set `SALES_AGENT_DB_PATH` environment variable to override the default path (`SuperAgent/data/sales_agent.db`).
+
+### Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    accounts ||--o{ contacts : "has"
+    accounts ||--o| spend : "has"
+    accounts ||--o{ opportunities : "has"
+    accounts ||--o| insights : "has"
+    accounts ||--o| actions : "has"
+    accounts ||--o{ quotes : "quoted for"
+    accounts ||--o{ carts : "shops via"
+    accounts ||--o{ orders : "places"
+    accounts ||--o| customer_master : "becomes"
+
+    quotes ||--o| orders : "converted to"
+
+    carts ||--|{ cart_items : "contains"
+
+    orders ||--|{ order_items : "contains"
+    orders ||--o| payments : "paid by"
+    orders ||--o| fulfillments : "fulfilled by"
+    orders ||--o{ notifications : "triggers"
+
+    fulfillments ||--o| customer_master : "creates"
+
+    accounts {
+        text Company_Name PK
+        text Parent_Company
+        text Industry
+        text Territory_Region
+        text Street
+        text City
+        text State
+        text zip_code "NOT NULL"
+        text Website
+        text Existing_Customer "Y/N"
+        text Current_Products
+        text Products_of_Interest
+        text customer_id "UUID"
+    }
+
+    contacts {
+        text Company_Name FK
+        text Name
+        text Title
+        text Role_in_Decision_Making
+        text Email
+        text Phone
+        text Notes
+    }
+
+    spend {
+        text Company_Name FK
+        int Estimated_Annual_Spend
+        int Digital
+        int Programmatic
+        int TV
+        int Audio
+        int OOH
+        int Search
+        int Social
+        text Primary_Agency
+    }
+
+    opportunities {
+        text Company_Name FK
+        text Opportunity_Name
+        text Stage
+        int Total_MRC_Est
+        text Budget
+        text Authority
+        text Need
+        int Timeline_days
+        real BANT_Score_0to100
+        text BANT_Priority_Bucket
+    }
+
+    insights {
+        text Company_Name FK
+        text Buying_Signals
+        text Pain_Points
+        text Recommended_Positioning
+    }
+
+    actions {
+        text Company_Name FK
+        text Owner
+        text Priority
+        text Initial_Outreach_Date
+        text Follow_Up_Cadence
+    }
+
+    quotes {
+        text offer_id PK
+        text customer_id FK
+        text company_name
+        text items_json
+        int term_months
+        real bant_score
+        real subtotal
+        real total_discount
+        real total_price
+        real monthly_total
+        real yearly_total
+        text status "active/ordered/expired"
+        text expires_at
+    }
+
+    carts {
+        text cart_id PK
+        text customer_id FK
+        real total_amount
+        text status "active/expired"
+        text expires_at
+    }
+
+    cart_items {
+        int id PK
+        text cart_id FK
+        text service_type
+        real price
+        int quantity
+        real subtotal
+    }
+
+    orders {
+        text order_id PK
+        text customer_name
+        text customer_id FK
+        text service_address
+        text contact_phone
+        text contact_email
+        text offer_id FK
+        text status "draft/pending_payment/paid/fulfilled/cancelled/escalated"
+        real total_amount
+        text expires_at
+    }
+
+    order_items {
+        int id PK
+        text order_id FK
+        text service_type
+        real price
+        int quantity
+        real subtotal
+    }
+
+    payments {
+        text payment_id PK
+        text order_id FK
+        text customer_id FK
+        text transaction_id
+        real amount
+        text status "pending/authorized/captured/failed"
+        int credit_score
+        text payment_method
+        text expires_at
+    }
+
+    fulfillments {
+        text fulfillment_id PK
+        text order_id FK
+        text customer_id FK
+        text dispatch_id
+        text activation_id
+        text circuit_id
+        text account_id
+        text appointment_date
+        text status "scheduled/dispatched/installed/activated"
+    }
+
+    customer_master {
+        text customer_id PK
+        text company_name
+        text street
+        text city
+        text state
+        text zip_code
+        text contact_name
+        text contact_email
+        text contact_phone
+        text first_order_id FK
+        text circuit_id
+        text account_id
+        text contracted_products
+        real monthly_revenue
+        text activated_at
+    }
+
+    notifications {
+        text notification_id PK
+        text notification_type
+        text recipient_email
+        text recipient_phone
+        text subject
+        text message
+        text customer_id FK
+        text order_id FK
+        text status "pending/sent/failed"
+        text channels_json
+    }
+
+    dedup_cache {
+        text dedup_key PK
+        text sent_at
+    }
+```
+
+### How Entities Are Updated Along the Sales Conversation
+
+The table below maps each conversation stage to the database operations performed. Each row represents a user turn that triggers one or more agent actions:
+
+| Stage | Conversation Trigger | Agent | Tables Written | Operation |
+|-------|---------------------|-------|---------------|-----------|
+| **1. Greeting** | "Hi, I need internet for my office" | GreetingAgent | — | No DB writes. Returns phone script. |
+| **2. Discovery** | "We're VoiceStream Networks at 123 Main St, Boston" | DiscoveryAgent | `accounts` | **INSERT** new company record with address, zip code, customer_id (UUID). |
+| | *(agent asks for contact info)* | DiscoveryAgent | `contacts` | **INSERT** contact with name, title, email, phone. |
+| | *(agent runs BANT qualification)* | DiscoveryAgent | `opportunities`, `insights` | **INSERT** opportunity with BANT scores; **INSERT** buying signals and pain points. |
+| **3. Serviceability** | "Yes, check if we're serviceable" | ServiceabilityAgent | — | No DB writes. Stateless GIS/coverage lookup returns available infrastructure. |
+| **4. Product** | "Show me Fiber 5G specs" | ProductAgent | — | No DB writes. Reads from JSON catalog and ChromaDB vector store. |
+| **5. Quote** | "Give me pricing for Fiber 5G + SD-WAN" | OfferManagementAgent | `quotes` | **INSERT** quote with offer_id, items_json, pricing breakdown, term, discounts, totals. Status: `active`. Expires in 30 days. |
+| **6. Order** | "Proceed with this quote" | OrderAgent | `carts`, `cart_items`, `orders`, `order_items` | **INSERT** cart + cart items from quote. **INSERT** order + order items. **UPDATE** `quotes.status` → `ordered`. Order status: `pending_payment`. Expires in 48h. |
+| **7. Payment** | "Process payment" | PaymentAgent | `payments`, `orders` | **INSERT** payment record with credit score, authorization. **UPDATE** `orders.status` → `paid`. |
+| **8. Scheduling** | "Schedule installation" | ServiceFulfillmentAgent | `fulfillments` | **INSERT** fulfillment record with appointment date. Status: `scheduled`. |
+| **9. Dispatch** | *(triggered by scheduling)* | ServiceFulfillmentAgent | `fulfillments` | **UPDATE** dispatch_id, status → `dispatched`. |
+| **10. Installation** | *(technician completes)* | ServiceFulfillmentAgent | `fulfillments` | **UPDATE** status → `installed`. |
+| **11. Activation** | "Activate service" | ServiceFulfillmentAgent | `fulfillments`, `customer_master`, `accounts`, `orders` | **UPDATE** fulfillment with circuit_id, account_id, status → `activated`. **INSERT** `customer_master` record. **UPDATE** `accounts.Existing_Customer` → `Y`. **UPDATE** `orders.status` → `fulfilled`. |
+| **Cross-cutting** | *(after each lifecycle event)* | CustomerCommunicationAgent | `notifications`, `dedup_cache` | **INSERT** notification (order confirmation, payment receipt, install reminder, activation notice). **INSERT** dedup key to prevent duplicates. |
+
+### Entity Lifecycle State Machines
+
+```
+Quote:      active ──→ ordered ──→ (done)
+                 └──→ expired (TTL: 30 days)
+
+Cart:       active ──→ (consumed by order)
+                 └──→ expired (TTL: 24 hours)
+
+Order:      draft ──→ pending_payment ──→ paid ──→ fulfilled
+                 │                    └──→ cancelled (TTL: 48h)
+                 └──→ escalated (stuck >7 days)
+
+Payment:    pending ──→ authorized ──→ captured
+                 └──→ failed
+
+Fulfillment: scheduled ──→ dispatched ──→ installed ──→ activated
+
+Account:    Existing_Customer=N ──→ Existing_Customer=Y (on activation)
+```
+
+### Table-to-Agent Access Matrix
+
+| Table | Discovery | Offer | Order | Payment | Fulfillment | Comms | DB Lifecycle |
+|-------|:---------:|:-----:|:-----:|:-------:|:-----------:|:-----:|:------------:|
+| **accounts** | R/W | — | — | — | R/W | — | R |
+| **contacts** | R/W | — | — | — | — | — | R |
+| **spend** | R | — | — | — | — | — | — |
+| **opportunities** | R | — | — | — | — | — | — |
+| **insights** | R/W | — | — | — | — | — | — |
+| **actions** | R | — | — | — | — | — | — |
+| **quotes** | — | R/W | W | — | — | — | W |
+| **carts** | — | — | R/W | — | — | — | W |
+| **cart_items** | — | — | R/W | — | — | — | — |
+| **orders** | — | — | R/W | R/W | R/W | — | R/W |
+| **order_items** | — | — | R/W | — | R | — | — |
+| **payments** | — | — | — | R/W | — | — | R |
+| **fulfillments** | — | — | — | — | R/W | — | R |
+| **customer_master** | — | — | — | — | W | — | R |
+| **notifications** | — | — | — | — | — | R/W | — |
+| **dedup_cache** | — | — | — | — | — | R/W | — |
+
+> **R** = SELECT, **W** = INSERT/UPDATE. **DB Lifecycle** = background `cleanup_stale_records()` for TTL enforcement.
 
 ---
 
@@ -186,7 +542,7 @@ Typical end-to-end flow:
 | Agent Framework | Google ADK 1.20.0+ |
 | LLM | Gemini 3 Flash Preview (configured via `GEMINI_MODEL`) |
 | Streaming | Server-Sent Events (SSE) |
-| Database | SQLite |
+| Database | SQLite (unified `sales_agent.db` — 17 tables, WAL mode) |
 | Deployment | GCP Cloud Run |
 
 ---
