@@ -514,7 +514,26 @@ cd ProductAgent
 python scripts/ingest_knowledge.py
 ```
 
-> **Note:** `ProductAgent/data/embeddings/` is in `.gitignore` — each developer runs ingestion locally after checkout.
+> **Note:** `ProductAgent/data/embeddings/` is in `.gitignore` — each developer runs ingestion locally after checkout. The embedding model (`all-MiniLM-L6-v2`, ~87MB) is auto-downloaded from HuggingFace on first run and cached at `~/.cache/huggingface/hub/`.
+
+### Embedding Model — Docker vs Local
+
+The embedding model loading is environment-aware to avoid slow QEMU emulation during Docker builds:
+
+| Environment | Model Source | Latency |
+|-------------|-------------|---------|
+| **Docker (Cloud Run)** | Pre-copied files at `/app/.hf_models/all-MiniLM-L6-v2` | 0s (COPY'd at build) |
+| **Local dev** | HuggingFace cache (`~/.cache/huggingface/hub/`) | 0s (already cached) |
+| **Fresh clone** | Auto-download from HuggingFace Hub | ~10s (one-time) |
+
+**For Docker deployments:** The `.hf_models/` directory must exist locally (gitignored, 87MB). Set it up once:
+```bash
+mkdir -p .hf_models/sentence-transformers/all-MiniLM-L6-v2
+cp -RLp ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/*/* \
+  .hf_models/sentence-transformers/all-MiniLM-L6-v2/
+```
+
+This avoids running Python/PyTorch under QEMU during `docker build` (which takes 10+ min on ARM Macs building linux/amd64 images).
 
 ---
 

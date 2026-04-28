@@ -83,6 +83,35 @@ User question → 384-dim vector (sentence-transformers) → ChromaDB cosine sim
 → Top 3 chunks → [Source: filename — section] context → Agent composes answer
 ```
 
+### Embedding Model Loading
+
+The RAG pipeline uses `all-MiniLM-L6-v2` (87MB) from sentence-transformers. The model loading strategy adapts to the environment:
+
+| Environment | Model Source | How |
+|-------------|-------------|-----|
+| **Docker (Cloud Run)** | Pre-copied local files | `COPY .hf_models/...` → `/app/.hf_models/all-MiniLM-L6-v2` |
+| **Local dev (existing)** | HuggingFace cache | `~/.cache/huggingface/hub/` (already downloaded) |
+| **Fresh clone** | Auto-download from HF Hub | First run of `ingest_knowledge.py` downloads ~87MB |
+
+**Resolution logic** in `rag_manager.py`:
+```python
+_LOCAL_MODEL_PATH = Path(os.environ.get("EMBEDDING_MODEL_PATH", "/app/.hf_models/all-MiniLM-L6-v2"))
+DEFAULT_EMBEDDING_MODEL = str(_LOCAL_MODEL_PATH) if _LOCAL_MODEL_PATH.is_dir() else "all-MiniLM-L6-v2"
+```
+
+- If `/app/.hf_models/all-MiniLM-L6-v2` exists (Docker) → loads directly from disk, no Python/PyTorch initialization overhead
+- Otherwise → falls back to `"all-MiniLM-L6-v2"` which sentence-transformers resolves from HF cache or downloads
+
+**Why not just download at Docker build time?**
+Running `SentenceTransformer('all-MiniLM-L6-v2')` in Docker requires PyTorch initialization under QEMU emulation (ARM Mac → linux/amd64), which takes 10+ minutes. COPY'ing raw model files is instant.
+
+**For Docker builders:** Run `make setup-hf-models` or manually:
+```bash
+mkdir -p .hf_models/sentence-transformers/all-MiniLM-L6-v2
+cp -RLp ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/*/* .hf_models/sentence-transformers/all-MiniLM-L6-v2/
+```
+The `.hf_models/` directory is gitignored (87MB) but included in Docker context.
+
 ---
 
 ## Conversation Behavior

@@ -59,9 +59,9 @@ COPY --from=frontend-builder /app/SuperAgent/client/dist ./SuperAgent/client/dis
 # Ensure unified DB data directory exists (entrypoint downloads DB here from GCS)
 RUN mkdir -p /app/SuperAgent/data
 
-# Pre-download the HF embedding model into the image layer (avoids runtime download).
-# sentence-transformers caches to ~/.cache/huggingface by default.
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+# Pre-stage the HF embedding model as raw files (avoids running Python/PyTorch
+# under QEMU which takes 10+ min). SentenceTransformer loads directly from local path.
+COPY .hf_models/sentence-transformers/all-MiniLM-L6-v2 /app/.hf_models/all-MiniLM-L6-v2
 
 # ChromaDB index: COPY pre-built local embeddings (3 MB) instead of running
 # 13-min QEMU-emulated inference at build time.  entrypoint.sh will

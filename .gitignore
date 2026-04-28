@@ -28,6 +28,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Pre-downloaded ML models (87MB, used by Docker build via COPY)
+.hf_models/
+
 # Project-specific exclusions
 Sales Scenarios.md
 

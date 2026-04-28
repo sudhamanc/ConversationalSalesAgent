@@ -10,6 +10,7 @@ the agent never pay the startup cost.
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,11 @@ _UTILS_DIR = Path(__file__).parent          # ProductAgent/product_agent/utils/
 _AGENT_DIR = _UTILS_DIR.parent              # ProductAgent/product_agent/
 _PRODUCT_AGENT_ROOT = _AGENT_DIR.parent     # ProductAgent/
 DEFAULT_VECTORSTORE_PATH = _PRODUCT_AGENT_ROOT / "data" / "embeddings"
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+# Embedding model: use local pre-downloaded copy if available (Docker build),
+# otherwise fall back to HF Hub download (local dev).
+_LOCAL_MODEL_PATH = Path(os.environ.get("EMBEDDING_MODEL_PATH", "/app/.hf_models/all-MiniLM-L6-v2"))
+DEFAULT_EMBEDDING_MODEL = str(_LOCAL_MODEL_PATH) if _LOCAL_MODEL_PATH.is_dir() else "all-MiniLM-L6-v2"
 COLLECTION_NAME = "product_knowledge"
 
 
