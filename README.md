@@ -400,7 +400,7 @@ The table below maps each conversation stage to the database operations performe
 | | *(agent asks for contact info)* | DiscoveryAgent | `contacts` | **INSERT** contact with name, title, email (required), phone (required). |
 | | *(agent runs BANT qualification)* | DiscoveryAgent | `opportunities`, `insights` | **INSERT** opportunity with BANT scores; **INSERT** buying signals and pain points. |
 | **3. Serviceability** | "Yes, check if we're serviceable" | ServiceabilityAgent | — | No DB writes. Stateless GIS/coverage lookup returns available infrastructure. |
-| **4. Product** | "Show me Fiber 5G specs" | ProductAgent | — | No DB writes. Reads from JSON catalog and ChromaDB vector store. |
+| **4. Product** | "Show me Fiber 5G specs" | ProductAgent | — | No DB writes. Catalog tools read from hardcoded `PRODUCT_CATALOG` dict; RAG (`search_product_knowledge`) reads from ChromaDB vector store for documentation-level questions only. |
 | **5. Quote** | "Give me pricing for Fiber 5G + SD-WAN" | OfferManagementAgent | `quotes` | **INSERT** quote with offer_id, items_json, pricing breakdown, term, discounts, totals. Status: `active`. Expires in 30 days. |
 | **6. Order** | "Proceed with this quote" | OrderAgent | `carts`, `cart_items`, `orders`, `order_items` | **INSERT** cart + cart items from quote. **INSERT** order + order items. **UPDATE** `quotes.status` → `ordered`. Order status: `pending_payment`. Expires in 48h. |
 | **7. Payment** | "Process payment" | PaymentAgent | `payments`, `orders` | **INSERT** payment record with credit score, authorization. **UPDATE** `orders.status` → `paid`. |
@@ -491,9 +491,16 @@ User: "Proceed"
 
 ## 🗃️ RAG / ChromaDB Knowledge Base
 
-The **ProductAgent** uses a vector database (ChromaDB) to answer deep product questions — SLAs, installation details, technology explanations, use-case fit, compliance — that are not captured in the structured product catalog.
+The **ProductAgent** has **two independent data sources** — it is important to understand which is used when:
 
-### How It Works
+| Data Source | Tools | When Used |
+|-------------|-------|-----------|
+| **`PRODUCT_CATALOG` dict** (hardcoded in `product_tools.py`) | `get_product_by_id`, `list_available_products`, `compare_products`, `search_products_by_criteria`, `suggest_alternatives`, `get_best_value_product` | Product lookups, comparisons, filtering by speed/category |
+| **ChromaDB vector store** (RAG) | `search_product_knowledge` | Documentation-level questions: SLA specifics, installation requirements, codec details, use-case fit |
+
+> **Key nuance:** "Compare Fiber 1G vs 5G" or "Show me Fiber 5G details" → reads from the **hardcoded catalog dict**, NOT RAG. RAG is only invoked when the LLM determines the question needs documentation-level depth beyond the structured catalog (e.g., "What codec does Business Voice use?" or "Is coax suitable for a medical practice?").
+
+### How RAG Works
 
 When a customer asks a question like *"What is the uptime SLA for Business Fiber 10G?"* or *"Is coax suitable for a medical practice?"*, the ProductAgent calls the `search_product_knowledge` tool instead of a catalog tool. That tool performs a semantic similarity search over the vector store and returns the most relevant documentation chunks as context, which the agent uses to compose a grounded, accurate answer.
 

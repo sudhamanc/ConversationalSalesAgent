@@ -54,7 +54,18 @@ ProductAgent/
 
 ## Tools (8 Functions)
 
-### Product Catalog Tools (product_tools.py)
+### ⚠️ Important: Two Separate Data Sources
+
+ProductAgent has **two independent data paths** that never overlap:
+
+| Data Source | Tools | What It Serves |
+|-------------|-------|---------------|
+| **`PRODUCT_CATALOG` dict** (hardcoded in `product_tools.py`) | `get_product_by_id`, `list_available_products`, `search_products_by_criteria`, `compare_products`, `suggest_alternatives`, `get_best_value_product` | Structured product details: speeds, features, technology, SLA tier, product IDs |
+| **ChromaDB vector store** (RAG via `rag_tools.py`) | `search_product_knowledge` | Documentation-level questions: SLA specifics, installation process, codec details, use-case fit, technology deep-dives |
+
+**Key nuance:** When a customer asks "Compare Fiber 1G vs 5G" or "Show me Fiber 5G details," the agent calls `compare_products` or `get_product_by_id` — these read exclusively from the hardcoded `PRODUCT_CATALOG` dictionary. **RAG is never involved in product lookups or comparisons.** RAG is only invoked when the LLM determines the question needs documentation-level depth that goes beyond the structured catalog (e.g., "What codec does Business Voice use?" or "Is fiber suitable for a medical practice?").
+
+### Product Catalog Tools (product_tools.py) — Source: `PRODUCT_CATALOG` dict
 
 | Tool | Signature | Purpose |
 |------|-----------|---------|
@@ -63,7 +74,7 @@ ProductAgent/
 | `search_products_by_criteria` | `(criteria) → List` | Search by speed, type, features |
 | `get_product_categories` | `() → List` | List product categories |
 
-### Comparison Tools (comparison_tools.py)
+### Comparison Tools (comparison_tools.py) — Source: `PRODUCT_CATALOG` dict
 
 | Tool | Signature | Purpose |
 |------|-----------|---------|
@@ -71,7 +82,7 @@ ProductAgent/
 | `suggest_alternatives` | `(product_id) → List` | Recommend similar products |
 | `get_best_value_product` | `(criteria) → Dict` | Find best-value match |
 
-### RAG Tools (rag_tools.py)
+### RAG Tools (rag_tools.py) — Source: ChromaDB vector store
 
 | Tool | Signature | Purpose |
 |------|-----------|---------|

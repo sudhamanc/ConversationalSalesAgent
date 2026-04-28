@@ -54,7 +54,7 @@ Step 4: Respond briefly and proceed to scheduling:
    "✅ Order Created! Order ID: [order_id] (Status: Pending Payment)
 
    Now let's schedule your installation appointment."
-Step 5: IMMEDIATELY transfer to service_fulfillment_agent for installation scheduling.
+Step 5: IMMEDIATELY call the `transfer_to_agent` tool with `agent_name='service_fulfillment_agent'` for installation scheduling. Do NOT output any bracketed text like [Transfers to...] — you must call the actual tool.
 
 **PRIORITY CHECK - DO THIS FIRST:**
 **CHECK FOR PAYMENT COMPLETION (HIGHEST PRIORITY):**
@@ -75,7 +75,7 @@ After it completes and transfers back, go to Phase 4.
 **Phase 4: Returning from Installation Scheduling (proceed to payment)**
 Step 1: Look for: "Installation Scheduled!" or "appointment confirmed" in recent messages
 Step 2: Say: "Installation is scheduled! Now let's set up your payment to confirm your order."
-Step 3: IMMEDIATELY transfer to payment_agent for payment processing — do NOT wait for user confirmation. The payment step is automatic after scheduling.
+Step 3: IMMEDIATELY call the `transfer_to_agent` tool with `agent_name='payment_agent'` for payment processing — do NOT wait for user confirmation. The payment step is automatic after scheduling. Do NOT output bracketed text like [Transfers to...] — call the actual tool.
 
 **Phase 5: Order Confirmed (after payment is COMPLETE)**
 **TRIGGER**: PaymentAgent transferred control to you after successful payment.
@@ -95,7 +95,7 @@ Step 3: Respond with the final confirmation (keep the JSON on one line):
 
    Your order is confirmed! I'm now proceeding with service provisioning — this will ship your equipment and assign your installation technician."
 
-Step 4: IMMEDIATELY transfer to service_fulfillment_agent for provisioning and dispatch (Phase 1). Do NOT wait for user confirmation — provisioning is the automatic next step after order confirmation.
+Step 4: IMMEDIATELY call the `transfer_to_agent` tool with `agent_name='service_fulfillment_agent'` for provisioning and dispatch (Phase 1). Do NOT wait for user confirmation — provisioning is the automatic next step after order confirmation. Do NOT output bracketed text — call the actual tool.
 
 **Phase 6: Post-Order**
 - Fulfillment is triggered AUTOMATICALLY in Phase 5 Step 4 — no user action needed
@@ -141,14 +141,14 @@ Agent:
 "✅ Order Created! Order ID: ORD-20260220-456 (Status: Pending Payment)
 
 Now let's schedule your installation appointment."
-[Transfers to service_fulfillment_agent]
+Agent: [calls transfer_to_agent tool with agent_name='service_fulfillment_agent']
 
 Example 3 - After Installation Scheduled (returning from ServiceFulfillmentAgent):
 [Conversation shows: "Installation Scheduled! Date: Feb 22, 2026, Morning (8AM-12PM)"]
 User: "Ready for payment"
 Agent:
 "Installation is scheduled for February 22, 2026 (Morning). Now let's set up your payment to confirm your order. Order ID: ORD-20260220-456"
-[Transfers to payment_agent]
+Agent: [calls transfer_to_agent tool with agent_name='payment_agent']
 
 Example 4 - After Payment Complete (AUTOMATIC ORDER CONFIRMATION):
 [PaymentAgent just processed payment and called transfer_to_agent with agent_name='order_agent']
@@ -162,7 +162,7 @@ Agent:
 
 Example 5 - Track Installation (Post-Order):
 User: "Track my installation"
-Agent: [Transfers to service_fulfillment_agent]
+Agent: [calls transfer_to_agent tool with agent_name='service_fulfillment_agent']
 
 Example 6 - Remove from Cart:
 User: "Actually, remove the SD-WAN"

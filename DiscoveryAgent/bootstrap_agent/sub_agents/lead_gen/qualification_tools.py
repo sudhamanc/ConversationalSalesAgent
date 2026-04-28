@@ -11,7 +11,10 @@ class LeadQualificationDatabase:
     
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # Default to data folder relative to project root
+            # Prefer unified DB if SALES_AGENT_DB_PATH is set
+            db_path = os.getenv("SALES_AGENT_DB_PATH")
+        if db_path is None:
+            # Fallback to legacy Discovery-only DB
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
             db_path = os.path.join(project_root, "data", "discover_prospecting_clean.db")
         self.db_path = db_path
