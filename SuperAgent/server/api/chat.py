@@ -82,9 +82,25 @@ def _parse_suggestion_payload(raw_text: str) -> list[str]:
 
 
 def _generate_dynamic_suggestions(user_message: str, assistant_message: str, author: str | None) -> list[str]:
-    """Generate generic editable next-step suggestions using LLM; return empty list on failure."""
+    """Generate sales-flow-aware next-step suggestions using LLM; return empty list on failure."""
     if not assistant_message.strip():
         return []
+
+    # Sales flow context per agent — guides LLM toward domain-appropriate suggestions
+    _AGENT_FLOW_HINTS = {
+        "greeting_agent": "User just started. Suggest: introducing their company/location, asking about products, checking serviceability.",
+        "discovery_agent": "Company info was gathered. Suggest: check serviceability for address, ask about product needs, provide budget/timeline.",
+        "serviceability_agent": "Address was validated. Suggest: view available products, get technical specs, request a pricing quote.",
+        "product_agent": "Products were shown. Suggest: generate a pricing quote, compare products, ask about term discounts (12/24/36 month).",
+        "offer_management_agent": "A pricing quote was generated. Suggest: proceed with this quote, show different term length (e.g. 24 or 36 month), add/remove products and requote.",
+        "order_agent": "Order was created. Suggest: schedule installation, review order details, proceed to payment.",
+        "payment_agent": "Payment was processed. Suggest: schedule installation, send payment confirmation, show order status.",
+        "service_fulfillment_agent": "Installation/fulfillment in progress. Suggest: simulate install day, activate service, show fulfillment status.",
+        "customer_communication_agent": "Notification was sent. Suggest: show notification history, resend confirmation, send status update.",
+        "faq_agent": "FAQ was answered. Suggest: ask about products, check serviceability, get a pricing quote.",
+    }
+
+    flow_hint = _AGENT_FLOW_HINTS.get(author or "", "Suggest logical next steps in a B2B telecom sales conversation.")
 
     try:
         from google import genai
@@ -96,10 +112,15 @@ def _generate_dynamic_suggestions(user_message: str, assistant_message: str, aut
             "You are a JSON API. Output ONLY a JSON object, nothing else.\n"
             "Generate 3 short next-step suggestions for a B2B telecom sales chat.\n"
             "Output: {\"suggestions\": [\"action1\", \"action2\", \"action3\"]}\n"
-            "Rules: each suggestion under 60 chars, generic (no names/addresses/IDs), actionable.\n"
+            "Rules:\n"
+            "- Each suggestion under 60 chars\n"
+            "- Suggestions must be specific to the current sales stage\n"
+            "- No customer names, addresses, or IDs\n"
+            "- Actionable and directly useful as clickable buttons\n"
+            f"Sales context: {flow_hint}\n"
             f"Agent: {author or 'agent'}\n"
-            f"User: {user_message[:200]}\n"
-            f"Response: {assistant_message[:300]}\n"
+            f"User said: {user_message[:200]}\n"
+            f"Agent response (excerpt): {assistant_message[:400]}\n"
         )
 
         # Use configured model for suggestions; disable thinking to avoid
@@ -316,6 +337,8 @@ async def _stream_from_runner(
                             payment_tools = {'process_payment', 'run_credit_check', 'authorize_payment'}
                             notification_tools = {'send_order_confirmation', 'send_payment_notification', 'send_quote_confirmation', 'send_installation_reminder', 'send_service_activated_notification', 'send_order_status_update'}
 
+                            cart_data = None
+
                             if isinstance(fn_response, dict) and fn_response.get('success'):
                                 # --- Customer identity event ---
                                 if fn_response.get('customer_id') and fn_response.get('company_name'):
@@ -415,9 +438,6 @@ async def _stream_from_runner(
                                     })
                                     yield f"data: {activity_payload}\n\n"
 
-                                # --- Cart update (existing logic) ---
-                                cart_data = None
-
                             # Quote tools don't wrap in {success: true} — check for offer_id instead
                             if isinstance(fn_response, dict) and fn_name in quote_tools and fn_response.get('offer_id'):
                                 activity_payload = json.dumps({
@@ -447,39 +467,39 @@ async def _stream_from_runner(
                                         },
                                     })
                                     yield f"data: {notif_payload}\n\n"
-                                if fn_name in cart_tools:
-                                    cart_data = fn_response.get('cart', fn_response)
-                                elif fn_name in order_tools:
-                                    order_payload = fn_response.get('order') if isinstance(fn_response.get('order'), dict) else None
-                                    items = []
-                                    total_amount = fn_response.get('total_amount', 0)
-                                    cart_id = fn_response.get('order_id', '')
+                            if fn_name in cart_tools:
+                                cart_data = fn_response.get('cart', fn_response)
+                            elif fn_name in order_tools:
+                                order_payload = fn_response.get('order') if isinstance(fn_response.get('order'), dict) else None
+                                items = []
+                                total_amount = fn_response.get('total_amount', 0)
+                                cart_id = fn_response.get('order_id', '')
 
-                                    if order_payload:
-                                        if isinstance(order_payload.get('items'), list):
-                                            items = order_payload.get('items', [])
-                                        total_amount = order_payload.get('total_amount', total_amount)
-                                        cart_id = order_payload.get('order_id', cart_id)
-                                    elif isinstance(fn_response.get('items'), list):
-                                        items = fn_response.get('items', [])
+                                if order_payload:
+                                    if isinstance(order_payload.get('items'), list):
+                                        items = order_payload.get('items', [])
+                                    total_amount = order_payload.get('total_amount', total_amount)
+                                    cart_id = order_payload.get('order_id', cart_id)
+                                elif isinstance(fn_response.get('items'), list):
+                                    items = fn_response.get('items', [])
 
-                                    if items:
-                                        cart_data = {
-                                            'cart_id': cart_id,
-                                            'items': items,
-                                            'total_amount': total_amount,
-                                        }
-                                    else:
-                                        logger.debug("Skipping cart_update for %s: no structured items in response", fn_name)
-                                if cart_data:
-                                    cart_payload = json.dumps({
-                                        "type": "cart_update",
-                                        "tool": fn_name,
-                                        "data": cart_data,
-                                        "author": event.author or "order_agent",
-                                    })
-                                    logger.debug(f"Emitting cart_update from {fn_name}")
-                                    yield f"data: {cart_payload}\n\n"
+                                if items:
+                                    cart_data = {
+                                        'cart_id': cart_id,
+                                        'items': items,
+                                        'total_amount': total_amount,
+                                    }
+                                else:
+                                    logger.debug("Skipping cart_update for %s: no structured items in response", fn_name)
+                            if cart_data:
+                                cart_payload = json.dumps({
+                                    "type": "cart_update",
+                                    "tool": fn_name,
+                                    "data": cart_data,
+                                    "author": event.author or "order_agent",
+                                })
+                                logger.debug(f"Emitting cart_update from {fn_name}")
+                                yield f"data: {cart_payload}\n\n"
 
                 if event.is_final_response() or event.turn_complete:
                     logger.info(f"Turn complete from {event.author}, sent_content={sent_content}, parts_count={len(response_parts)}")
