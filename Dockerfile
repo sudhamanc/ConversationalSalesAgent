@@ -15,8 +15,28 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# GCS client for SQLite DB sync
-RUN pip install --no-cache-dir google-cloud-storage
+# Standalone essentials — Dockerfile works even without requirements.txt
+# (pip skips already-installed packages, so no build-time cost for duplicates)
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    google-cloud-storage \
+    fastapi \
+    "uvicorn[standard]" \
+    google-genai \
+    google-adk \
+    python-dotenv \
+    pydantic \
+    pandas \
+    chromadb \
+    sentence-transformers \
+    diskcache \
+    requests
+
+# Install from requirements.txt (layer cached separately from source code)
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements.txt
 
 # Copy all agent directories (sub-agents resolve paths relative to workspace root)
 COPY SuperAgent/ ./SuperAgent/
@@ -28,12 +48,9 @@ COPY PaymentAgent/ ./PaymentAgent/
 COPY OrderAgent/ ./OrderAgent/
 COPY ServiceFulfillmentAgent/ ./ServiceFulfillmentAgent/
 COPY CustomerCommunicationAgent/ ./CustomerCommunicationAgent/
-COPY requirements.txt .
 
 # Copy built React app into the location FastAPI serves it from
 COPY --from=frontend-builder /app/SuperAgent/client/dist ./SuperAgent/client/dist
-
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Ensure unified DB data directory exists (entrypoint downloads DB here from GCS)
 RUN mkdir -p /app/SuperAgent/data
