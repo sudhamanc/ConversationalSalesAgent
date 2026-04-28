@@ -59,8 +59,14 @@ COPY --from=frontend-builder /app/SuperAgent/client/dist ./SuperAgent/client/dis
 # Ensure unified DB data directory exists (entrypoint downloads DB here from GCS)
 RUN mkdir -p /app/SuperAgent/data
 
-# Ingest product knowledge into ChromaDB at build time (baked into image)
-RUN python ProductAgent/scripts/ingest_knowledge.py
+# Pre-download the HF embedding model into the image layer (avoids runtime download).
+# sentence-transformers caches to ~/.cache/huggingface by default.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
+# ChromaDB index: COPY pre-built local embeddings (3 MB) instead of running
+# 13-min QEMU-emulated inference at build time.  entrypoint.sh will
+# regenerate only if the index is missing (e.g., first deploy without local build).
+# NOTE: ProductAgent/data/embeddings/ must NOT be in .dockerignore
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

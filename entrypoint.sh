@@ -2,6 +2,18 @@
 set -e
 
 # ---------------------------------------------------------------------------
+# ChromaDB: regenerate product embeddings if index was not baked into image
+# ---------------------------------------------------------------------------
+EMBEDDINGS_DIR="/app/ProductAgent/data/embeddings"
+if [ ! -f "$EMBEDDINGS_DIR/chroma.sqlite3" ]; then
+  echo "[entrypoint] ChromaDB index not found — running ingest (native amd64, ~30s)..."
+  python /app/ProductAgent/scripts/ingest_knowledge.py
+  echo "[entrypoint] ChromaDB ingest complete."
+else
+  echo "[entrypoint] ChromaDB index found — skipping ingest."
+fi
+
+# ---------------------------------------------------------------------------
 # Unified DB: all agents share a single SQLite file
 # ---------------------------------------------------------------------------
 DB_LOCAL="/app/SuperAgent/data/sales_agent.db"
