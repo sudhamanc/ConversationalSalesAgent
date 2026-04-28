@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     --trusted-host download.pytorch.org \
+    --trusted-host download-r2.pytorch.org \
     google-cloud-storage \
     fastapi \
     "uvicorn[standard]" \
@@ -38,6 +39,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     --trusted-host download.pytorch.org \
+    --trusted-host download-r2.pytorch.org \
     -r requirements.txt
 
 # Copy all agent directories (sub-agents resolve paths relative to workspace root)
