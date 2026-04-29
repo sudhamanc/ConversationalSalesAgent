@@ -90,9 +90,120 @@ ProductAgent has **two independent data paths** that never overlap:
 
 ### RAG Pipeline
 ```
+
 User question → 384-dim vector (sentence-transformers) → ChromaDB cosine similarity
 → Top 3 chunks → [Source: filename — section] context → Agent composes answer
 ```
+
+### Complete RAG Pipeline — Step by Step
+
+#### What Exists on Disk
+
+```
+ProductAgent/
+├── data/
+│   ├── product_docs/              ← SOURCE: 5 markdown knowledge files (858 lines)
+│   │   ├── fiber_internet.md      (156 lines — SLAs, install process, use cases)
+│   │   ├── coax_internet.md       (134 lines)
+│   │   ├── voice_services.md      (195 lines)
+│   │   ├── sd_wan.md              (174 lines)
+│   │   └── mobile_services.md     (173 lines)
+│   └── embeddings/                ← OUTPUT: ChromaDB vector store (3.2 MB, gitignored)
+│       ├── chroma.sqlite3         (vector index + metadata)
+│       └── 1465b650-.../          (binary HNSW vector data)
+│
+.hf_models/                        ← PROJECT ROOT (gitignored, 87 MB)
+└── sentence-transformers/
+    └── all-MiniLM-L6-v2/
+        ├── model.safetensors      (neural network weights — 87 MB)
+        ├── tokenizer.json         (WordPiece tokenizer)
+        ├── vocab.txt              (30,522 tokens)
+        └── config.json            (model architecture definition)
+```
+
+#### Local Development Flow
+
+**Step 1: Model Download (one-time, automatic)**
+
+When you first run the ingestion script, `SentenceTransformer('all-MiniLM-L6-v2')` checks `~/.cache/huggingface/hub/`. If not cached, it downloads 87 MB from HuggingFace Hub. This happens once ever per machine.
+
+**Step 2: Run Ingestion Script (one-time, or when product docs change)**
+
+```bash
+python ProductAgent/scripts/ingest_knowledge.py
+```
+
+What happens inside `ingest_knowledge.py`:
+1. Reads all `.md` files from `ProductAgent/data/product_docs/`
+2. Splits each file into chunks by `##`/`###` headings (~1800 chars max per chunk)
+3. Loads `SentenceTransformer('all-MiniLM-L6-v2')` from HF cache
+4. Encodes each text chunk → 384-dimension float vector
+5. Upserts vectors + text + metadata into ChromaDB at `ProductAgent/data/embeddings/`
+6. Idempotent — re-running only refreshes changed content (stable doc IDs)
+
+**Step 3: Runtime (every RAG query)**
+
+When a user asks a documentation-level question:
+1. ProductAgent LLM decides to call `search_product_knowledge(query)`
+2. `rag_manager.py` initializes lazily (first call only):
+   - Opens ChromaDB persistent client from `ProductAgent/data/embeddings/`
+   - Loads `SentenceTransformer` from `~/.cache/huggingface/hub/`
+3. Encodes the user's query string → 384-dim vector
+4. ChromaDB cosine similarity search → returns top 3 matching chunks
+5. Formatted text returned to the LLM as grounded context for its answer
+
+**Model path resolution (local):**
+```python
+_LOCAL_MODEL_PATH = "/app/.hf_models/all-MiniLM-L6-v2"  # doesn't exist locally
+# Falls back to: DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2" → resolves from HF cache
+```
+
+#### Docker / Cloud Run Flow
+
+**Build Time (Dockerfile):**
+
+```dockerfile
+# Step 1: Product docs + pre-built embeddings copied together
+COPY ProductAgent/ ./ProductAgent/
+# ↳ includes data/product_docs/ AND data/embeddings/ (pre-built locally!)
+
+# Step 2: Model files copied directly — no Python/PyTorch execution needed
+COPY .hf_models/sentence-transformers/all-MiniLM-L6-v2 /app/.hf_models/all-MiniLM-L6-v2
+```
+
+**No ingestion script runs at build time.** The embeddings were already generated on your local machine and COPY'd into the image.
+
+**Runtime (every RAG query):**
+
+1. User asks a question → ProductAgent calls `search_product_knowledge(query)`
+2. `rag_manager.py` initializes lazily (first call only):
+   - Opens ChromaDB from `/app/ProductAgent/data/embeddings/` (COPY'd at build)
+   - Checks: `/app/.hf_models/all-MiniLM-L6-v2` exists? **YES** → loads from disk
+3. Encodes query → 384-dim vector
+4. ChromaDB similarity search → top 3 chunks → returned as context
+
+**Model path resolution (Docker):**
+```python
+_LOCAL_MODEL_PATH = "/app/.hf_models/all-MiniLM-L6-v2"  # EXISTS in container
+# Uses: DEFAULT_EMBEDDING_MODEL = "/app/.hf_models/all-MiniLM-L6-v2" → loads from disk
+```
+
+#### Local vs Docker Comparison
+
+| Step | Local Dev | Docker/Cloud Run |
+|------|-----------|-----------------|
+| **Model source** | `~/.cache/huggingface/hub/` (auto-downloaded once) | `/app/.hf_models/all-MiniLM-L6-v2` (COPY'd at build) |
+| **Embeddings created by** | `python scripts/ingest_knowledge.py` (you run manually) | Never — COPY'd from your local `ProductAgent/data/embeddings/` |
+| **Embeddings location** | `ProductAgent/data/embeddings/` | `/app/ProductAgent/data/embeddings/` |
+| **When model loads** | First `search_product_knowledge` call | First `search_product_knowledge` call |
+| **Network needed?** | Only first-ever model download | Never |
+| **Ingestion time** | ~5 seconds | N/A (pre-built) |
+
+#### Why COPY Instead of RUN?
+
+Running `SentenceTransformer('all-MiniLM-L6-v2')` during `docker build` requires PyTorch initialization. On ARM Macs building linux/amd64 images via QEMU emulation, this takes **10+ minutes** (CPU emulation overhead). COPY'ing the raw model files is instant (0.1s).
+
+---
 
 ### Embedding Model Loading
 

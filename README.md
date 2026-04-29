@@ -523,6 +523,53 @@ python scripts/ingest_knowledge.py
 
 > **Note:** `ProductAgent/data/embeddings/` is in `.gitignore` — each developer runs ingestion locally after checkout. The embedding model (`all-MiniLM-L6-v2`, ~87MB) is auto-downloaded from HuggingFace on first run and cached at `~/.cache/huggingface/hub/`.
 
+### RAG Pipeline — Detailed Flow
+
+#### Files on Disk
+
+```
+ProductAgent/
+├── data/
+│   ├── product_docs/              ← 5 markdown knowledge files (858 lines total)
+│   │   ├── fiber_internet.md      (SLAs, install process, use cases)
+│   │   ├── coax_internet.md
+│   │   ├── voice_services.md
+│   │   ├── sd_wan.md
+│   │   └── mobile_services.md
+│   └── embeddings/                ← ChromaDB vector store output (3.2 MB, gitignored)
+│       ├── chroma.sqlite3
+│       └── <uuid>/                (HNSW binary vector data)
+│
+.hf_models/                        ← Embedding model (87 MB, gitignored, project root)
+└── sentence-transformers/
+    └── all-MiniLM-L6-v2/
+        ├── model.safetensors      (neural network weights)
+        ├── tokenizer.json         (WordPiece tokenizer)
+        └── config.json            (architecture)
+```
+
+#### Local Development
+
+1. **Model download** (one-time): `SentenceTransformer('all-MiniLM-L6-v2')` auto-downloads 87 MB to `~/.cache/huggingface/hub/` on first use
+2. **Ingestion** (one-time or when docs change): `python ProductAgent/scripts/ingest_knowledge.py`
+   - Reads `.md` files → splits by `##`/`###` headings → encodes chunks to 384-dim vectors → stores in ChromaDB
+3. **Runtime**: First `search_product_knowledge()` call loads model from HF cache + opens ChromaDB. Subsequent calls reuse the singleton.
+
+#### Docker / Cloud Run
+
+1. **Build time**: `COPY ProductAgent/ ./ProductAgent/` brings pre-built embeddings. `COPY .hf_models/... /app/.hf_models/...` brings model files. **No Python/ingestion runs at build.**
+2. **Runtime**: Model loads from `/app/.hf_models/all-MiniLM-L6-v2` (disk), ChromaDB opens from `/app/ProductAgent/data/embeddings/`. No network needed.
+
+#### Why COPY Instead of RUN at Build Time?
+
+Running `SentenceTransformer(...)` during `docker build` requires PyTorch initialization. On ARM Macs building linux/amd64 images via QEMU, this takes **10+ minutes**. COPY'ing raw files is instant.
+
+| Step | Local Dev | Docker |
+|------|-----------|--------|
+| Model source | `~/.cache/huggingface/hub/` | `/app/.hf_models/all-MiniLM-L6-v2` (COPY'd) |
+| Embeddings created | `python scripts/ingest_knowledge.py` | Never — COPY'd from local |
+| Network needed | First model download only | Never |
+
 ### Embedding Model — Docker vs Local
 
 The embedding model loading is environment-aware to avoid slow QEMU emulation during Docker builds:
