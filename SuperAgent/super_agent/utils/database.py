@@ -260,22 +260,71 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 -- =========================================================================
 
 CREATE TABLE IF NOT EXISTS payments (
-    payment_id     TEXT PRIMARY KEY,
-    order_id       TEXT NOT NULL REFERENCES orders(order_id),
-    customer_id    TEXT NOT NULL,
-    transaction_id TEXT,
-    amount         REAL NOT NULL,
-    status         TEXT NOT NULL DEFAULT 'pending',
-    credit_score   INTEGER,
-    payment_method TEXT,
-    created_at     TEXT NOT NULL,
-    updated_at     TEXT NOT NULL,
-    expires_at     TEXT
+    payment_id       TEXT PRIMARY KEY,
+    order_id         TEXT NOT NULL REFERENCES orders(order_id),
+    customer_id      TEXT NOT NULL,
+    transaction_id   TEXT,
+    idempotency_key  TEXT UNIQUE,          -- client-supplied key; retries return same result
+    amount           REAL NOT NULL,
+    currency         TEXT NOT NULL DEFAULT 'USD',
+    status           TEXT NOT NULL DEFAULT 'initiated',  -- initiated|processing|completed|failed|refunded
+    credit_score     INTEGER,
+    payment_method   TEXT,
+    failure_reason   TEXT,                 -- populated on failed/declined
+    attempt_count    INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    expires_at       TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_payments_order    ON payments(order_id);
-CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
-CREATE INDEX IF NOT EXISTS idx_payments_status   ON payments(status);
+-- One-payment-per-order: prevent duplicate charges at the DB level
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_order ON payments(order_id)
+    WHERE status IN ('processing', 'completed');
+
+CREATE INDEX IF NOT EXISTS idx_payments_order       ON payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_customer    ON payments(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status      ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key);
+
+-- Immutable audit trail: one row per state transition, never updated
+CREATE TABLE IF NOT EXISTS payment_events (
+    event_id    TEXT PRIMARY KEY,
+    payment_id  TEXT NOT NULL REFERENCES payments(payment_id),
+    from_status TEXT,
+    to_status   TEXT NOT NULL,
+    actor       TEXT NOT NULL DEFAULT 'payment_agent',  -- agent/system that caused transition
+    note        TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_events_payment ON payment_events(payment_id);
+
+-- Rate-limiting: tracks payment attempts per customer to catch velocity abuse
+CREATE TABLE IF NOT EXISTS payment_rate_limit (
+    customer_id  TEXT NOT NULL,
+    window_start TEXT NOT NULL,      -- ISO-8601 hour bucket  e.g. "2026-05-02T14"
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (customer_id, window_start)
+);
+
+-- Stored (tokenized) payment methods per customer
+CREATE TABLE IF NOT EXISTS customer_payment_methods (
+    method_id     TEXT PRIMARY KEY,
+    customer_id   TEXT NOT NULL,
+    payment_type  TEXT NOT NULL,          -- credit_card | ach
+    token         TEXT NOT NULL UNIQUE,   -- cryptographically random token
+    card_brand    TEXT,                   -- visa | mastercard | amex | discover (credit only)
+    last_four     TEXT,                   -- display-only masked digits
+    account_type  TEXT,                   -- checking | savings (ach only)
+    is_default    INTEGER NOT NULL DEFAULT 0,
+    nickname      TEXT,
+    token_expiry  TEXT,                   -- YYYY-MM-DD
+    status        TEXT NOT NULL DEFAULT 'active',  -- active | revoked
+    created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cpm_customer ON customer_payment_methods(customer_id);
+CREATE INDEX IF NOT EXISTS idx_cpm_token    ON customer_payment_methods(token);
 
 -- =========================================================================
 -- Fulfillment Domain (1 table — NEW, replaces ServiceFulfillment mock)
