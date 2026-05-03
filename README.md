@@ -58,6 +58,7 @@ Responses stream back to the browser via Server-Sent Events (SSE).
 | **Router-only orchestrator** | SuperAgent classifies intent and delegates — never generates user-facing text |
 | **Temperature-stratified agents** | Conversational agents use temp 0.7; transactional agents use temp 0.0 |
 | **Structured data contracts** | Tools return JSON (not prose) to prevent LLM rephrasing of critical values |
+| **Shared session-state contracts** | Agents publish authoritative context into ADK session state so downstream agents consume structured facts instead of re-reading conversation text |
 | **Importlib isolation** | Sub-agents loaded without triggering `__init__.py` to avoid ADK parent-binding conflicts |
 
 ### How Agents Communicate
@@ -65,20 +66,63 @@ Responses stream back to the browser via Server-Sent Events (SSE).
 ```
 User Message → SuperAgent (intent analysis)
                   │
-                  ├─ transfer_to_agent("discovery_agent")
-                  │       └─ Discovery calls tools → returns JSON → responds to user
+                  ├─ SuperAgent → Sub-agent delegation
+                  │    transfer_to_agent("discovery_agent")
+                  │    transfer_to_agent("product_agent")
+                  │    transfer_to_agent("payment_agent")
                   │
-                  ├─ transfer_to_agent("serviceability_agent")
-                  │       └─ Serviceability validates address via GIS → responds
+                  ├─ Sub-agent → Sub-agent workflow continuation
+                  │    discovery_agent → serviceability_agent
+                  │    order_agent → service_fulfillment_agent
+                  │    service_fulfillment_agent → order_agent
+                  │    order_agent → payment_agent
+                  │    payment_agent → order_agent
                   │
-                  └─ transfer_to_agent("offer_management_agent")
-                          └─ Offer Mgmt computes pricing → returns quote JSON
+                  └─ Shared ADK session state
+                       customer_context → serviceability_context
+                       order_context → payment_context
+                       consumed by downstream agents/tools
 ```
 
-- **Delegation is ADK-native** — SuperAgent declares `sub_agents=[...]` and ADK handles the handoff
-- **No custom protocol** — ADK's built-in delegation replaces A2A or message queues
-- **Session state is shared** — all agents read/write to ADK's session context, enabling multi-turn flows
-- **Chained handoffs** — after DiscoveryAgent registers a company, the orchestrator auto-routes to ServiceabilityAgent
+- **SuperAgent → sub-agent routing** is ADK-native. SuperAgent declares `sub_agents=[...]` and always calls `transfer_to_agent(...)` rather than producing customer text.
+- **Sub-agent → sub-agent progression** is also ADK-native. Once a specialist finishes a step, it can call `transfer_to_agent(...)` itself to hand control to the next specialist without waiting for the root orchestrator to re-interpret the workflow.
+- **Shared session state is the data plane.** Agents exchange authoritative facts through ADK session keys such as `customer_context`, `serviceability_context`, `order_context`, and `payment_context`.
+- **Deterministic tools publish state; conversational agents consume it.** This prevents downstream agents from reconstructing addresses, order IDs, or payment results from natural-language history.
+- **Wrapper callbacks stabilize brittle handoffs.** Where Gemini occasionally fails to emit text plus transfer reliably, SuperAgent wrappers use `after_agent_callback` logic to enforce the intended next step without abandoning ADK's delegation model.
+
+### ADK Session State Implementation
+
+The system uses **ADK session state as a shared structured memory layer** across the entire sales workflow. This is not just generic chat memory; it is a deliberate contract for moving critical business context between agents without re-parsing free-form conversation.
+
+**Current state contracts in use:**
+
+- `customer_context` — published by DiscoveryAgent after prospect registration or company lookup so downstream agents know the authoritative customer identity and service address.
+- `serviceability_context` — published by ServiceabilityAgent after GIS validation so ProductAgent and OfferManagementAgent can reason over confirmed access technology, serviceability status, and infrastructure details.
+- `order_context` — published by OrderAgent after quote-to-order conversion so PaymentAgent and Fulfillment can consume the exact `order_id`, `customer_id`, selected services, and commercial payload.
+- `payment_context` — published by PaymentAgent after successful processing so downstream confirmation, activation, and notification logic can consume the exact payment outcome and transaction identifiers.
+
+**Why this was implemented:**
+
+- **To prevent hallucinated handoff data.** Exact values like zip codes, order IDs, offer IDs, and transaction IDs should not be regenerated from conversation text.
+- **To support multi-turn workflows.** Payment, scheduling, activation, and notifications often happen on later turns; session state preserves authoritative context across those boundaries.
+- **To decouple reasoning from transaction semantics.** The LLM can decide what step comes next, while deterministic tools remain the source of truth for what already happened.
+- **To make recovery and retries safe.** If an agent transfer is retried or a model turn is empty, the next component can resume from state instead of guessing from chat history.
+
+**Benefits of this approach:**
+
+- **Higher reliability** for agent-to-agent workflows because downstream steps consume machine-written state instead of model-written prose.
+- **Cleaner prompt design** because prompts can assume structured context exists instead of repeatedly extracting the same facts.
+- **Safer transactional chaining** across quote → order → payment → fulfillment → activation.
+- **Better observability** because state reads and writes can be logged at each boundary.
+
+**Current implementation pattern:**
+
+1. A deterministic tool completes a business step.
+2. That tool writes a compact structured payload into `tool_context.state[...]`.
+3. The next agent reads the state key instead of inferring the result from prior messages.
+4. If the conversational handoff is brittle, a wrapper-level `after_agent_callback` can use that same state to enforce the next transfer or synthesize the next deterministic opener.
+
+This is why the current design still uses agents: the LLM remains responsible for conversational flexibility and routing, while **ADK session state provides the structured continuity layer** needed for exact business workflows.
 
 ---
 
@@ -133,7 +177,7 @@ The system implements a **hierarchical orchestration pattern** where a root Supe
 | **ProductAgent** | Configuration | — | JSON Catalog + ChromaDB |
 | **OfferManagementAgent** | Configuration | `quotes` | Unified SQLite |
 | **OrderAgent** | Transaction | `carts`, `cart_items`, `orders`, `order_items` | Unified SQLite |
-| **PaymentAgent** | Transaction | `payments` | Unified SQLite + Payment Gateway |
+| **PaymentAgent** | Transaction | `payments` | Unified SQLite + hardened payment pipeline (idempotency, state machine, audit trail, rate limiting) |
 | **ServiceFulfillmentAgent** | Transaction | `fulfillments`, `customer_master` | Unified SQLite + Scheduler |
 | **CustomerCommunicationAgent** | Transaction | `notifications`, `dedup_cache` | Unified SQLite + SMTP |
 
@@ -453,6 +497,25 @@ Account:    Existing_Customer=N ──→ Existing_Customer=Y (on activation)
 | **dedup_cache** | — | — | — | — | — | R/W | — |
 
 > **R** = SELECT, **W** = INSERT/UPDATE. **DB Lifecycle** = background `cleanup_stale_records()` for TTL enforcement.
+
+### PaymentAgent Hardening
+
+The PaymentAgent is implemented as a **deterministic, defense-in-depth payment workflow** rather than a simple "charge card" wrapper. The current design assumes payment is a critical transaction boundary and hardens the flow accordingly.
+
+**Built-in safeguards include:**
+
+- **Idempotency keys** on `process_payment()` so client retries return the original result instead of creating duplicate charges.
+- **Duplicate-payment protection** that checks whether an order already has a completed payment before inserting a new one.
+- A **payment state machine** with explicit transitions (`initiated → processing → completed/failed`) instead of writing a final status in one step.
+- **Per-customer rate limiting** for payment attempts to reduce brute-force or accidental repeated submissions.
+- **Velocity-aware approval checks** that simulate transaction-count and cumulative-spend controls before approval.
+- An **immutable `payment_events` audit trail** so every status transition is recorded append-only for traceability.
+- **Cryptographically random tokens and transaction identifiers** rather than predictable derived values.
+- **CVV discard behavior** after validation so sensitive verification data is never stored.
+- **Order-linked payment persistence** in unified SQLite, with `orders.status` updated to `paid` only after successful completion.
+- **Session-state propagation** back into the ADK workflow so downstream agents can consume authoritative `payment_context` without re-inferring payment results from conversation text.
+
+This means the PaymentAgent is designed as a **transaction-safe orchestration component**: the LLM handles conversational collection and routing, while the actual payment semantics are enforced through deterministic code paths, persisted state, and auditable transitions.
 
 ---
 
