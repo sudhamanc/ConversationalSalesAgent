@@ -9,8 +9,11 @@ Moved from ServiceFulfillmentAgent to maintain proper separation of concerns:
 
 import json
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
+
+from google.adk.tools.tool_context import ToolContext
+
 from ..utils.logger import get_logger
 from ..utils.database import save_order, load_order, load_orders_for_customer, update_order_field
 from ..models import Order, OrderStatus
@@ -82,14 +85,15 @@ def create_order(
     customer_id: str = None,
     contact_email: str = None,
     price: float = None,
-    offer_id: str = None
+    offer_id: str = None,
+    tool_context: Optional[ToolContext] = None,
 ) -> Dict[str, Any]:
     """
     Creates a new service order from cart or direct input.
-    
+
     NOTE: customer_id is now OPTIONAL. If not provided, generates one automatically
     in format CUST-YYYYMMDD-XXX where XXX is hash of customer_name.
-    
+
     Args:
         customer_name: Customer or business name
         service_address: Installation address
@@ -99,13 +103,34 @@ def create_order(
         contact_email: Customer contact email
         price: Service price (optional, for price tracking)
         offer_id: Offer/quote identifier from OfferManagement (links order to quote)
-    
+
     Returns:
         Created order details with JSON structure
     """
     logger.info(f"Creating order for customer {customer_name}")
-    
+
     try:
+        # Read state first (Priority 1) — pulls customer_id and offer_id
+        # deterministically from upstream agents instead of relying on the
+        # LLM to extract them from conversation history.
+        if tool_context is not None:
+            cust_ctx = tool_context.state.get("customer_context") or {}
+            offer_ctx = tool_context.state.get("offer_context") or {}
+            logger.info(f"[STATE READ] create_order <- customer_context = {cust_ctx}")
+            logger.info(f"[STATE READ] create_order <- offer_context offer_id={offer_ctx.get('offer_id')} total_price={offer_ctx.get('total_price')}")
+            if not customer_id:
+                state_cid = cust_ctx.get("customer_id")
+                if isinstance(state_cid, str):
+                    customer_id = state_cid
+            if not offer_id:
+                state_oid = offer_ctx.get("offer_id")
+                if isinstance(state_oid, str):
+                    offer_id = state_oid
+            if price is None:
+                state_price = offer_ctx.get("total_price")
+                if isinstance(state_price, (int, float)):
+                    price = float(state_price)
+
         # Auto-generate customer_id if not provided (fixes critical bug)
         if not customer_id:
             customer_id = f"CUST-{datetime.now().strftime('%Y%m%d')}-{hash(customer_name) % 1000:03d}"
@@ -156,6 +181,24 @@ def create_order(
             # "deduped" status means a notification was already sent recently — still counts
         )
         email_notification_id = email_result.get("notification_id") if email_result else None
+
+        # Publish order to session state so PaymentAgent and ServiceFulfillmentAgent
+        # can read order_id / customer_id / amount directly without LLM extraction.
+        if tool_context is not None:
+            tool_context.state["order_context"] = {
+                "order_id": order_id,
+                "customer_id": customer_id,
+                "customer_name": customer_name,
+                "contact_email": contact_email,
+                "contact_phone": contact_phone,
+                "service_address": service_address,
+                "service_type": service_type,
+                "price": price,
+                "offer_id": offer_id,
+                "total_amount": order.total_amount,
+                "status": order.status,
+            }
+            logger.info(f"[STATE WRITE] create_order -> order_context order_id={order_id} customer_id={customer_id} offer_id={offer_id}")
 
         # Return JSON structure
         return json.loads(json.dumps({

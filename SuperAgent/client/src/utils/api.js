@@ -63,6 +63,7 @@ export async function streamChat(
   onStructuredCard
 ) {
   const token = await getToken();
+  console.info("[chat] send", { length: (message || "").length });
 
   try {
     const res = await fetch(`${API_BASE}/chat`, {
@@ -110,9 +111,11 @@ export async function streamChat(
           } else if (payload.type === "suggestions") {
             onSuggestions?.(payload.data, payload.author);
           } else if (payload.type === "done") {
+            console.info("[chat] done");
             onDone();
             return;
           } else if (payload.type === "error") {
+            console.error("[chat] error", payload.content);
             onError(payload.content);
             return;
           }
@@ -122,8 +125,10 @@ export async function streamChat(
       }
     }
 
+    console.info("[chat] done");
     onDone();
   } catch (err) {
+    console.error("[chat] network error", err);
     onError(err.message || "Network error");
   }
 }

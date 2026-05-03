@@ -50,7 +50,7 @@ If the user message starts with the exact text "[GREETING]", this is a programma
    - "What can you offer me?" (no qualification yet)
    - "I want to get fiber for my business" (needs discovery first)
    
-   The discovery_agent will ask for company name and address to qualify the prospect before proceeding.
+   The discovery_agent will ask for company name, Name, budget, Telephone number and address to qualify the prospect before proceeding.
 
    Note: This rule ensures we always qualify the prospect BEFORE discussing specific products or checking serviceability.
 
@@ -59,7 +59,7 @@ If the user message starts with the exact text "[GREETING]", this is a programma
    - A customer provides a physical address (street, city, state)
    - Customer asks about service availability, infrastructure, or speeds at a location
    - Customer confirms they want a serviceability check
-   - **AUTOMATICALLY after discovery_agent completes company registration with an address** - if the conversation history shows discovery_agent just registered a company with a full address, transfer to serviceability_agent on the user's next message (even if it's just "ok", "yes", or any acknowledgment)
+   - **AUTOMATICALLY after discovery_agent completes company registration with an address** - if the conversation history shows discovery_agent just registered a company with a full address, transfer to serviceability_agent automatically OR on the user's next message (even if it's just "ok", "yes", or any acknowledgment). Attempt to automatically trigger serviceability right after discovery to create a seamless flow. Do NOT wait for the user to explicitly ask for serviceability after discovery — ANY response after discovery with an address should trigger serviceability.
    - **OVERRIDE (HIGHEST PRIORITY)**: If the customer message contains ANY of these phrases — "check serviceability", "check service", "is my address serviceable", "check if my location", "serviceability check", "check coverage", "is service available" — transfer to **serviceability_agent** IMMEDIATELY regardless of discovery or BANT status. Do NOT route to discovery_agent.
    
    Examples:

@@ -11,6 +11,9 @@ import sys
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from random import uniform
+
+from google.adk.tools.tool_context import ToolContext
+
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,24 +33,42 @@ def _get_db_connection():
 def activate_service(
     order_id: str,
     service_type: str,
-    circuit_id: str = None
+    circuit_id: str = None,
+    tool_context: Optional[ToolContext] = None,
 ) -> Dict[str, Any]:
     """
     Activates service for a completed installation.
-    
+
     For production: Integrates with service activation platform
     For testing: Simulates service activation
-    
+
     Args:
         order_id: Order identifier
         service_type: Type of service to activate
         circuit_id: Circuit identifier (auto-generated if not provided)
-    
+
     Returns:
         Service activation details
     """
+    # Read order_context / payment_context from session state to resolve
+    # order_id and service_type if the LLM didn't pass them. Existing DB
+    # logic in _update_fulfillment_activation stays unchanged.
+    if tool_context is not None:
+        order_ctx = tool_context.state.get("order_context") or {}
+        payment_ctx = tool_context.state.get("payment_context") or {}
+        logger.info(f"[STATE READ] activate_service <- order_context order_id={order_ctx.get('order_id')} service_type={order_ctx.get('service_type')}")
+        logger.info(f"[STATE READ] activate_service <- payment_context txn={payment_ctx.get('transaction_id')} status={payment_ctx.get('status')}")
+        if not order_id:
+            state_oid = order_ctx.get("order_id") or payment_ctx.get("order_id")
+            if isinstance(state_oid, str):
+                order_id = state_oid
+        if not service_type:
+            state_stype = order_ctx.get("service_type")
+            if isinstance(state_stype, str):
+                service_type = state_stype
+
     logger.info(f"Activating service for order {order_id}")
-    
+
     try:
         # Generate circuit ID if not provided
         if not circuit_id:

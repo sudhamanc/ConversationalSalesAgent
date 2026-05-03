@@ -7,6 +7,9 @@ if an address can receive service and what infrastructure is available.
 
 import os
 from typing import Dict, List, Any, Optional
+
+from google.adk.tools.tool_context import ToolContext
+
 from ..utils.logger import get_logger
 from ..utils.cache import cache_result, get_cached_result
 
@@ -604,51 +607,94 @@ def _sanitize_mock_coverage_data() -> None:
 _sanitize_mock_coverage_data()
 
 
-def check_service_availability(street: str, city: str, state: str, zip_code: str) -> Dict[str, Any]:
+def check_service_availability(
+    street: str,
+    city: str,
+    state: str,
+    zip_code: str,
+    tool_context: Optional[ToolContext] = None,
+) -> Dict[str, Any]:
     """
     Checks if telecom services are available at the given address.
-    
+
     This is the MAIN deterministic tool for the Serviceability Agent.
     Queries GIS/Coverage Map API to determine service availability and network infrastructure details.
-    
+
     CRITICAL: This function NEVER invents data. All serviceability information
     comes from the GIS API (or mock data in development).
-    
+
     Args:
         street: Street address (e.g. "123 Market Street")
         city: City name (e.g. "Philadelphia")
         state: State abbreviation (e.g. "PA")
         zip_code: ZIP code (e.g. "19107")
-        
+
     Returns:
         ServiceabilityResult dict with availability status, infrastructure details,
         network elements (switch, cable pairs), and speed capabilities
     """
     address = {"street": street, "city": city, "state": state, "zip_code": zip_code}
     logger.info(f"Checking serviceability for: {street}, {city}, {state} {zip_code}")
-    
+
     # Generate cache key
     cache_key = f"serviceability:{zip_code}:{street.lower()}"
-    
+
     # Check cache first (24-hour TTL)
     cached = get_cached_result(cache_key)
     if cached:
         logger.info("Returning cached serviceability result")
+        _publish_serviceability_to_state(tool_context, cached, address, zip_code)
         return cached
-    
+
     # Determine if using mock data or real API
     use_mock = os.getenv("USE_MOCK_DATA", "true").lower() == "true"
-    
+
     if use_mock:
         result = _mock_gis_lookup(address)
     else:
         result = _call_real_gis_api(address)
-    
+
     # Cache the result for 24 hours
     cache_result(cache_key, result, ttl_hours=24)
-    
+
+    # Publish to session state so OfferManagement / ProductAgent can read
+    # infrastructure type and available product IDs deterministically.
+    _publish_serviceability_to_state(tool_context, result, address, zip_code)
+
     logger.info(f"Serviceability check complete: serviceable={result['serviceable']}")
     return result
+
+
+def _publish_serviceability_to_state(
+    tool_context: Optional[ToolContext],
+    result: Dict[str, Any],
+    address: Dict[str, str],
+    zip_code: str,
+) -> None:
+    """Write serviceability_context to session state (best-effort, additive)."""
+    if tool_context is None or not result.get("serviceable"):
+        return
+    try:
+        infra = result.get("infrastructure") or {}
+        speed_cap = infra.get("speed_capability") or {}
+        max_speed_mbps = speed_cap.get("max_speed_mbps")
+        # Pull specific product IDs from MOCK_COVERAGE_DATA when available
+        # (the response only carries categories, not specific IDs).
+        coverage = MOCK_COVERAGE_DATA.get(zip_code, {})
+        available_products = coverage.get("available_products", [])
+        tool_context.state["serviceability_context"] = {
+            "is_serviceable": True,
+            "infrastructure_type": result.get("infrastructure_type"),
+            "max_speed_mbps": max_speed_mbps,
+            "available_products": available_products,
+            "available_product_categories": result.get("available_product_categories", []),
+            "service_zone": result.get("service_zone"),
+            "estimated_install_days": result.get("estimated_install_days"),
+            "service_address": f"{address['street']}, {address['city']}, {address['state']} {address['zip_code']}",
+        }
+        logger.info(f"[STATE WRITE] check_service_availability -> serviceability_context infra={result.get('infrastructure_type')} products={len(available_products)} zip={zip_code}")
+    except Exception as exc:
+        logger.warning(f"Failed to write serviceability_context to state: {exc}")
 
 
 def _mock_gis_lookup(address: Dict[str, str]) -> Dict[str, Any]:

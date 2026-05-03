@@ -506,7 +506,7 @@ discovery_agent = agent_mod.discovery_agent  # Fresh instance for SuperAgent
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **LLM** | Google Gemini 2.0 Flash | Autonomous reasoning, intent analysis |
+| **LLM** | Google Gemini 3.0 Flash | Autonomous reasoning, intent analysis |
 | **Agent Framework** | Google ADK 1.20+ | Multi-agent orchestration, tool integration |
 | **Backend** | Python 3.12 + FastAPI | Agent logic, REST + SSE streaming |
 | **Frontend** | React 19 + Vite + Tailwind | Chat UI with real-time message display |

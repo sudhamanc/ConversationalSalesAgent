@@ -5,8 +5,10 @@ import os
 import json
 import logging
 import sys
+from typing import Optional
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
+from google.adk.tools.tool_context import ToolContext
 from .db_tools import ProspectingDatabase
 from ..lead_gen.qualification_tools import LeadQualificationDatabase
 
@@ -84,7 +86,7 @@ def search_companies(
     return json.dumps({"found": len(companies), "companies": companies}, indent=2)
 
 
-def get_company_profile(company_name: str) -> str:
+def get_company_profile(company_name: str, tool_context: Optional[ToolContext] = None) -> str:
     logger.info(f"DiscoveryAgent: get_company_profile called with company_name={company_name}")
     """
     Get comprehensive profile for a specific company including spend data, location, and products.
@@ -130,7 +132,17 @@ def get_company_profile(company_name: str) -> str:
             "social": company.get('Social', 0),
             "primary_agency": company.get('Primary Agency', 'Unknown')
         }
-    
+
+    # Publish customer identity to ADK session state so downstream agents
+    # don't have to re-extract customer_id / address from conversation history.
+    if tool_context is not None and profile.get("customer_id"):
+        tool_context.state["customer_context"] = {
+            "customer_id": profile["customer_id"],
+            "company_name": profile["company_name"],
+            "address": profile["address"],
+        }
+        logger.info(f"[STATE WRITE] get_company_profile -> customer_context = {tool_context.state['customer_context']}")
+
     return json.dumps(profile, indent=2)
 
 
@@ -300,7 +312,8 @@ def add_new_company(
     parent_company: str = None,
     existing_customer: str = 'N',
     current_products: str = None,
-    products_of_interest: str = None
+    products_of_interest: str = None,
+    tool_context: Optional[ToolContext] = None,
 ) -> str:
     logger.info(f"DiscoveryAgent: add_new_company called with company_name={company_name}, industry={industry}, region={region}, street={street}, city={city}, state={state}, zip_code={zip_code}, website={website}, parent_company={parent_company}, existing_customer={existing_customer}, current_products={current_products}, products_of_interest={products_of_interest}")
     """
@@ -344,6 +357,22 @@ def add_new_company(
         "company_name": company_name,
         "message": result["message"],
     }
+
+    # Publish customer identity to ADK session state for downstream agents.
+    if tool_context is not None and result.get("success") and result.get("customer_id"):
+        tool_context.state["customer_context"] = {
+            "customer_id": result["customer_id"],
+            "company_name": company_name,
+            "address": {
+                "street": street,
+                "address_line2": address_line2 or "",
+                "city": city,
+                "state": state,
+                "zip_code": zip_code or "",
+            },
+        }
+        logger.info(f"[STATE WRITE] add_new_company -> customer_context = {tool_context.state['customer_context']}")
+
     return json.dumps(output, indent=2)
 
 
@@ -743,9 +772,10 @@ When a user mentions their company name, ALWAYS search for it first using `searc
    Are you calling about service for this location?"
 
 4. Based on customer response:
-   - **If YES (same location):** Immediately inform them you're checking serviceability:
-     "Great! Let me check if this address is serviceable and what network infrastructure is available..."
-     Then END your response. Do NOT output any transfer commands or bracketed text. The SuperAgent orchestrator will automatically route to the serviceability_agent on the next turn.
+   - **If YES (same location):** Respond with EXACTLY two parts in the SAME turn:
+       Step 1 (text): "Great! Let me check serviceability for this address..."
+       Step 2 (tool — REQUIRED): call `transfer_to_agent(agent_name='serviceability_agent')`.
+     Emitting only the text without calling the tool will leave the conversation stuck in discovery_agent.
    
    - **If NO (different/new location):** Start collecting the new address:
      "I understand you're calling about a different location. Could you please provide the full address for the new location?"
@@ -896,14 +926,27 @@ Gather the following in a natural, conversational way — do NOT present it as a
 - If the customer seems eager to move forward quickly, you can combine questions
 - If they decline to answer any BANT question (budget, need, timeline), that's OK — mark that component as 'Unknown'
 - **EMAIL and PHONE are important but NOT blockers** — try to collect both: "To send you order confirmations and notifications, what email address and phone number should we use?" If the customer provides them, save with `add_new_contact`. If they skip either, decline, or ask to proceed to serviceability anyway, that's OK — proceed with 'N/A' for the missing field.
-- **CRITICAL**: If the customer EXPLICITLY asks to "check serviceability", "check service availability", "check if my location is serviceable", or similar — STOP the BANT flow immediately. Say "Let me check serviceability for your location..." and END your response. Do NOT output any transfer commands or bracketed text. The SuperAgent will automatically route to serviceability_agent on the next turn.
+- **CRITICAL — TWO-STEP RESPONSE**: If the customer EXPLICITLY asks to "check serviceability", "check service availability", "check if my location is serviceable", "check address serviceability", "provide serviceability results", or anything similar — STOP whatever you're doing and respond with EXACTLY these two parts in the SAME turn:
+    Step 1 (text): one short line: "Let me check serviceability for your location..."
+    Step 2 (tool — REQUIRED): call `transfer_to_agent(agent_name='serviceability_agent')`.
+  Emitting only Step 1 (text) is a failure — the user is already asking for serviceability and you must hand off via the tool call. Do NOT just say "Let me check..." and stop; ADK lets you produce text AND a tool call in the same response.
 - Do NOT block the conversation on any BANT field — if they want to skip anything, let them
-- After gathering available BANT signals, call `create_opportunity_from_bant` to create the opportunity record
-- Then inform the user you'll check serviceability:
 
-"Thank you for sharing that! I've got everything I need to get you started. Let me check if your address is serviceable and what network infrastructure is available..."
+**MANDATORY POST-BANT CHECKLIST — you MUST perform ALL three steps below in a SINGLE turn:**
 
-Then END your response. Do NOT output any transfer commands, bracketed text like [transfer_to_agent], or routing instructions. The SuperAgent orchestrator will automatically route to the serviceability_agent on the next turn.
+Step 1 (tool): call `create_opportunity_from_bant(...)` to record the opportunity.
+
+Step 2 (text): emit ONE short user-facing line, optionally preceded by a compact bullet summary of what you captured (2–4 bullets max). Example:
+    - Name: Mr. Max
+    - Role: Manager (Decision-maker)
+    - Email: max@company.com
+    - Phone: 555-555-5555
+    Then a single short line, e.g.: "Thank you, Mr. Max! Let me check serviceability for your address now..."
+
+Step 3 (tool — DO NOT SKIP): call `transfer_to_agent(agent_name='serviceability_agent')`.
+
+**Step 3 is NOT optional.** If you only emit the text from Step 2 without the Step 3 tool call, the conversation gets stuck in discovery_agent and the user CANNOT proceed. The user has explicitly asked for serviceability — emitting "Let me check..." text without the actual `transfer_to_agent` call is a failure mode. Output the text AND make the tool call together; ADK supports both in a single response (just like you call `add_new_contact` and `create_opportunity_from_bant` together).
+
 
 **For EXISTING customers found in the database:**
 Skip BANT qualification — they already have records. Confirm the address first.

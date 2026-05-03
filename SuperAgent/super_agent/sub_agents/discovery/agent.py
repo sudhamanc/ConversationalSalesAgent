@@ -90,3 +90,98 @@ _agent_spec.loader.exec_module(_agent_mod)
 # Export the fresh, unbound Agent instance
 # ---------------------------------------------------------------------------
 discovery_agent = _agent_mod.discovery_agent
+
+
+# ---------------------------------------------------------------------------
+# Programmatic Discovery -> Serviceability auto-handoff
+# ---------------------------------------------------------------------------
+# After the LLM finishes a turn, inspect session state. If customer_context is
+# populated (Discovery has registered the company / collected BANT) but
+# serviceability_context isn't yet, and the user's most recent message asks for
+# serviceability OR the agent's response promised one, programmatically set
+# actions.transfer_to_agent so ADK routes the next turn to serviceability_agent.
+#
+# This bypasses Gemini's intermittent failure to combine text + transfer_to_agent
+# tool calls in the same response.
+
+_SERVICEABILITY_REQUEST_PHRASES = (
+    "check serviceability",
+    "check service availability",
+    "is my address serviceable",
+    "check if my location",
+    "serviceability check",
+    "check coverage",
+    "is service available",
+    "check address serviceability",
+    "provide serviceability",
+)
+_SERVICEABILITY_PROMISE_PHRASES = (
+    "let me check serviceability",
+    "let me check if your address",
+    "i'll check serviceability",
+    "i'll check if your address",
+    "checking serviceability",
+)
+
+
+def _last_user_text(events) -> str:
+    for e in reversed(events or []):
+        if getattr(e, "author", None) == "user" and getattr(e, "content", None):
+            parts = getattr(e.content, "parts", None) or []
+            for p in parts:
+                txt = getattr(p, "text", None)
+                if txt:
+                    return txt.lower()
+            return ""
+    return ""
+
+
+def _last_agent_text(events, agent_name) -> str:
+    for e in reversed(events or []):
+        if getattr(e, "author", None) == agent_name and getattr(e, "content", None):
+            parts = getattr(e.content, "parts", None) or []
+            for p in parts:
+                txt = getattr(p, "text", None)
+                if txt:
+                    return txt.lower()
+    return ""
+
+
+def _discovery_after_agent(callback_context):
+    """Force-transfer to serviceability_agent when the LLM forgot to."""
+    try:
+        state = callback_context.state
+        cust = state.get("customer_context") or {}
+        srv = state.get("serviceability_context") or {}
+
+        # Only fire if discovery has identified a customer AND serviceability
+        # hasn't already been checked this session.
+        if not cust.get("customer_id") or srv.get("is_serviceable") is not None:
+            return None
+
+        events = getattr(callback_context._invocation_context.session, "events", [])
+        user_text = _last_user_text(events)
+        agent_text = _last_agent_text(events, "discovery_agent")
+
+        wants = any(p in user_text for p in _SERVICEABILITY_REQUEST_PHRASES)
+        promised = any(p in agent_text for p in _SERVICEABILITY_PROMISE_PHRASES)
+        if not (wants or promised):
+            return None
+
+        callback_context.actions.transfer_to_agent = "serviceability_agent"
+        _logger.info(
+            "[AUTO-HANDOFF] discovery_agent -> serviceability_agent "
+            f"(wants={wants} promised={promised} customer_id={cust.get('customer_id')})"
+        )
+
+        # Returning Content makes ADK emit the event with our actions attached.
+        # Use an empty text part so nothing extra appears to the user.
+        from google.genai import types as _types
+        return _types.Content(parts=[_types.Part(text="")])
+    except Exception as exc:
+        _logger.warning(f"after_agent_callback failed (non-fatal): {exc}")
+        return None
+
+
+discovery_agent.after_agent_callback = _discovery_after_agent
+_logger.info("Attached programmatic Discovery->Serviceability handoff callback.")

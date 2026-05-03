@@ -11,6 +11,16 @@ from ..utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+_US_STATE_CODES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+    "DC",
+}
+
+
 def validate_and_parse_address(address_string: str) -> Dict[str, Any]:
     """
     Validates and parses a raw address string into structured components.
@@ -35,7 +45,7 @@ def validate_and_parse_address(address_string: str) -> Dict[str, Any]:
     
     # Basic validation patterns
     us_zip_pattern = r'\b\d{5}(-\d{4})?\b'
-    state_pattern = r'\b[A-Z]{2}\b'
+    state_pattern = r'\b([A-Za-z]{2})\b'
     
     # Check for PO Box (not allowed)
     if re.search(r'\b(P\.?\s?O\.?|POST\s+OFFICE)\s*BOX\b', address_string, re.IGNORECASE):
@@ -53,8 +63,17 @@ def validate_and_parse_address(address_string: str) -> Dict[str, Any]:
             "error": "We currently only service addresses within the United States."
         }
     
+    # Remove common conversational prefixes so the parser can work with
+    # natural inputs like "I am at 123 Main street philadelphia pa 19103".
+    cleaned = re.sub(
+        r'^\s*(?:i\s+am\s+at|i\'m\s+at|we\s+are\s+at|we\'re\s+at|at|address\s*:?)\s+',
+        '',
+        address_string.strip(),
+        flags=re.IGNORECASE,
+    )
+
     # Extract ZIP code
-    zip_match = re.search(us_zip_pattern, address_string)
+    zip_match = re.search(us_zip_pattern, cleaned)
     if not zip_match:
         logger.warning("No valid ZIP code found")
         return {
@@ -62,31 +81,45 @@ def validate_and_parse_address(address_string: str) -> Dict[str, Any]:
             "error": "Valid 5-digit ZIP code required. Format: Street, City, State ZIP"
         }
     
-    # Extract state (must be uppercase)
-    state_match = re.search(state_pattern, address_string)
-    if not state_match:
+    # Extract state (accept lowercase input but normalize to uppercase)
+    all_state_matches = re.findall(state_pattern, cleaned)
+    state = ""
+    for candidate in reversed(all_state_matches):
+        normalized = candidate.upper()
+        if normalized in _US_STATE_CODES:
+            state = normalized
+            break
+    if not state:
         logger.warning("No valid state code found")
         return {
             "valid": False,
             "error": "Two-letter state code required (e.g., PA, CA, NY). Format: Street, City, State ZIP"
         }
     
-    # Split by comma to extract parts
-    parts = [p.strip() for p in address_string.split(',')]
-    if len(parts) < 3:
-        logger.warning("Incomplete address format")
-        return {
-            "valid": False,
-            "error": "Complete address required. Format: Street, City, State ZIP"
-        }
-    
-    # Extract components
-    street = parts[0]
-    city = parts[1]
-    
-    # Last part should contain state and ZIP
-    last_part = parts[-1]
-    state = state_match.group()
+    # First try comma-separated parsing. If commas are missing, fall back to a
+    # natural-language pattern for "street city state zip".
+    parts = [p.strip() for p in cleaned.split(',') if p.strip()]
+    street = ""
+    city = ""
+    if len(parts) >= 3:
+        street = parts[0]
+        city = parts[1]
+    else:
+        natural_match = re.match(
+            r'^\s*(?P<street>\d+\s+.+?)\s+(?P<city>[A-Za-z][A-Za-z .\'-]+?)\s+(?P<state>[A-Za-z]{2})\s+(?P<zip>\d{5})(?:-\d{4})?\s*$',
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if natural_match:
+            street = natural_match.group("street").strip()
+            city = natural_match.group("city").strip()
+        else:
+            logger.warning("Incomplete address format")
+            return {
+                "valid": False,
+                "error": "Complete address required. Format: Street, City, State ZIP"
+            }
+
     zip_code = zip_match.group().split('-')[0]  # Take only 5-digit portion
     
     # Validate street has numbers (actual address)

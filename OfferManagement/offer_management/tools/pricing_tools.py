@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from google.adk.tools.tool_context import ToolContext
 
 from ..utils.cache import cache_result, get_cached_result
 from ..utils.logger import get_logger
@@ -165,7 +167,7 @@ def find_best_bundle_offer(items: str, term_months: int = 12, bant_score: float 
     return result
 
 
-def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 0.0, customer_id: str = None, company_name: str = None, customer_email: str = None) -> Dict[str, Any]:
+def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 0.0, customer_id: str = None, company_name: str = None, customer_email: str = None, tool_context: Optional[ToolContext] = None) -> Dict[str, Any]:
     """
     Generate an itemized quote with price points, discounts, and totals.
 
@@ -179,6 +181,19 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
 
     Returns required JSON payload for downstream order placement.
     """
+    # Read customer_context from session state if customer_id / company_name
+    # weren't passed by the LLM. Falls through to existing behavior if state
+    # isn't populated yet.
+    if tool_context is not None:
+        cust_ctx = tool_context.state.get("customer_context") or {}
+        logger.info(f"[STATE READ] generate_offer_quote <- customer_context = {cust_ctx}")
+        state_cid = cust_ctx.get("customer_id")
+        state_company = cust_ctx.get("company_name")
+        if not customer_id and isinstance(state_cid, str):
+            customer_id = state_cid
+        if not company_name and isinstance(state_company, str):
+            company_name = state_company
+
     if isinstance(items, str):
         items = json.loads(items)
     normalized_items = _normalize_items(items)
@@ -302,6 +317,21 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
 
     cache_result(cache_key, result)
     logger.info("Generated offer quote %s for %d items (bant_score=%.1f)", result["offer_id"], len(priced_items), bant_score)
+
+    # Publish offer to session state so OrderAgent can read offer_id directly
+    # without the LLM having to extract it from conversation history.
+    if tool_context is not None:
+        tool_context.state["offer_context"] = {
+            "offer_id": result["offer_id"],
+            "customer_id": customer_id,
+            "company_name": company_name,
+            "items": priced_items,
+            "term_months": result["term_months"],
+            "total_price": total_price,
+            "monthly_total": monthly_total,
+            "total_discount": total_discount,
+        }
+        logger.info(f"[STATE WRITE] generate_offer_quote -> offer_context offer_id={result['offer_id']} total_price={total_price}")
 
     # Persist quote to SQLite so returning customers can retrieve it later
     try:

@@ -1,20 +1,33 @@
 # ADK Session State Implementation Plan
 
-**Goal:** Use ADK's session-scoped state (accessed via `ToolContext`) to pass structured data between agents deterministically — eliminating LLM-mediated data transfer for critical values (IDs, addresses, amounts) while retaining existing DB lookups as a fallback.
+**Goal:** Use ADK's session-scoped state (accessed via `ToolContext`) to pass structured data between agents deterministically — eliminating LLM-mediated data transfer for critical values (IDs, addresses, amounts) while leaving all existing DB reads, writes, and lookups completely unchanged.
+
+---
+
+## Design Principles
+
+- **Additive only** — no existing code removed or modified
+- **DB layer untouched** — all existing DB reads/writes stay exactly as-is; session state is a new layer on top
+- **No breaking changes** — `tool_context` parameter is optional (`= None`); all fallbacks preserved
+- **No context bloat** — state lives in Python memory, never injected into the conversation or LLM context window
+- **No cost increase** — state read/write is pure Python dictionary operations, no LLM calls
 
 ---
 
 ## Terminology Clarification
 
 | ADK Concept | What It Is | Scope |
-|-------------|-----------|-------|
+| --- | --- | --- |
 | **`ToolContext`** | Object auto-injected into tool functions by ADK | Per-tool-invocation |
-| **`tool_context.state`** | **Session state** — shared dict across ALL agents in the session | Per-session (survives agent transfers) |
-| **`app:` prefix** | Application-scoped state keys (persist across sessions) | App-level |
+| **`tool_context.state`** | Shared dict across ALL agents in the session | Per-session (survives agent transfers) |
+| **No prefix** | Session-scoped keys — isolated per user, cleared when session ends | Per-session ✅ |
+| **`app:` prefix** | Application-scoped — shared across ALL sessions on the same server | App-level ⚠️ DO NOT USE |
 | **`user:` prefix** | User-scoped state keys | User-level |
 | **`temp:` prefix** | Temporary state keys (cleared between turns) | Turn-level |
 
-**Key insight:** `tool_context.state` is actually `invocation_context.session.state`. The `ToolContext` is just the delivery mechanism — the **state itself is session-scoped** and shared across all agents.
+> **⚠️ Do NOT use `app:` prefix.** In `InMemorySessionService`, `app:`-scoped state is shared across all concurrent users on the same server instance — a multi-user data corruption bug. Use unprefixed keys (session-scoped).
+
+**Key insight:** `tool_context.state` is actually `invocation_context.session.state`. The `ToolContext` is just the delivery mechanism — the state itself is session-scoped and shared across all agents within that session.
 
 ---
 
@@ -32,8 +45,9 @@ args_to_call = {k: v for k, v in args_to_call.items() if k in valid_params}
 ```
 
 **This means:**
-- Add `tool_context: ToolContext` to any tool function signature
-- ADK automatically provides it — the LLM never sees it
+
+- Add `tool_context: ToolContext = None` to any tool function signature
+- ADK automatically provides it at runtime — the LLM never sees it
 - No changes to agent registration, tool lists, or prompts needed
 
 ---
@@ -43,22 +57,20 @@ args_to_call = {k: v for k, v in args_to_call.items() if k in valid_params}
 For every consumer tool, data resolution follows this priority:
 
 ```
-Priority 1: Session state (via tool_context.state)  ← fast, no DB hit, no hallucination
-Priority 2: Deterministic DB lookup                  ← safety net for edge cases
-Priority 3: LLM-provided parameter                  ← last resort fallback
+Priority 1: Session state (tool_context.state)   ← fast, no DB hit, no hallucination
+Priority 2: Existing DB lookup code              ← UNCHANGED — already in the codebase
+Priority 3: LLM-provided parameter               ← UNCHANGED — already in the codebase
 ```
 
-This is **additive** — no existing deterministic code is removed.
+Priority 2 and 3 are not new fallbacks to write — they are the existing code that already runs today. Session state simply adds Priority 1 in front of them.
 
 ---
 
 ## Session State Schema
 
-### State Keys (using `app:` prefix for persistence)
-
 ```python
-# Written by DiscoveryAgent tools
-tool_context.state["app:customer_context"] = {
+# Written by DiscoveryAgent
+tool_context.state["customer_context"] = {
     "customer_id": "CUST-20260426-001",
     "company_name": "Crane.io",
     "contact_name": "John Smith",
@@ -70,12 +82,11 @@ tool_context.state["app:customer_context"] = {
         "state": "PA",
         "zip_code": "19103"
     },
-    "bant_score": 75,
-    "account_id": "ACC-..."
+    "bant_score": 75
 }
 
-# Written by ServiceabilityAgent tools
-tool_context.state["app:serviceability_context"] = {
+# Written by ServiceabilityAgent
+tool_context.state["serviceability_context"] = {
     "is_serviceable": True,
     "infrastructure_type": "FTTP",
     "max_speed": "10 Gbps",
@@ -83,8 +94,8 @@ tool_context.state["app:serviceability_context"] = {
     "service_address": "123 Main St, Philadelphia, PA 19103"
 }
 
-# Written by OfferManagement tools
-tool_context.state["app:offer_context"] = {
+# Written by OfferManagement
+tool_context.state["offer_context"] = {
     "offer_id": "OFF-1234567890",
     "items": [
         {"product_id": "FIB-5G", "name": "Business Fiber 5 Gbps", "price": 599.00}
@@ -94,8 +105,8 @@ tool_context.state["app:offer_context"] = {
     "total_discount": 50.00
 }
 
-# Written by OrderAgent tools
-tool_context.state["app:order_context"] = {
+# Written by OrderAgent
+tool_context.state["order_context"] = {
     "order_id": "ORD-20260426-001",
     "cart_id": "CART-...",
     "customer_id": "CUST-20260426-001",
@@ -106,8 +117,8 @@ tool_context.state["app:order_context"] = {
     "status": "pending_payment"
 }
 
-# Written by ServiceFulfillmentAgent tools
-tool_context.state["app:fulfillment_context"] = {
+# Written by ServiceFulfillmentAgent
+tool_context.state["fulfillment_context"] = {
     "appointment_id": "APT-20260428-001",
     "scheduled_date": "2026-04-28",
     "window": "AM",
@@ -116,8 +127,8 @@ tool_context.state["app:fulfillment_context"] = {
     "account_id": "ACC-..."
 }
 
-# Written by PaymentAgent tools
-tool_context.state["app:payment_context"] = {
+# Written by PaymentAgent
+tool_context.state["payment_context"] = {
     "transaction_id": "TXN-1234-599",
     "amount": 599.00,
     "status": "completed",
@@ -127,81 +138,71 @@ tool_context.state["app:payment_context"] = {
 
 ---
 
-## Tools to Modify (12-15 total)
+## Implementation Phases
 
-### Phase 1: Producers (write to session state)
+### Phase 1 — Critical ID Chain (High Value, ~80 lines, 5-6 files)
 
-| Agent | Tool Function | State Key Written | File |
-|-------|--------------|-------------------|------|
-| DiscoveryAgent | `add_company` | `app:customer_context` | `DiscoveryAgent/bootstrap_agent/tools/tools.py` |
-| DiscoveryAgent | `get_company_profile` | `app:customer_context` | `DiscoveryAgent/bootstrap_agent/tools/tools.py` |
-| ServiceabilityAgent | `check_service_availability` | `app:serviceability_context` | `ServiceabilityAgent/serviceability_agent/tools/serviceability_tools.py` |
-| OfferManagement | `calculate_pricing` / `save_quote` | `app:offer_context` | `OfferManagement/offer_management/tools/pricing_tools.py` |
-| OrderAgent | `create_order` | `app:order_context` | `OrderAgent/order_agent/tools/order_tools.py` |
-| OrderAgent | `create_cart` / `add_to_cart` | `app:order_context` (cart_id) | `OrderAgent/order_agent/tools/cart_tools.py` |
-| ServiceFulfillment | `schedule_installation` | `app:fulfillment_context` | `ServiceFulfillmentAgent/.../tools/scheduling_tools.py` |
-| ServiceFulfillment | `activate_service` | `app:fulfillment_context` (circuit_id) | `ServiceFulfillmentAgent/.../tools/activation_tools.py` |
+These are the IDs that currently pass through the LLM across agent transfers and carry the highest hallucination risk. This phase delivers the most value.
 
-### Phase 2: Consumers (read from session state with DB fallback)
+| Step | Agent | Action | State Key | File |
+| --- | --- | --- | --- | --- |
+| 1 | DiscoveryAgent | Write on `add_new_company` / `get_company_profile` | `customer_context` | `DiscoveryAgent/bootstrap_agent/sub_agents/discovery/discovery_agent.py` |
+| 2 | OfferManagement | Write on `save_quote` | `offer_context` | `OfferManagement/offer_management/tools/pricing_tools.py` |
+| 3 | OrderAgent | Read `customer_context` + `offer_context`; write on `create_order` | `order_context` | `OrderAgent/order_agent/tools/order_tools.py`, `cart_tools.py` |
+| 4 | PaymentAgent | Read `order_context`; write on `process_payment` | `payment_context` | `PaymentAgent/payment_agent/tools/payment_tools.py` |
+| 5 | ServiceFulfillmentAgent | Read `order_context` + `payment_context` | — | `ServiceFulfillmentAgent/service_fulfillment_agent/tools/activation_tools.py` |
 
-| Agent | Tool Function | State Key Read | Fallback | File |
-|-------|--------------|----------------|----------|------|
-| OrderAgent | `create_order` | `app:customer_context`, `app:offer_context` | LLM params | `OrderAgent/.../order_tools.py` |
-| PaymentAgent | `process_payment` | `app:order_context` | DB lookup (already exists) | `PaymentAgent/.../payment_tools.py` |
-| ServiceFulfillment | `schedule_installation` | `app:order_context` | LLM params | `ServiceFulfillmentAgent/.../scheduling_tools.py` |
-| ServiceFulfillment | `activate_service` | `app:order_context` | LLM params | `ServiceFulfillmentAgent/.../activation_tools.py` |
-| ServiceFulfillment | `dispatch_technician` | `app:fulfillment_context` | LLM params | `ServiceFulfillmentAgent/.../installation_tools.py` |
-| CustomerComms | `send_notification` | `app:customer_context`, `app:order_context` | LLM params | `CustomerCommunicationAgent/.../tools/notification_tools.py` |
+### Phase 2 — Serviceability + Comms (Lower Priority)
+
+Less critical because serviceability data is already persisted in the DB and agents query it directly. CustomerComms already receives IDs via tool call parameters.
+
+| Step | Agent | Action | State Key | File |
+| --- | --- | --- | --- | --- |
+| 6 | ServiceabilityAgent | Write on address validation | `serviceability_context` | `ServiceabilityAgent/serviceability_agent/tools/address_tools.py` |
+| 7 | CustomerCommunicationAgent | Read `customer_context` + `order_context` | — | `CustomerCommunicationAgent/customer_communication_agent/tools/notification_tools.py` |
 
 ---
 
 ## Per-Tool Change Pattern
 
-### Producer (additive — append to existing function)
+### Producer (append ~5-8 lines to existing function)
 
 ```python
 from google.adk.tools.tool_context import ToolContext
 
-def create_order(customer_name: str, service_address: str, ..., tool_context: ToolContext) -> dict:
-    # ... existing order creation logic (UNCHANGED) ...
-    
-    # NEW: Publish to session state for downstream agents
-    tool_context.state["app:order_context"] = {
-        "order_id": order_id,
-        "customer_id": customer_id,
-        "service_type": service_type,
-        "price": price,
-        "service_address": service_address,
-    }
-    
+def add_new_company(..., tool_context: ToolContext = None) -> dict:
+    # ... existing logic UNCHANGED ...
+
+    # NEW: write to session state after successful operation
+    if tool_context and result.get("success"):
+        tool_context.state["customer_context"] = {
+            "customer_id": result["customer_id"],
+            "company_name": result["company_name"],
+            "address": result.get("address", {}),
+        }
+
     return result  # existing return unchanged
 ```
 
-### Consumer (wrap existing code with state-first check)
+### Consumer (add ~3-5 lines before existing logic)
 
 ```python
 from google.adk.tools.tool_context import ToolContext
 
-def process_payment(amount: float, ..., order_id: str, tool_context: ToolContext) -> dict:
-    # NEW: Try session state first
-    order_ctx = tool_context.state.get("app:order_context", {})
+def process_payment(amount: float, order_id: str = None,
+                    tool_context: ToolContext = None) -> dict:
+    # NEW: Priority 1 — read from session state
+    order_ctx = tool_context.state.get("order_context", {}) if tool_context else {}
+    resolved_order_id = order_id or order_ctx.get("order_id")
     resolved_customer_id = order_ctx.get("customer_id", "")
-    
-    # EXISTING: DB fallback (unchanged)
-    if not resolved_customer_id and order_id:
-        try:
-            conn = _get_db_connection()
-            if conn:
-                row = conn.execute(
-                    "SELECT customer_id FROM orders WHERE order_id = ?", (order_id,)
-                ).fetchone()
-                if row:
-                    resolved_customer_id = row["customer_id"] or ""
-                conn.close()
-        except Exception:
-            pass
-    
-    # ... rest of existing logic uses resolved_customer_id ...
+
+    # EXISTING: Priority 2 — DB lookup (code already here, unchanged)
+    if not resolved_customer_id and resolved_order_id:
+        # ... existing DB lookup code ...
+
+    # EXISTING: Priority 3 — LLM param already used as fallback above
+
+    # ... rest of existing logic uses resolved_* variables ...
 ```
 
 ---
@@ -209,63 +210,43 @@ def process_payment(amount: float, ..., order_id: str, tool_context: ToolContext
 ## Change Size Estimate
 
 | Metric | Count |
-|--------|-------|
+| --- | --- |
 | Tool functions to modify | 12-15 |
-| Lines added per producer | ~5-8 (import + state write) |
-| Lines added per consumer | ~3-5 (import + state read + fallback guard) |
+| Lines added per producer | ~5-8 |
+| Lines added per consumer | ~3-5 |
 | Total new lines | ~100-120 |
 | Lines removed | 0 |
-| Files touched | ~8-10 tool files |
+| Files touched | ~8-10 |
 | Prompt changes needed | 0 |
 | Agent registration changes | 0 |
-| Risk level | Low (additive, backward-compatible) |
-
----
-
-## Implementation Order
-
-### Step 1: OrderAgent `create_order` (Producer + Consumer)
-Most impactful — produces `app:order_context` consumed by 3 downstream agents.
-
-### Step 2: PaymentAgent `process_payment` (Consumer)
-Already has DB fallback. Add session state as Priority 1.
-
-### Step 3: DiscoveryAgent tools (Producer)
-Writes `app:customer_context` — consumed by OrderAgent, PaymentAgent, ServiceFulfillment.
-
-### Step 4: ServiceFulfillmentAgent tools (Producer + Consumer)
-Scheduling reads `app:order_context`, writes `app:fulfillment_context`.
-Activation reads both, writes circuit/account IDs.
-
-### Step 5: OfferManagement tools (Producer)
-Writes `app:offer_context` — consumed by OrderAgent for offer_id linkage.
-
-### Step 6: ServiceabilityAgent (Producer)
-Writes `app:serviceability_context` — less critical but completes the chain.
+| DB schema changes | 0 |
+| Risk level | Low — additive, backward-compatible |
 
 ---
 
 ## Verification
 
-1. **Unit test**: Mock `ToolContext` with a dict-backed state, verify producers write expected keys
-2. **Integration test**: Run full sales flow, inspect `session.state` after each agent turn
-3. **Fallback test**: Clear session state mid-flow, verify DB lookups still resolve data
-4. **E2E test**: Full conversation flow — verify all DB tables (orders, payments, fulfillments, customer_master) have correct foreign keys populated
+1. **Unit test** — mock `ToolContext` with a dict-backed state; verify producers write expected keys after successful operations
+2. **Integration test** — run a full sales flow; inspect `session.state` after each agent turn to confirm keys are populated
+3. **Fallback test** — clear session state mid-flow; verify existing DB lookups and LLM params still resolve data correctly (existing behavior unchanged)
+4. **Multi-user test** — run two concurrent sessions; confirm `customer_context` in session A is not visible in session B
+5. **E2E test** — `SuperAgent/e2e_test.py` should pass without modification
 
 ---
 
 ## What This Eliminates
 
 | Current Problem | How Session State Fixes It |
-|----------------|---------------------------|
-| LLM extracts order_id from conversation history (may hallucinate) | Tool reads `state["app:order_context"]["order_id"]` directly |
-| LLM carries customer_id across 3 agent transfers (may drop it) | Every tool reads `state["app:customer_context"]["customer_id"]` |
-| Address zip codes modified during LLM rephrasing | Structured JSON in state — never touched by LLM |
-| Prompt instructions needed for "extract X from conversation" | State access is code-level — prompts simplified |
+| --- | --- |
+| LLM extracts `order_id` from conversation history (may hallucinate) | Tool reads `state["order_context"]["order_id"]` directly |
+| `customer_id` carried across 3 agent transfers via LLM (may drop it) | Every consumer tool reads `state["customer_context"]["customer_id"]` |
+| Address zip codes modified by LLM rephrasing | Structured dict in state — LLM never touches it |
+| Long sessions: IDs from early turns get summarized out of history | State persists for the full session regardless of history length |
 
 ## What This Preserves
 
-- All existing deterministic DB lookups (demoted to Priority 2 fallback)
-- All existing LLM parameter passing (demoted to Priority 3 fallback)
-- All existing tool signatures (ToolContext is additive, not replacing any param)
-- All existing prompt instructions (can be simplified later, not required now)
+- All existing DB reads, writes, and lookups — completely unchanged
+- All existing LLM parameter passing — unchanged, still works as final fallback
+- All existing tool signatures — `ToolContext` is additive, replaces nothing
+- All existing prompt instructions — can be simplified later, not required now
+- All existing agent registration and orchestration logic

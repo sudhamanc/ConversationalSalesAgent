@@ -157,4 +157,99 @@ _agent_spec.loader.exec_module(_agent_mod)
 # ---------------------------------------------------------------------------
 payment_agent = _agent_mod.payment_agent
 
+
+# ---------------------------------------------------------------------------
+# Programmatic Order/Install -> Payment auto-kickoff
+# ---------------------------------------------------------------------------
+# In the order flow, ADK sometimes successfully transfers control to
+# payment_agent after installation scheduling, but Gemini returns an empty
+# payment turn. When that happens, the backend emits a warning and falls back
+# with generic text, which breaks the checkout flow. We detect that silent
+# handoff and inject the payment kickoff prompt deterministically.
+
+_PAYMENT_HANDOFF_PHRASES = (
+    "installation scheduled",
+    "appointment confirmed",
+    "now let's proceed with payment",
+    "now let's set up your payment",
+    "payment processing",
+)
+
+
+def _last_agent_text(events, agent_name: str) -> str:
+    for event in reversed(events or []):
+        if getattr(event, "author", None) != agent_name or not getattr(event, "content", None):
+            continue
+        parts = getattr(event.content, "parts", None) or []
+        texts = [getattr(part, "text", "") for part in parts if getattr(part, "text", "")]
+        if texts:
+            return "\n".join(texts).lower()
+    return ""
+
+
+def _recent_agent_text(events, authors: tuple[str, ...], limit: int = 6) -> str:
+    texts: list[str] = []
+    for event in reversed(events or []):
+        if getattr(event, "author", None) not in authors or not getattr(event, "content", None):
+            continue
+        parts = getattr(event.content, "parts", None) or []
+        for part in parts:
+            text = getattr(part, "text", "")
+            if text:
+                texts.append(text.lower())
+                break
+        if len(texts) >= limit:
+            break
+    return "\n".join(reversed(texts))
+
+
+def _payment_after_agent(callback_context):
+    """Inject a payment opener when payment_agent was reached but stayed silent."""
+    try:
+        events = getattr(callback_context._invocation_context.session, "events", [])
+        payment_text = _last_agent_text(events, "payment_agent")
+        if payment_text.strip():
+            return None
+
+        recent_flow_text = _recent_agent_text(
+            events,
+            ("service_fulfillment_agent", "order_agent"),
+        )
+        if not any(phrase in recent_flow_text for phrase in _PAYMENT_HANDOFF_PHRASES):
+            return None
+
+        state = callback_context.state
+        order_ctx = state.get("order_context") or {}
+        payment_ctx = state.get("payment_context") or {}
+
+        # If payment already succeeded, don't inject the kickoff prompt.
+        if payment_ctx.get("status") == "approved":
+            return None
+
+        order_id = order_ctx.get("order_id")
+        amount = order_ctx.get("total_amount") or order_ctx.get("price")
+        amount_text = ""
+        if isinstance(amount, (int, float)):
+            amount_text = f" for ${float(amount):.2f}"
+        order_text = f" for order {order_id}" if isinstance(order_id, str) and order_id else ""
+
+        from google.genai import types as _types
+
+        callback_text = (
+            f"Great, your installation is scheduled{order_text}. "
+            f"Let's take care of payment{amount_text} next. "
+            "Please provide your preferred payment method details for either a credit card or ACH transfer."
+        )
+        _logger.info(
+            "[AUTO-KICKOFF] payment_agent injected opener "
+            f"(order_id={order_id!r}, amount={amount!r})"
+        )
+        return _types.Content(parts=[_types.Part(text=callback_text)])
+    except Exception as exc:
+        _logger.warning(f"payment after_agent_callback failed (non-fatal): {exc}")
+        return None
+
+
+payment_agent.after_agent_callback = _payment_after_agent
+
 _logger.info(f"Payment agent loaded: {payment_agent.name} with {len(payment_agent.tools)} tools")

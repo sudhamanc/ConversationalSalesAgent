@@ -130,8 +130,11 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
     !isUser && !quote && !orderConfirmation && !paymentConfirmation
       ? parseServiceabilityMessage(message.content)
       : null;
+  // Gate product parsing by author — prevents offer/discovery prose with numbered
+  // lists or product IDs from being misclassified as a ProductDetailsCard.
   const productDetails =
     !isUser && !quote && !orderConfirmation && !paymentConfirmation && !serviceabilityDetails
+    && message.author === "product_agent"
       ? parseProductAgentMessage(message.content)
       : null;
 

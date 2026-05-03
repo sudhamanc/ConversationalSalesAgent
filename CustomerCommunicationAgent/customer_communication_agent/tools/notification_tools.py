@@ -12,6 +12,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+
+from google.adk.tools.tool_context import ToolContext
+
 from ..utils.logger import get_logger
 from ..utils.db import store_notification, check_duplicate as db_check_duplicate, get_history as db_get_history, clear_all as db_clear_all
 from ..models import Notification, NotificationType, NotificationStatus
@@ -1306,6 +1309,7 @@ def send_notification(
     recipient_email: str = None,
     recipient_phone: str = None,
     metadata: str = None,
+    tool_context: Optional[ToolContext] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
@@ -1332,6 +1336,31 @@ def send_notification(
                 meta = {"raw": metadata}
         else:
             meta = metadata
+
+    # Read customer_context / order_context from session state when the LLM
+    # calls this tool without explicit IDs. Existing callers via sys.modules
+    # already pass full values, so they're unaffected.
+    if tool_context is not None:
+        cust_ctx = tool_context.state.get("customer_context") or {}
+        order_ctx = tool_context.state.get("order_context") or {}
+        logger.info(f"[STATE READ] send_notification <- customer_context customer_id={cust_ctx.get('customer_id')}")
+        logger.info(f"[STATE READ] send_notification <- order_context order_id={order_ctx.get('order_id')} email={order_ctx.get('contact_email')}")
+        if not customer_id:
+            state_cid = cust_ctx.get("customer_id")
+            if isinstance(state_cid, str):
+                customer_id = state_cid
+        if not order_id:
+            state_oid = order_ctx.get("order_id")
+            if isinstance(state_oid, str):
+                order_id = state_oid
+        if not recipient_email:
+            state_email = order_ctx.get("contact_email")
+            if isinstance(state_email, str):
+                recipient_email = state_email
+        if not recipient_phone:
+            state_phone = order_ctx.get("contact_phone")
+            if isinstance(state_phone, str):
+                recipient_phone = state_phone
 
     customer_name = meta.get("customer_name", meta.get("company_name", customer_id or "Customer"))
 

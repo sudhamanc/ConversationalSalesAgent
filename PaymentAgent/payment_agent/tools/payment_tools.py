@@ -26,6 +26,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
+from google.adk.tools.tool_context import ToolContext
+
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -229,6 +231,7 @@ def process_payment(
     customer_phone: str = None,
     idempotency_key: str = None,  # Critical #1: caller-supplied UUID
     currency: str = "USD",
+    tool_context: Optional[ToolContext] = None,
 ) -> Dict[str, Any]:
     """
     Processes a payment transaction with idempotency, dedup guard, state machine,
@@ -245,10 +248,34 @@ def process_payment(
         customer_phone: Customer phone (for notification)
         idempotency_key: Client-generated UUID; retries with same key return cached result
         currency: ISO 4217 currency code (default USD)
+        tool_context: Optional ADK session state accessor
 
     Returns:
         dict with success, payment_id, transaction_id, status, and message
     """
+    if tool_context is not None:
+        order_ctx = tool_context.state.get("order_context") or {}
+        logger.info(
+            f"[STATE READ] process_payment <- order_context "
+            f"order_id={order_ctx.get('order_id')} customer_id={order_ctx.get('customer_id')}"
+        )
+        if not order_id:
+            state_oid = order_ctx.get("order_id")
+            if isinstance(state_oid, str):
+                order_id = state_oid
+        if not customer_name:
+            state_name = order_ctx.get("customer_name")
+            if isinstance(state_name, str):
+                customer_name = state_name
+        if not customer_email:
+            state_email = order_ctx.get("contact_email")
+            if isinstance(state_email, str):
+                customer_email = state_email
+        if not customer_phone:
+            state_phone = order_ctx.get("contact_phone")
+            if isinstance(state_phone, str):
+                customer_phone = state_phone
+
     logger.info(
         f"Processing payment: ${amount} token=...{str(payment_method_token)[-8:]} order={order_id}"
     )
@@ -437,6 +464,19 @@ def process_payment(
                     payment_status="success",
                     amount=amount,
                     payment_method=payment_method_token,
+                )
+            if tool_context is not None:
+                tool_context.state["payment_context"] = {
+                    "transaction_id": transaction_id,
+                    "order_id": order_id,
+                    "customer_id": resolved_customer_id,
+                    "amount": amount,
+                    "status": "completed",
+                    "payment_method": payment_method_token,
+                }
+                logger.info(
+                    f"[STATE WRITE] process_payment -> payment_context "
+                    f"txn={transaction_id} order_id={order_id} amount={amount}"
                 )
             logger.info(f"Payment {payment_id} completed: TXN={transaction_id}")
             return {
@@ -821,342 +861,6 @@ def _get_card_brand(card_number: str) -> str:
     elif card_number.startswith("6011") or card_number.startswith("65"):
         return "discover"
     return "unknown"
-
-
-
-def _get_db_connection():
-    """Return a connection to the unified sales_agent.db, or None if not configured."""
-    db_path = os.getenv("SALES_AGENT_DB_PATH")
-    if not db_path:
-        return None
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
-
-
-def _persist_payment(
-    order_id: str,
-    customer_id: str,
-    transaction_id: str | None,
-    amount: float,
-    status: str,
-    payment_method: str | None,
-    credit_score: int | None,
-) -> None:
-    """Write a payment record to the payments table (best-effort)."""
-    conn = _get_db_connection()
-    if conn is None:
-        return
-    try:
-        now = datetime.now().isoformat()
-        expires = (datetime.now() + timedelta(minutes=15)).isoformat() if status == "pending" else None
-        payment_id = f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}-{hash(order_id) % 10000:04d}"
-        conn.execute(
-            """INSERT OR REPLACE INTO payments
-               (payment_id, order_id, customer_id, transaction_id, amount,
-                status, credit_score, payment_method, created_at, updated_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (payment_id, order_id, customer_id, transaction_id, amount,
-             status, credit_score, payment_method, now, now, expires),
-        )
-        conn.commit()
-        logger.info(f"Payment {payment_id} persisted: status={status}, amount={amount}")
-    except Exception as exc:
-        logger.warning(f"Failed to persist payment (non-fatal): {exc}")
-    finally:
-        conn.close()
-
-
-def _update_order_status(order_id: str, new_status: str) -> None:
-    """Update an order's status in the orders table (best-effort)."""
-    conn = _get_db_connection()
-    if conn is None:
-        return
-    try:
-        now = datetime.now().isoformat()
-        conn.execute(
-            "UPDATE orders SET status = ?, updated_at = ? WHERE order_id = ?",
-            (new_status, now, order_id),
-        )
-        conn.commit()
-        logger.info(f"Order {order_id} status updated to '{new_status}'")
-    except Exception as exc:
-        logger.warning(f"Failed to update order status (non-fatal): {exc}")
-    finally:
-        conn.close()
-
-
-def validate_payment_method(
-    payment_type: str,
-    card_number: str = None,
-    routing_number: str = None,
-    account_number: str = None
-) -> Dict[str, Any]:
-    """
-    Validates a payment method (credit card or ACH).
-    
-    For production: Integrates with payment gateway (Stripe, Braintree, etc.)
-    For testing: Simulates validation logic
-    
-    Args:
-        payment_type: Type of payment ('credit_card' or 'ach')
-        card_number: Credit card number (for credit_card type)
-        routing_number: Bank routing number (for ach type)
-        account_number: Bank account number (for ach type)
-    
-    Returns:
-        Validation result with status and details
-    """
-    logger.info(f"Validating payment method: {payment_type}")
-    
-    try:
-        if payment_type == "credit_card":
-            if not card_number:
-                return {
-                    "valid": False,
-                    "error": "Card number is required for credit card validation"
-                }
-            
-            # Simulate validation (in production, use payment gateway API)
-            # Remove spaces and hyphens
-            clean_number = card_number.replace(" ", "").replace("-", "")
-            
-            # Basic Luhn algorithm check
-            if not _luhn_check(clean_number):
-                return {
-                    "valid": False,
-                    "error": "Invalid card number (failed Luhn check)"
-                }
-            
-            # Determine card brand
-            card_brand = _get_card_brand(clean_number)
-            
-            return {
-                "valid": True,
-                "payment_type": "credit_card",
-                "card_brand": card_brand,
-                "last_four": clean_number[-4:],
-                "message": f"Valid {card_brand} card ending in {clean_number[-4:]}"
-            }
-        
-        elif payment_type == "ach":
-            if not routing_number or not account_number:
-                return {
-                    "valid": False,
-                    "error": "Routing and account numbers required for ACH validation"
-                }
-            
-            # Validate routing number (9 digits)
-            if not routing_number.isdigit() or len(routing_number) != 9:
-                return {
-                    "valid": False,
-                    "error": "Invalid routing number (must be 9 digits)"
-                }
-            
-            return {
-                "valid": True,
-                "payment_type": "ach",
-                "routing_number": routing_number,
-                "account_last_four": account_number[-4:],
-                "message": f"Valid ACH account ending in {account_number[-4:]}"
-            }
-        
-        else:
-            return {
-                "valid": False,
-                "error": f"Unsupported payment type: {payment_type}"
-            }
-    
-    except Exception as e:
-        logger.error(f"Error validating payment method: {e}")
-        return {
-            "valid": False,
-            "error": f"Validation error: {str(e)}"
-        }
-
-
-def _auto_send_payment_notification(
-    order_id: str,
-    customer_name: str,
-    customer_email: str,
-    customer_phone: str,
-    payment_status: str,
-    amount: float,
-    payment_method: str,
-) -> Dict[str, Any]:
-    """
-    Automatically send a payment success/failure notification immediately after
-    payment processing.  Uses sys.modules to call the already-loaded
-    CustomerCommunicationAgent notification tools without a hard cross-package
-    import dependency.
-    """
-    try:
-        notif_mod = sys.modules.get("customer_communication_agent.tools.notification_tools")
-        if notif_mod is None:
-            notif_mod = sys.modules.get("customer_communication_agent.tools")
-
-        if notif_mod is None or not hasattr(notif_mod, "send_payment_notification"):
-            logger.warning(
-                "CustomerCommunicationAgent notification tools not found in sys.modules; "
-                "payment notification will not be sent automatically."
-            )
-            return {"success": False, "error": "Notification module unavailable"}
-
-        result = notif_mod.send_payment_notification(
-            order_id=order_id or "",
-            customer_name=customer_name or "Valued Customer",
-            customer_email=customer_email or None,
-            customer_phone=customer_phone or None,
-            payment_status=payment_status,
-            amount=amount,
-            payment_method=payment_method,
-        )
-        logger.info(f"Auto payment notification triggered ({payment_status}): {result}")
-        return result
-    except Exception as exc:
-        logger.warning(f"Auto payment notification failed (non-fatal): {exc}")
-        return {"success": False, "error": str(exc)}
-
-
-def process_payment(
-    amount: float,
-    payment_method_token: str,
-    description: str = None,
-    invoice_id: str = None,
-    order_id: str = None,
-    customer_name: str = None,
-    customer_email: str = None,
-    customer_phone: str = None,
-) -> Dict[str, Any]:
-    """
-    Processes a payment transaction.
-    
-    For production: Integrates with payment gateway API
-    For testing: Simulates payment processing
-    
-    Args:
-        amount: Payment amount in USD
-        payment_method_token: Tokenized payment method reference
-        description: Transaction description
-        invoice_id: Associated invoice ID
-        order_id: Associated order ID (for notification)
-        customer_name: Customer name (for notification)
-        customer_email: Customer email (for notification)
-        customer_phone: Customer phone (for notification)
-    
-    Returns:
-        Transaction result with status and details
-    """
-    logger.info(f"Processing payment: ${amount} using token {payment_method_token}")
-    
-    try:
-        if amount <= 0:
-            return {
-                "success": False,
-                "error": "Payment amount must be greater than $0"
-            }
-        
-        # Simulate payment processing
-        # In production: Call payment gateway API (Stripe, Braintree, etc.)
-        
-        # For testing: simulate approval for amounts < $10000
-        if amount < 10000:
-            transaction_id = f"TXN-{payment_method_token[-4:]}-{int(amount)}"
-            
-            # Look up customer_id from the order record
-            resolved_customer_id = ""
-            if order_id:
-                try:
-                    _conn = _get_db_connection()
-                    if _conn:
-                        _row = _conn.execute(
-                            "SELECT customer_id FROM orders WHERE order_id = ?",
-                            (order_id,),
-                        ).fetchone()
-                        if _row:
-                            resolved_customer_id = _row["customer_id"] or ""
-                        _conn.close()
-                except Exception:
-                    pass  # best-effort lookup
-
-            # Persist payment record to unified DB
-            _persist_payment(
-                order_id=order_id or invoice_id or "",
-                customer_id=resolved_customer_id,
-                transaction_id=transaction_id,
-                amount=amount,
-                status="completed",
-                payment_method=payment_method_token,
-                credit_score=None,
-            )
-
-            # Update order status to 'paid' if order_id is present
-            if order_id:
-                _update_order_status(order_id, "paid")
-
-            # Automatically send payment success notification
-            notif_result = {}
-            if customer_email or customer_phone:
-                notif_result = _auto_send_payment_notification(
-                    order_id=order_id or invoice_id or "",
-                    customer_name=customer_name or "",
-                    customer_email=customer_email or "",
-                    customer_phone=customer_phone or "",
-                    payment_status="success",
-                    amount=amount,
-                    payment_method=payment_method_token,
-                )
-
-            return {
-                "success": True,
-                "transaction_id": transaction_id,
-                "amount": amount,
-                "currency": "USD",
-                "status": "approved",
-                "payment_method_token": payment_method_token,
-                "description": description,
-                "invoice_id": invoice_id,
-                "email_confirmation_sent": bool(notif_result.get("success")),
-                "email_notification_id": notif_result.get("notification_id"),
-                "message": f"Payment of ${amount:.2f} approved. Transaction ID: {transaction_id}"
-            }
-        else:
-            # Persist failed payment record
-            _persist_payment(
-                order_id=order_id or invoice_id or "",
-                customer_id="",
-                transaction_id=None,
-                amount=amount,
-                status="failed",
-                payment_method=payment_method_token,
-                credit_score=None,
-            )
-
-            # Automatically send payment failure notification
-            if customer_email or customer_phone:
-                _auto_send_payment_notification(
-                    order_id=order_id or invoice_id or "",
-                    customer_name=customer_name or "",
-                    customer_email=customer_email or "",
-                    customer_phone=customer_phone or "",
-                    payment_status="failed",
-                    amount=amount,
-                    payment_method=payment_method_token,
-                )
-
-            return {
-                "success": False,
-                "status": "declined",
-                "error": "Amount exceeds transaction limit. Please contact support."
-            }
-    
-    except Exception as e:
-        logger.error(f"Error processing payment: {e}")
-        return {
-            "success": False,
-            "error": f"Payment processing error: {str(e)}"
-        }
 
 
 def get_payment_methods(customer_id: str) -> Dict[str, Any]:

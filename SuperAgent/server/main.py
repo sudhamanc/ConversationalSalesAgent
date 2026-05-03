@@ -40,7 +40,9 @@ sys.path.insert(0, _project_dir)
 from super_agent.config import settings
 from super_agent import get_agent
 from api.chat import router as chat_router, init_runner
+from api.debug import router as debug_router
 from api.session import router as session_router
+from api.client_log import router as client_log_router
 from utils.logger import get_logger
 from super_agent.utils.database import cleanup_stale_records
 
@@ -129,7 +131,9 @@ app.add_middleware(
 
 # --- Routes ---
 app.include_router(chat_router, tags=["Chat"])
+app.include_router(debug_router, tags=["Debug"])
 app.include_router(session_router, tags=["Session"])
+app.include_router(client_log_router, tags=["ClientLog"])
 
 
 @app.get("/health")
