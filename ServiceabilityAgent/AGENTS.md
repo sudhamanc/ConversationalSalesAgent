@@ -80,9 +80,9 @@ ZIPs not in the map return `"not_serviceable"`.
 
 ### When Invoked
 SuperAgent routes to ServiceabilityAgent when:
+- **Programmatic handoff from DiscoveryAgent** — `after_agent_callback` auto-transfers after company registration with address (no user message needed)
 - User asks "Is service available at [address]?"
-- User confirms serviceability check after DiscoveryAgent registers a company
-- User says "yes" after being asked about coverage
+- User explicitly requests a coverage check
 
 ### Response Pattern
 Returns infrastructure details:
@@ -93,3 +93,5 @@ Returns infrastructure details:
 ## Integration with SuperAgent
 
 Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/serviceability/agent.py`. Agent name `serviceability_agent` is hardcoded.
+
+**Inbound handoff:** Receives programmatic transfer from DiscoveryAgent's `after_agent_callback` (zero user input needed).

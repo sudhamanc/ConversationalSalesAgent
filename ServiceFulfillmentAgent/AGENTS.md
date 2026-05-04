@@ -114,8 +114,24 @@ SuperAgent routes to ServiceFulfillmentAgent for: "Schedule installation", "Acti
 ### Response Pattern
 > "✅ Installation scheduled for Feb 20, 9:00 AM - 12:00 PM. Appointment ID: APT-12345."
 
+### Outbound Handoff (Programmatic — Zero User Input)
+
+After confirming installation scheduling, the SuperAgent wrapper's `after_agent_callback` **programmatically transfers to `payment_agent`** in the same turn — no user message needed.
+
+**Mechanism:** `SuperAgent/super_agent/sub_agents/service_fulfillment/agent.py` attaches `_fulfillment_after_agent` callback which:
+1. Scans the agent's last output for phrases like "installation is confirmed", "appointment confirmed", "scheduled for"
+2. Verifies order is in `pending_payment` state and payment not already completed
+3. Sets `callback_context.actions.transfer_to_agent = "payment_agent"`
+4. PaymentAgent executes immediately in the same ADK invocation
+
+This mirrors the Discovery → Serviceability zero-click handoff pattern.
+
 ---
 
 ## Integration with SuperAgent
 
 Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/service_fulfillment/agent.py`. Agent name `service_fulfillment_agent` is hardcoded.
+
+**Wrapper features:**
+- Importlib isolation (avoids `__init__.py` parent-binding)
+- `after_agent_callback` for programmatic Fulfillment → Payment handoff

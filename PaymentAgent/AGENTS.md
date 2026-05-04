@@ -86,13 +86,22 @@ PaymentAgent/
 ## Conversation Behavior
 
 ### When Invoked
-SuperAgent routes to PaymentAgent for: "Process payment", "Credit check", "Pay for this order"
+SuperAgent routes to PaymentAgent for:
+- **Programmatic handoff from ServiceFulfillmentAgent** — `after_agent_callback` auto-transfers after installation scheduling confirmation (no user message needed)
+- User explicitly says "Process payment", "Credit check", "Pay for this order"
+- Post-order payment flow
 
 ### Response Pattern
 > "✅ Payment authorized! Transaction #TXN-12345. Credit score: 720. Order #ORD-12345 status updated to **paid**."
+
+### Self-Inject Pattern
+When PaymentAgent receives an empty turn (after a programmatic handoff), the wrapper's `after_agent_callback` injects a payment opener prompt to kickstart the payment conversation naturally.
 
 ---
 
 ## Integration with SuperAgent
 
 Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/payment/agent.py`. Agent name `payment_agent` is hardcoded.
+
+**Inbound handoff:** Receives programmatic transfer from ServiceFulfillmentAgent's `after_agent_callback` (zero user input needed).
+**Self-inject:** `after_agent_callback` on payment wrapper injects opener text when agent produces empty output after handoff.

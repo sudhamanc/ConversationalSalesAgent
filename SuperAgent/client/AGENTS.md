@@ -613,6 +613,14 @@ npm run preview
 
 ---
 
+## 🤖 Automatic Welcome Message
+
+On session start, `ChatContext.jsx` automatically sends a hidden `"hi"` message to the backend (without showing a user bubble) and streams the GreetingAgent's response as the first assistant message. This provides immediate engagement without requiring the user to type anything.
+
+**Implementation:** `useEffect` in `ChatContext.jsx` calls `streamChat("hi", ...)` on mount, streaming the response as an assistant message. A `cancelled` flag prevents double-fire in React strict mode.
+
+---
+
 ## 📖 Reference Files
 
 **Best Examples:**

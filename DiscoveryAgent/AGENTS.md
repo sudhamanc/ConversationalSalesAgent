@@ -113,14 +113,26 @@ DiscoveryAgent/
 ### When Invoked
 SuperAgent routes to DiscoveryAgent when user mentions a company name, business, or office location.
 
-### Handoff Pattern
-After registering a company with a full address, DiscoveryAgent signals completion:
-> "Welcome! I've registered **[Company]** at **[Address]**. Would you like me to check service availability?"
+### Handoff Pattern (Programmatic — Zero User Input)
 
-SuperAgent then auto-routes to ServiceabilityAgent on user confirmation.
+After registering a company with a full address, DiscoveryAgent signals completion:
+> "Welcome! I've registered **[Company]** at **[Address]**. Let me check if this address is serviceable..."
+
+The SuperAgent wrapper's `after_agent_callback` detects this completion phrase and **programmatically transfers to `serviceability_agent`** in the same turn — no user message needed.
+
+**Mechanism:** `SuperAgent/super_agent/sub_agents/discovery/agent.py` attaches `_discovery_after_agent` callback which:
+1. Scans the agent's last output for phrases like "let me check", "serviceability", "check if this address"
+2. Sets `callback_context.actions.transfer_to_agent = "serviceability_agent"`
+3. ServiceabilityAgent executes immediately in the same ADK invocation
+
+This is a **deterministic, same-turn handoff** — no LLM variability.
 
 ---
 
 ## Integration with SuperAgent
 
 Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/discovery/agent.py` to avoid ADK parent-binding conflicts. The agent name `discovery_agent` is hardcoded — never read from environment.
+
+**Wrapper features:**
+- Importlib isolation (avoids `__init__.py` parent-binding)
+- `after_agent_callback` for programmatic Discovery → Serviceability handoff
