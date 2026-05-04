@@ -233,6 +233,56 @@ async def _stream_agent(user_id: str, session_id: str, user_message: str):
         yield chunk
 
 
+async def _stream_payment_followup(runner, user_id: str, session_id: str):
+    """
+    Auto-inject a synthetic message to trigger payment_agent after scheduling confirmation.
+
+    This runs a second ADK invocation within the same SSE response, so the user
+    sees the payment prompt without needing to click anything.
+    """
+    synthetic_msg = "Proceed to payment for this order"
+    logger.info(f"[AUTO-HANDOFF] Sending synthetic message: {synthetic_msg}")
+    new_message = types.Content(
+        role="user",
+        parts=[types.Part(text=synthetic_msg)],
+    )
+    try:
+        async for event in runner.run_async(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=new_message,
+        ):
+            if event.content and hasattr(event.content, "parts") and event.content.parts:
+                for part in event.content.parts:
+                    text = getattr(part, "text", None)
+                    if text and text.strip():
+                        payload = json.dumps({
+                            "type": "token",
+                            "content": text,
+                            "author": event.author or "payment_agent",
+                        })
+                        yield f"data: {payload}\n\n"
+            if event.is_final_response() or getattr(event, "turn_complete", False):
+                logger.info(f"[AUTO-HANDOFF] Payment follow-up complete from {event.author}")
+                # Generate suggestions for payment
+                suggestion_payload = json.dumps({
+                    "type": "suggestions",
+                    "author": event.author or "payment_agent",
+                    "data": ["Pay via ACH", "Pay via Credit Card", "Review order before payment"],
+                })
+                yield f"data: {suggestion_payload}\n\n"
+                return
+    except Exception as exc:
+        logger.warning(f"[AUTO-HANDOFF] Payment follow-up failed (non-fatal): {exc}")
+        # Fallback: just suggest payment manually
+        suggestion_payload = json.dumps({
+            "type": "suggestions",
+            "author": "payment_agent",
+            "data": ["Proceed to Payment", "Review Order Details"],
+        })
+        yield f"data: {suggestion_payload}\n\n"
+
+
 async def _stream_from_runner(
     runner,
     user_id: str,
@@ -513,6 +563,42 @@ async def _stream_from_runner(
                         yield f"data: {fallback_payload}\n\n"
                     else:
                         full_response = "".join(response_parts).strip()
+
+                        # --- Auto-handoff: scheduling confirmed → payment ---
+                        # If scheduling was just confirmed by service_fulfillment_agent
+                        # (or order_agent relaying it), automatically inject a follow-up
+                        # to trigger payment_agent instead of requiring user to click.
+                        _full_lower = full_response.lower()
+                        _scheduling_just_confirmed = (
+                            last_text_author in ("service_fulfillment_agent", "order_agent")
+                            and any(
+                                phrase in _full_lower
+                                for phrase in (
+                                    "installation scheduled",
+                                    "installation is confirmed",
+                                    "appointment confirmed",
+                                    "your installation is confirmed",
+                                    "appointment details",
+                                )
+                            )
+                            and "payment processed" not in _full_lower
+                            and "payment complete" not in _full_lower
+                        )
+                        if _scheduling_just_confirmed:
+                            logger.info("[AUTO-HANDOFF] Scheduling confirmed — auto-triggering payment flow")
+                            # Stream a brief separator so the user sees the transition
+                            separator_payload = json.dumps({
+                                "type": "token",
+                                "content": "\n\n---\n\n",
+                                "author": "payment_agent",
+                            })
+                            yield f"data: {separator_payload}\n\n"
+                            # Run a second ADK invocation to trigger payment_agent
+                            async for follow_chunk in _stream_payment_followup(runner, user_id, session_id):
+                                yield follow_chunk
+                            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                            return
+
                         # If provisioning Phase 1 completed, use activation-focused suggestions
                         if _provisioning_done:
                             suggestion_items = ["Simulate install day", "Show order details", "Send installation confirmation"]

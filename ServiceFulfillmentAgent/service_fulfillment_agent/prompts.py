@@ -163,7 +163,7 @@ Step 5: After booking, respond EXACTLY like this:
    
    Your installation is confirmed! Now let's proceed with payment."
 
-Step 6: **CRITICAL**: After confirming installation, use the `transfer_to_agent` tool to transfer back to `order_agent` so it can continue with payment processing. Call `transfer_to_agent` with `agent_name='order_agent'`.
+Step 6: **STOP** after presenting the confirmation above. Do NOT call transfer_to_agent — the system will automatically route to the Payment Agent for payment processing.
 
 **HANDLING FOLLOW-UP MESSAGES:**
 If the user says anything like "ready for payment", "proceed", "let's continue", or asks about payment after installation is already scheduled:
