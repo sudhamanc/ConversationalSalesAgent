@@ -179,4 +179,78 @@ _agent_spec.loader.exec_module(_agent_mod)
 # ---------------------------------------------------------------------------
 service_fulfillment_agent = _agent_mod.service_fulfillment_agent
 
+
+# ---------------------------------------------------------------------------
+# Programmatic ServiceFulfillment -> Payment auto-handoff
+# ---------------------------------------------------------------------------
+# After the fulfillment agent confirms an installation appointment, we
+# programmatically transfer to payment_agent in the same turn — just like
+# the Discovery→Serviceability handoff. This avoids requiring the user to
+# send an extra message to trigger payment.
+
+_SCHEDULING_CONFIRMED_PHRASES = (
+    "installation is confirmed",
+    "installation is scheduled",
+    "appointment confirmed",
+    "appointment details",
+    "your installation is confirmed",
+    "scheduled for",
+    "appointment id",
+)
+
+
+def _last_fulfillment_text(events) -> str:
+    """Get the last text from service_fulfillment_agent in the event stream."""
+    for e in reversed(events or []):
+        if getattr(e, "author", None) == "service_fulfillment_agent" and getattr(e, "content", None):
+            parts = getattr(e.content, "parts", None) or []
+            for p in parts:
+                txt = getattr(p, "text", None)
+                if txt:
+                    return txt.lower()
+    return ""
+
+
+def _fulfillment_after_agent(callback_context):
+    """Force-transfer to payment_agent when installation scheduling is confirmed."""
+    try:
+        state = callback_context.state
+        payment_ctx = state.get("payment_context") or {}
+
+        # Don't transfer if payment already completed
+        if payment_ctx.get("status") in ("approved", "completed", "captured"):
+            return None
+
+        # Only fire if there's a pending order awaiting payment
+        order_ctx = state.get("order_context") or {}
+        order_status = order_ctx.get("status", "")
+        if order_status not in ("pending_payment", ""):
+            return None
+
+        events = getattr(callback_context._invocation_context.session, "events", [])
+        agent_text = _last_fulfillment_text(events)
+
+        # Check if the fulfillment agent just confirmed scheduling
+        confirmed = any(phrase in agent_text for phrase in _SCHEDULING_CONFIRMED_PHRASES)
+        if not confirmed:
+            return None
+
+        # Force transfer to payment_agent
+        callback_context.actions.transfer_to_agent = "payment_agent"
+        _logger.info(
+            "[AUTO-HANDOFF] service_fulfillment_agent -> payment_agent "
+            f"(order_id={order_ctx.get('order_id')!r})"
+        )
+
+        # Return empty content so ADK emits the event with transfer action
+        from google.genai import types as _types
+        return _types.Content(parts=[_types.Part(text="")])
+    except Exception as exc:
+        _logger.warning(f"fulfillment after_agent_callback failed (non-fatal): {exc}")
+        return None
+
+
+service_fulfillment_agent.after_agent_callback = _fulfillment_after_agent
+_logger.info("Attached programmatic Fulfillment->Payment handoff callback.")
+
 _logger.info(f"Service Fulfillment agent loaded: {service_fulfillment_agent.name} with {len(service_fulfillment_agent.tools)} tools")

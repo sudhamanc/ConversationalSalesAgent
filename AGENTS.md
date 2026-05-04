@@ -402,32 +402,48 @@ def test_tool_execution():
 
 ## Agent Interaction Flow
 
-### Current Implementation: Natural Two-Step Workflow
+### Current Implementation: Hybrid Handoff Architecture
 
-**Design Decision (Feb 2026):** The system uses a **natural conversational flow** where each user message is one agent turn. Multi-step processes (e.g., Discovery → Serviceability) happen through explicit user confirmation rather than automatic server-side orchestration.
+**Design Decision (May 2026):** The system uses a **hybrid approach** combining:
+1. **Programmatic `after_agent_callback` handoffs** — deterministic, same-turn transfers that require NO extra user message
+2. **LLM instruction-based routing** — the SuperAgent's prompt rules for intent classification on new user messages
 
-**Rationale:**
+**Programmatic Handoffs (zero user input needed):**
 
-- ✅ **ADK-aligned:** Respects ADK's one-turn-per-agent architecture
-- ✅ **User control:** Customer explicitly chooses each step
-- ✅ **Simple:** No server-side pattern matching or recursive routing
-- ✅ **Predictable:** No reliance on LLM text generation variations
+| Source Agent | Target Agent | Trigger | Mechanism |
+|-------------|-------------|---------|-----------|
+| DiscoveryAgent | ServiceabilityAgent | Agent registers company with address + promises serviceability check | `after_agent_callback` sets `transfer_to_agent` |
+| ServiceFulfillmentAgent | PaymentAgent | Agent confirms installation scheduling | `after_agent_callback` sets `transfer_to_agent` |
+| PaymentAgent | (self-inject) | PaymentAgent receives empty turn after scheduling handoff | `after_agent_callback` injects payment opener text |
 
-**Example Flow:**
+These use ADK's `after_agent_callback` mechanism: after the agent's LLM turn completes, a Python callback inspects session events/state and can set `callback_context.actions.transfer_to_agent` to force the next routing without waiting for a user message.
+
+**LLM Instruction-Based Routing (requires user message):**
+
+All other transitions rely on SuperAgent's prompt rules detecting intent patterns in the user's next message. The SuperAgent always routes — it never generates user-facing text itself.
+
+**Example Flow (zero-click handoffs):**
 
 ```
 User: "We're Crane.io at 123 Main St, Philadelphia PA"
-→ DiscoveryAgent: "Welcome! I've registered Crane.io at 123 Main St.
-                   Would you like me to check if this address is serviceable?"
-
-User: "Yes"
+→ DiscoveryAgent registers company, promises serviceability check
+→ after_agent_callback fires: transfer_to_agent = "serviceability_agent"
 → ServiceabilityAgent: "✅ This location is serviceable with Fiber (FTTP)..."
+   (No user message needed between Discovery and Serviceability)
+
+User: "Schedule installation for tomorrow morning"
+→ ServiceFulfillmentAgent: "Installation confirmed! APT-20260505-482"
+→ after_agent_callback fires: transfer_to_agent = "payment_agent"
+→ PaymentAgent: "Let's take care of payment. Please provide payment method..."
+   (No user message needed between Scheduling and Payment)
 ```
 
-**Alternative Architectures:**
+**Why `after_agent_callback` instead of server-side pattern matching:**
 
-1. **Recursive Router** ❌ - Server-side pattern matching and auto-continuation (brittle, fights ADK)
-2. **Tool-Based Handoff** ⚠️ - Agent calls tool to trigger routing (ADK-native, can implement if needed)
+- ✅ **ADK-native:** Uses ADK's own callback system, not fighting the framework
+- ✅ **Same turn:** Transfer happens within the same ADK invocation — no extra round-trip
+- ✅ **Deterministic:** Python code checks session state/events — no LLM variability
+- ✅ **Graceful fallback:** If callback fails (logged as warning), the existing prompt-based routing still works on the user's next message
 
 ---
 

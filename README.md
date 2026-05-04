@@ -72,10 +72,9 @@ User Message → SuperAgent (intent analysis)
                   │    transfer_to_agent("payment_agent")
                   │
                   ├─ Sub-agent → Sub-agent workflow continuation
-                  │    discovery_agent → serviceability_agent
+                  │    discovery_agent → serviceability_agent (programmatic)
+                  │    service_fulfillment_agent → payment_agent (programmatic)
                   │    order_agent → service_fulfillment_agent
-                  │    service_fulfillment_agent → order_agent
-                  │    order_agent → payment_agent
                   │    payment_agent → order_agent
                   │
                   └─ Shared ADK session state
@@ -88,7 +87,10 @@ User Message → SuperAgent (intent analysis)
 - **Sub-agent → sub-agent progression** is also ADK-native. Once a specialist finishes a step, it can call `transfer_to_agent(...)` itself to hand control to the next specialist without waiting for the root orchestrator to re-interpret the workflow.
 - **Shared session state is the data plane.** Agents exchange authoritative facts through ADK session keys such as `customer_context`, `serviceability_context`, `order_context`, and `payment_context`.
 - **Deterministic tools publish state; conversational agents consume it.** This prevents downstream agents from reconstructing addresses, order IDs, or payment results from natural-language history.
-- **Wrapper callbacks stabilize brittle handoffs.** Where Gemini occasionally fails to emit text plus transfer reliably, SuperAgent wrappers use `after_agent_callback` logic to enforce the intended next step without abandoning ADK's delegation model.
+- **Wrapper callbacks stabilize brittle handoffs.** Where Gemini occasionally fails to emit text plus transfer reliably, SuperAgent wrappers use `after_agent_callback` logic to enforce the intended next step without abandoning ADK's delegation model. Currently active programmatic handoffs:
+  - **Discovery → Serviceability** — auto-transfers when company registration includes an address and the agent promises a serviceability check
+  - **ServiceFulfillment → Payment** — auto-transfers when installation scheduling is confirmed, so the user doesn't need to explicitly request payment
+  - **Payment (self-inject)** — injects a payment opener when payment_agent receives an empty turn after a scheduling handoff
 
 ### ADK Session State Implementation
 
@@ -521,21 +523,19 @@ This means the PaymentAgent is designed as a **transaction-safe orchestration co
 
 ## Example Conversation Flows
 
-### Discovery → Serviceability
+### Discovery → Serviceability (zero-click handoff)
 
 ```
 User: "We're Crane.io at 123 Main St, Philadelphia PA"
   ↓ SuperAgent routes to DiscoveryAgent
   ↓ Discovery looks up company → adds to database (JSON)
-  ↓ "Welcome! Would you like a serviceability check?"
-
-User: "Yes"
-  ↓ SuperAgent routes to ServiceabilityAgent
-  ↓ Serviceability validates address via GIS API
+  ↓ after_agent_callback: transfer_to_agent = "serviceability_agent"
+  ↓ ServiceabilityAgent validates address via GIS API
   ↓ "✅ Serviceable with Fiber 1G/5G/10G"
+  (No user message needed between Discovery and Serviceability)
 ```
 
-### Product → Offer → Order
+### Product → Offer → Order → Scheduling → Payment (zero-click handoff)
 
 ```
 User: "Fiber 5G pricing with SD-WAN?"
@@ -544,10 +544,14 @@ User: "Fiber 5G pricing with SD-WAN?"
   ↓ "Quote #12345: $X,XXX/month"
 
 User: "Proceed"
-  ↓ OrderAgent → Create cart + order
+  ↓ OrderAgent → Create cart + order (status: pending_payment)
+
+User: "Schedule installation for tomorrow morning"
+  ↓ FulfillmentAgent → Schedule installation → "Confirmed! APT-20260505-482"
+  ↓ after_agent_callback: transfer_to_agent = "payment_agent"
   ↓ PaymentAgent → Credit check + authorization
-  ↓ FulfillmentAgent → Schedule installation
-  ↓ "Order confirmed! Install: Feb 20, 9 AM"
+  ↓ "Payment authorized! Order confirmed."
+  (No user message needed between Scheduling and Payment)
 ```
 
 ---
