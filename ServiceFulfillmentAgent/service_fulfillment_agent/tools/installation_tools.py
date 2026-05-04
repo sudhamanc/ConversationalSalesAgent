@@ -86,12 +86,35 @@ def dispatch_technician(
         _update_fulfillment(appointment_id, dispatch_id=dispatch_id, status="dispatched")
 
         # Auto-send INSTALL_DISPATCHED notification
+        # Look up customer email from orders table
+        _notif_email = None
+        _notif_customer_name = ""
+        _notif_customer_id = ""
+        _notif_conn = _get_db_connection()
+        if _notif_conn:
+            try:
+                _row = _notif_conn.execute(
+                    "SELECT customer_id, customer_name, contact_email FROM orders WHERE order_id = ?",
+                    (order_id,),
+                ).fetchone()
+                if _row:
+                    _notif_email = _row["contact_email"]
+                    _notif_customer_id = _row["customer_id"] or ""
+                    _notif_customer_name = _row["customer_name"] or ""
+            except Exception:
+                pass
+            finally:
+                _notif_conn.close()
+
         _auto_send_notification(
             notification_type="INSTALL_DISPATCHED",
             order_id=order_id,
+            customer_id=_notif_customer_id,
+            recipient_email=_notif_email,
             metadata={"appointment_id": appointment_id, "dispatch_id": dispatch_id,
                        "technician_name": assigned_tech["name"],
-                       "technician_phone": assigned_tech["phone"]},
+                       "technician_phone": assigned_tech["phone"],
+                       "customer_name": _notif_customer_name},
         )
 
         return dispatch
@@ -221,11 +244,34 @@ def complete_installation(
         _update_fulfillment(appointment_id, status="installed")
 
         # Auto-send INSTALL_COMPLETE notification
+        # Look up customer email from orders table
+        _notif_email2 = None
+        _notif_customer_name2 = ""
+        _notif_customer_id2 = ""
+        _notif_conn2 = _get_db_connection()
+        if _notif_conn2:
+            try:
+                _row2 = _notif_conn2.execute(
+                    "SELECT customer_id, customer_name, contact_email FROM orders WHERE order_id = ?",
+                    (order_id,),
+                ).fetchone()
+                if _row2:
+                    _notif_email2 = _row2["contact_email"]
+                    _notif_customer_id2 = _row2["customer_id"] or ""
+                    _notif_customer_name2 = _row2["customer_name"] or ""
+            except Exception:
+                pass
+            finally:
+                _notif_conn2.close()
+
         _auto_send_notification(
             notification_type="INSTALL_COMPLETE",
             order_id=order_id,
+            customer_id=_notif_customer_id2,
+            recipient_email=_notif_email2,
             metadata={"appointment_id": appointment_id,
-                       "equipment_installed": equipment_installed},
+                       "equipment_installed": equipment_installed,
+                       "customer_name": _notif_customer_name2},
         )
 
         return completion
@@ -298,19 +344,19 @@ def _auto_send_notification(
         elif notification_type == "INSTALL_DISPATCHED" and hasattr(comms, "send_install_dispatched_notification"):
             comms.send_install_dispatched_notification(
                 order_id=order_id,
-                customer_name=customer_id,
+                customer_name=metadata.get("customer_name", customer_id),
                 customer_email=recipient_email,
                 technician_name=metadata.get("technician_name", ""),
                 technician_phone=metadata.get("technician_phone", ""),
             )
-            logger.info(f"Auto-sent {notification_type} notification")
+            logger.info(f"Auto-sent {notification_type} notification to {recipient_email}")
         elif notification_type == "INSTALL_COMPLETE" and hasattr(comms, "send_install_complete_notification"):
             comms.send_install_complete_notification(
                 order_id=order_id,
-                customer_name=customer_id,
+                customer_name=metadata.get("customer_name", customer_id),
                 customer_email=recipient_email,
                 equipment_installed=metadata.get("equipment_installed"),
             )
-            logger.info(f"Auto-sent {notification_type} notification")
+            logger.info(f"Auto-sent {notification_type} notification to {recipient_email}")
     except Exception as exc:
         logger.warning(f"Auto notification {notification_type} failed (non-fatal): {exc}")

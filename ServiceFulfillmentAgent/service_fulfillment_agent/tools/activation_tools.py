@@ -107,11 +107,34 @@ def activate_service(
         )
 
         # Auto-send SERVICE_ACTIVATED notification
+        # Look up customer email from orders table for email delivery
+        _customer_email = None
+        _customer_name = None
+        _customer_id = None
+        _notif_conn = _get_db_connection()
+        if _notif_conn:
+            try:
+                _order_row = _notif_conn.execute(
+                    "SELECT customer_id, customer_name, contact_email FROM orders WHERE order_id = ?",
+                    (order_id,),
+                ).fetchone()
+                if _order_row:
+                    _customer_email = _order_row["contact_email"]
+                    _customer_name = _order_row["customer_name"]
+                    _customer_id = _order_row["customer_id"]
+            except Exception:
+                pass
+            finally:
+                _notif_conn.close()
+
         _auto_send_notification(
             notification_type="SERVICE_ACTIVATED",
             order_id=order_id,
+            customer_id=_customer_id or "",
+            recipient_email=_customer_email,
             metadata={"activation_id": activation_id, "circuit_id": circuit_id,
-                       "service_type": service_type, "account_id": activation["account_id"]},
+                       "service_type": service_type, "account_id": activation["account_id"],
+                       "customer_name": _customer_name or ""},
         )
 
         return activation
@@ -441,12 +464,12 @@ def _auto_send_notification(
         elif notification_type == "SERVICE_ACTIVATED" and hasattr(comms, "send_service_activated_notification"):
             comms.send_service_activated_notification(
                 order_id=order_id,
-                customer_name=customer_id,
+                customer_name=metadata.get("customer_name", customer_id),
                 customer_email=recipient_email,
                 service_type=metadata.get("service_type", ""),
                 account_number=metadata.get("account_id", ""),
                 circuit_id=metadata.get("circuit_id", ""),
             )
-            logger.info(f"Auto-sent {notification_type} notification")
+            logger.info(f"Auto-sent {notification_type} notification to {recipient_email}")
     except Exception as exc:
         logger.warning(f"Auto notification {notification_type} failed (non-fatal): {exc}")

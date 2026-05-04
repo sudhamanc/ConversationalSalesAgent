@@ -214,25 +214,33 @@ def _last_fulfillment_text(events) -> str:
 def _fulfillment_after_agent(callback_context):
     """Force-transfer to payment_agent when installation scheduling is confirmed."""
     try:
+        _logger.info("[FULFILLMENT-CB] after_agent_callback fired.")
         state = callback_context.state
         payment_ctx = state.get("payment_context") or {}
+        _logger.info(f"[FULFILLMENT-CB] payment_context={payment_ctx}")
 
         # Don't transfer if payment already completed
         if payment_ctx.get("status") in ("approved", "completed", "captured"):
+            _logger.info("[FULFILLMENT-CB] Skipped: payment already completed.")
             return None
 
-        # Only fire if there's a pending order awaiting payment
+        # Check order state (permissive: allow if missing or pending_payment)
         order_ctx = state.get("order_context") or {}
         order_status = order_ctx.get("status", "")
-        if order_status not in ("pending_payment", ""):
+        _logger.info(f"[FULFILLMENT-CB] order_context.status={order_status!r}")
+        if order_status and order_status not in ("pending_payment", "draft"):
+            _logger.info(f"[FULFILLMENT-CB] Skipped: order_status={order_status!r} not eligible.")
             return None
 
         events = getattr(callback_context._invocation_context.session, "events", [])
+        _logger.info(f"[FULFILLMENT-CB] events count={len(events)}")
         agent_text = _last_fulfillment_text(events)
+        _logger.info(f"[FULFILLMENT-CB] agent_text (last 200 chars)={agent_text[:200]!r}")
 
         # Check if the fulfillment agent just confirmed scheduling
         confirmed = any(phrase in agent_text for phrase in _SCHEDULING_CONFIRMED_PHRASES)
         if not confirmed:
+            _logger.info("[FULFILLMENT-CB] Skipped: no scheduling confirmation phrase found.")
             return None
 
         # Force transfer to payment_agent
@@ -246,7 +254,7 @@ def _fulfillment_after_agent(callback_context):
         from google.genai import types as _types
         return _types.Content(parts=[_types.Part(text="")])
     except Exception as exc:
-        _logger.warning(f"fulfillment after_agent_callback failed (non-fatal): {exc}")
+        _logger.warning(f"fulfillment after_agent_callback failed (non-fatal): {exc}", exc_info=True)
         return None
 
 

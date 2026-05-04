@@ -217,13 +217,35 @@ def schedule_installation(
         )
 
         # Auto-send INSTALL_SCHEDULED notification
+        # Look up customer email from orders table
+        _notif_email = None
+        _notif_customer_id = customer_id or ""
+        _notif_customer_name = customer_name or ""
+        if order_id:
+            _notif_conn = _get_db_connection()
+            if _notif_conn:
+                try:
+                    _row = _notif_conn.execute(
+                        "SELECT customer_id, customer_name, contact_email FROM orders WHERE order_id = ?",
+                        (order_id,),
+                    ).fetchone()
+                    if _row:
+                        _notif_email = _row["contact_email"]
+                        _notif_customer_id = _notif_customer_id or (_row["customer_id"] or "")
+                        _notif_customer_name = _notif_customer_name or (_row["customer_name"] or "")
+                except Exception:
+                    pass
+                finally:
+                    _notif_conn.close()
+
         _auto_send_notification(
             notification_type="INSTALL_SCHEDULED",
-            customer_id="",
+            customer_id=_notif_customer_id,
             order_id=order_id or "",
-            recipient_email=None,
+            recipient_email=_notif_email,
             metadata={"appointment_id": appointment_id, "appointment_date": scheduled_date,
-                       "window": window, "service_address": service_address},
+                       "window": window, "service_address": service_address,
+                       "customer_name": _notif_customer_name},
         )
 
         return appointment
@@ -384,12 +406,12 @@ def _auto_send_notification(
         elif notification_type == "INSTALL_SCHEDULED" and hasattr(comms, "send_install_scheduled_notification"):
             comms.send_install_scheduled_notification(
                 order_id=order_id,
-                customer_name=customer_id,
+                customer_name=metadata.get("customer_name", customer_id),
                 customer_email=recipient_email,
                 appointment_date=metadata.get("appointment_date", ""),
                 window=metadata.get("window", ""),
                 service_address=metadata.get("service_address", ""),
             )
-            logger.info(f"Auto-sent {notification_type} notification")
+            logger.info(f"Auto-sent {notification_type} notification to {recipient_email}")
     except Exception as exc:
         logger.warning(f"Auto notification {notification_type} failed (non-fatal): {exc}")
