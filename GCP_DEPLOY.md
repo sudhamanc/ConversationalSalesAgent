@@ -223,6 +223,10 @@ echo -n "YOUR_GOOGLE_API_KEY" | gcloud secrets create GOOGLE_API_KEY --data-file
 # Session signing key — auto-generated random value
 openssl rand -base64 48 | tr -d '\n' | \
     gcloud secrets create SESSION_SECRET_KEY --data-file=-
+
+# SMTP credentials for real email notifications (CustomerCommunicationAgent)
+echo -n "comsales.notification@gmail.com" | gcloud secrets create SMTP_USER --data-file=-
+echo -n "YOUR_GMAIL_APP_PASSWORD" | gcloud secrets create SMTP_PASSWORD --data-file=-
 ```
 
 ### Step 6 — Grant Service Account Permissions
@@ -239,6 +243,14 @@ gcloud secrets add-iam-policy-binding GOOGLE_API_KEY \
     --member="serviceAccount:$SA"
 
 gcloud secrets add-iam-policy-binding SESSION_SECRET_KEY \
+    --role=roles/secretmanager.secretAccessor \
+    --member="serviceAccount:$SA"
+
+gcloud secrets add-iam-policy-binding SMTP_USER \
+    --role=roles/secretmanager.secretAccessor \
+    --member="serviceAccount:$SA"
+
+gcloud secrets add-iam-policy-binding SMTP_PASSWORD \
     --role=roles/secretmanager.secretAccessor \
     --member="serviceAccount:$SA"
 
@@ -284,7 +296,7 @@ gcloud run deploy conversational-sales-agent \
     --concurrency=10 \
     --timeout=300 \
     --execution-environment=gen2 \
-    --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest,SESSION_SECRET_KEY=SESSION_SECRET_KEY:latest" \
+    --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest,SESSION_SECRET_KEY=SESSION_SECRET_KEY:latest,SMTP_USER=SMTP_USER:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest" \
     --set-env-vars="\
 GEMINI_MODEL=gemini-3-flash-preview,\
 LLM_PROVIDER=google,\
@@ -293,7 +305,10 @@ SERVER_HOST=0.0.0.0,\
 SERVER_PORT=8000,\
 LOG_LEVEL=info,\
 DEBUG=false,\
-SMTP_ENABLED=false,\
+SMTP_ENABLED=true,\
+SMTP_HOST=smtp.gmail.com,\
+SMTP_PORT=587,\
+SMTP_FROM_NAME=ComSales Notifications,\
 MODEL_TEMPERATURE=0.7,\
 MODEL_MAX_OUTPUT_TOKENS=2048,\
 RATE_LIMIT_RPM=20,\
@@ -312,7 +327,7 @@ SAFETY_SEXUALLY_EXPLICIT=BLOCK_LOW_AND_ABOVE" \
     --concurrency=10 \
     --timeout=300 \
     --execution-environment=gen2 \
-    --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest,SESSION_SECRET_KEY=SESSION_SECRET_KEY:latest" \
+    --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest,SESSION_SECRET_KEY=SESSION_SECRET_KEY:latest,SMTP_USER=SMTP_USER:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest" \
     --set-env-vars="\
 GEMINI_MODEL=gemini-3-flash-preview,\
 LLM_PROVIDER=google,\
@@ -321,7 +336,10 @@ SERVER_HOST=0.0.0.0,\
 SERVER_PORT=8000,\
 LOG_LEVEL=info,\
 DEBUG=false,\
-SMTP_ENABLED=false,\
+SMTP_ENABLED=true,\
+SMTP_HOST=smtp.gmail.com,\
+SMTP_PORT=587,\
+SMTP_FROM_NAME=ComSales Notifications,\
 MODEL_TEMPERATURE=0.7,\
 MODEL_MAX_OUTPUT_TOKENS=2048,\
 RATE_LIMIT_RPM=20,\
