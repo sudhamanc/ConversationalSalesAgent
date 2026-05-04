@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from "react";
-import { streamChat, resetSession } from "../utils/api";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
+import { streamChat, resetSession, getToken } from "../utils/api";
 import { getAgentInfo } from "../utils/agentLabels";
 
 const ChatContext = createContext(null);
@@ -286,6 +286,125 @@ export function ChatProvider({ children }) {
     agentContentRef.current = "";
     resetSession();
   }, []);
+
+  // --- Automatic welcome message on session start ---
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initWelcome() {
+      // Pre-create the session eagerly
+      await getToken();
+
+      if (cancelled) return;
+      setIsStreaming(true);
+      currentAuthorRef.current = null;
+      agentContentRef.current = "";
+
+      // Create a journey step for the greeting
+      stepCountRef.current += 1;
+      const stepNum = stepCountRef.current;
+      setJourneySteps((prev) => [
+        ...prev,
+        {
+          stepNumber: stepNum,
+          userMessage: "Session started",
+          agentSummary: "",
+          agent: null,
+          agentLabel: "",
+          status: "streaming",
+        },
+      ]);
+
+      // Add placeholder assistant message (no user bubble)
+      setMessages([{ role: "assistant", content: "", author: null, suggestions: [] }]);
+
+      await streamChat(
+        "hi",
+        // onToken
+        (token, author) => {
+          if (cancelled) return;
+
+          const effectiveAuthor =
+            author && author !== "super_sales_agent" ? author : null;
+
+          if (effectiveAuthor && !currentAuthorRef.current) {
+            currentAuthorRef.current = effectiveAuthor;
+            const info = getAgentInfo(effectiveAuthor);
+            setJourneySteps((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last && last.status === "streaming") {
+                updated[updated.length - 1] = {
+                  ...last,
+                  agent: effectiveAuthor,
+                  agentLabel: info.label,
+                };
+              }
+              return updated;
+            });
+          }
+
+          agentContentRef.current += token;
+
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                content: last.content + token,
+                author: currentAuthorRef.current || author || last.author,
+              };
+            }
+            return updated;
+          });
+        },
+        // onDone
+        () => {
+          if (cancelled) return;
+          setIsStreaming(false);
+          finalizeCurrentStep();
+        },
+        // onError — silently fail; customer can still type
+        () => {
+          if (cancelled) return;
+          setIsStreaming(false);
+          // Remove the empty placeholder if nothing came through
+          setMessages((prev) => (prev.length === 1 && !prev[0].content ? [] : prev));
+          setJourneySteps((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.status === "streaming") {
+              updated[updated.length - 1] = { ...last, status: "complete", agentSummary: "" };
+            }
+            return updated;
+          });
+        },
+        // onCartUpdate
+        null,
+        // onSuggestions
+        (suggestions, author) => {
+          if (!Array.isArray(suggestions) || suggestions.length === 0) return;
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === "assistant") {
+              updated[updated.length - 1] = { ...last, suggestions };
+            }
+            return updated;
+          });
+        },
+        // onActivityUpdate
+        null,
+        // onStructuredCard
+        null
+      );
+    }
+
+    initWelcome();
+
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ChatContext.Provider

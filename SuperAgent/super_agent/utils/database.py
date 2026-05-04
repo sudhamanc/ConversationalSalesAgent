@@ -407,11 +407,31 @@ CREATE TABLE IF NOT EXISTS dedup_cache (
 """
 
 
+def _migrate_schema(conn) -> None:
+    """Add columns that may be missing from an older DB. Idempotent."""
+    migrations = [
+        ("payments", "idempotency_key", "TEXT"),
+        ("payments", "currency", "TEXT NOT NULL DEFAULT 'USD'"),
+        ("payments", "failure_reason", "TEXT"),
+        ("payments", "attempt_count", "INTEGER NOT NULL DEFAULT 1"),
+    ]
+    for table, column, col_def in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+            logger.info("Migration: added %s.%s", table, column)
+        except Exception:
+            # Column already exists — safe to ignore
+            pass
+
+
 def init_db() -> None:
     """Create all 17 tables and indexes.  Safe to call multiple times."""
     with _lock:
         conn = get_connection()
         try:
+            # Migrate existing tables before running full schema (which includes indexes)
+            _migrate_schema(conn)
+            conn.commit()
             conn.executescript(_SCHEMA_SQL)
             conn.commit()
             logger.info("Unified database initialised at %s", _get_db_path())
