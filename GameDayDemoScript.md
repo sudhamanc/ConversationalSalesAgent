@@ -22,6 +22,10 @@
 | Bundle discount (7%, Internet + SD-WAN) | −$55.86 |
 | Term discount (5%, 24-month) | −$37.10 |
 | **Final monthly total** | **$705.04/mo** |
+| **Payment card** | `4111111111111111` (Visa) |
+| **Card expiry** | `12/28` |
+| **CVV** | `123` |
+| **Displays as** | Visa ending in 1111 |
 
 **Total time:** ~12–15 minutes including Q&A
 
@@ -165,25 +169,17 @@ Let's proceed with this quote
 **What to say while waiting:**
 "Order Agent. Cart created, order record written to SQLite. The quote status flips to 'ordered' so it can't be double-submitted. An ORDER_CONFIRMATION notification event fires automatically."
 
-**Expected output:** Order number assigned (ORD-XXXXXXXX). Status: pending_payment. Total: $705.04/mo. Confirmation event logged.
+**Expected output:** Order number assigned (ORD-XXXXXXXX). Status: pending_payment. Total: $705.04/mo. The agent will then say:
+
+> *"✅ Order Created! Order ID: ORD-XXXXXXXX (Status: Pending Payment) — Now let's schedule your installation appointment."*
+
+> **⚠️ The agent automatically transfers to Service Fulfillment for scheduling — it does NOT go to payment yet. Do NOT type "process payment" — just wait for the scheduling prompt or ask for available dates in Turn 7.**
 
 ---
 
-### Turn 7 — Payment Agent
+### Turn 7 — Service Fulfillment Agent (availability check)
 
-**Type exactly:**
-```
-Yes, process payment
-```
-
-**What to say while waiting:**
-"Payment Agent. Credit check first — mock in demo, real API in production. Then payment authorization. Card numbers are tokenized; raw PAN data never touches our database."
-
-**Expected output:** Credit check: Approved (score ~720). Payment authorized. Order status → paid. PAYMENT_SUCCESS event logged.
-
----
-
-### Turn 8 — Service Fulfillment Agent (availability check)
+> **⚠️ Flow note:** The system routes Order → **Schedule first** → then Payment automatically. Do NOT try to process payment here — the agent will route to scheduling first regardless.
 
 **Type exactly:**
 ```
@@ -191,13 +187,13 @@ What installation dates do you have available?
 ```
 
 **What to say while waiting:**
-"Service Fulfillment Agent querying the scheduling system. 19103 has a 5-day install window, so slots should start within the week."
+"Service Fulfillment Agent. The orchestrator routes to scheduling immediately after order creation — this is by design. We lock in the install slot first, and payment flows automatically right after. 19103 is a full-fiber zone with a 5-day install window."
 
 **Expected output:** Three available time slots — dates and time windows within the next 5–7 business days.
 
 ---
 
-### Turn 9 — Service Fulfillment Agent (schedule)
+### Turn 8 — Service Fulfillment Agent (schedule)
 
 **Type exactly:**
 ```
@@ -205,9 +201,45 @@ Book the first available slot
 ```
 
 **What to say while the response streams:**
-"After this step, the full post-sale flow kicks off automatically: the technician marks the job complete, the system activates the service and writes NorthBridge Logistics to the CustomerMaster database — prospect officially becomes a customer — and fires the SERVICE_ACTIVATED notification. We don't need to walk through that manually because we can show it in the notification history."
+"Appointment locked. Watch what happens next — after the install is confirmed, the orchestrator automatically hands off to the Payment Agent. No user prompt needed. That's the programmatic `after_agent_callback` in action: Python code inspects the session state after the agent's turn and injects the transfer without waiting for a user message."
 
-**Expected output:** Appointment confirmed — date, time window, Appointment ID (APT-XXXXX). INSTALL_SCHEDULED event logged.
+**Expected output:** Appointment confirmed — date, time window, Appointment ID (APT-XXXXX). INSTALL_SCHEDULED event logged. Payment Agent then activates automatically.
+
+---
+
+### Turn 9 — Payment Agent
+
+> **⚠️ The Payment Agent may activate automatically** after scheduling (via `after_agent_callback`). If it does, you will see a payment prompt without typing anything. If it does not auto-trigger, type the message below.
+
+**Type exactly (only if Payment Agent did not auto-activate):**
+```
+Yes, process payment. Card: 4111111111111111, exp 12/28, CVV 123
+```
+
+**If Payment Agent auto-activated, provide the card when it prompts:**
+```
+Card: 4111111111111111, exp 12/28, CVV 123
+```
+
+**Demo payment credentials (use these exact values):**
+
+| Field | Value |
+|-------|-------|
+| Card Number | `4111111111111111` |
+| Expiry | `12/28` |
+| CVV | `123` |
+| Card Type | Visa (detected by `4xxx` prefix) |
+| Displayed as | "Visa ending in 1111" |
+
+> **Alternative — ACH/Bank Transfer:**
+> Routing Number: `021000021` | Account Number: `123456789`
+
+> **Note:** The payment engine is a mock — any Luhn-valid card number is accepted. CVV is discarded immediately after validation and never stored. Raw card numbers are tokenized before any persistence.
+
+**What to say while waiting:**
+"Payment Agent. The card number is validated with a Luhn check, the CVV is zeroed out immediately — it never touches the database — and a cryptographically random token is generated to represent this payment method. Then payment is authorized and the order status flips to paid."
+
+**Expected output:** Card validated (Visa ending in 1111). Payment authorized. Transaction ID assigned (TXN-XXXXXXXX). Order status → paid. PAYMENT_SUCCESS event logged.
 
 ---
 
