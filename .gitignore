@@ -63,3 +63,4 @@ temp/
 **/verify_*
 *.db-shm
 *.db-wal
+*.pdf

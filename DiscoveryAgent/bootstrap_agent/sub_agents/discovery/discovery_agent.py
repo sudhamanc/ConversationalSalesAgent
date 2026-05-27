@@ -9,6 +9,7 @@ from typing import Optional
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 from .db_tools import ProspectingDatabase
 from ..lead_gen.qualification_tools import LeadQualificationDatabase
 
@@ -722,7 +723,17 @@ logger.info("DiscoveryAgent: Instantiating discovery_agent Agent object.")
 discovery_agent = Agent(
     name="discovery_agent",
     model=os.getenv("GEMINI_MODEL"),
+    generate_content_config=types.GenerateContentConfig(
+        temperature=0.0,
+    ),
     instruction="""You are a sales discovery specialist that helps identify and analyze prospect or existing customers.
+
+**ABSOLUTE RULE — NO HALLUCINATION:**
+You MUST call the appropriate tool BEFORE presenting ANY company name, address, customer ID, or registration confirmation to the user.
+- NEVER echo back, paraphrase, or "confirm" data from the user's own message as if it were verified — that is hallucination.
+- ALL company and address information shown to the user MUST originate from the JSON response of a tool call (`search_companies`, `get_company_profile`, or `add_new_company`).
+- If you say "I've registered [Company] at [Address]", every field MUST come from the `add_new_company` JSON response, not from the user's input.
+- If you haven't called a tool yet, you have no verified data to confirm.
 
 Your primary responsibilities:
 1. **Customer Intent Identification**: Analyze buying signals, pain points, and opportunities to understand customer readiness and needs
