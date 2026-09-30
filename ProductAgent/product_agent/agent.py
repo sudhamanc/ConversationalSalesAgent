@@ -1,104 +1,64 @@
-"""
-Product Agent - deterministic catalog/specification agent.
+"""Product agent: catalog-driven technical specifications and comparisons.
 
-This agent:
-1. Retrieves product specifications from structured catalog tools
-2. Compares products and suggests alternatives
-3. Provides technical fit guidance (non-commercial)
-
-It is designed to be integrated into the Super Agent orchestration system
-as a sub-agent for the Configuration cluster.
+All product data comes from the catalog service over MCP (``CATALOG_MCP_URL``,
+e.g. ``http://catalog:8101/mcp/``). The agent holds no catalog data and no
+tool implementations; tool names are unchanged from the in-process version.
 """
 
-import os
-from google.adk.agents import Agent
-from google.genai import types
+from __future__ import annotations
+
+from typing import Optional
+
+from google.adk import Agent
+from google.adk.models.base_llm import BaseLlm
+
+from sales_common.config import generate_config, model_name, require_env
+from sales_common.context import export_context_delta, import_forwarded_context
+from sales_common.mcp_client import mcp_toolset
+from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
 
 from .prompts import PRODUCT_AGENT_INSTRUCTION, PRODUCT_SHORT_DESCRIPTION
-from .tools.product_tools import (
-    list_available_products,
-    get_product_by_id,
-    search_products_by_criteria,
-    get_product_categories,
-)
-from .tools.comparison_tools import (
-    compare_products,
-    suggest_alternatives,
-    get_best_value_product,
-)
-from .tools.rag_tools import search_product_knowledge
-from .utils.logger import get_logger
 
-# Load environment variables
-# Note: load_dotenv() removed - sub-agents should not load root .env to avoid conflicts
-# load_dotenv()
+AGENT_NAME = "product_agent"
 
-logger = get_logger(__name__)
-
-# Agent configuration from environment
-GEMINI_MODEL = os.getenv("GEMINI_MODEL")
-# AGENT_NAME no longer needed - using hardcoded name for sub-agent consistency
-
-logger.info(f"Initializing Product Agent with model: {GEMINI_MODEL}")
-
-
-# Create the product agent following ADK pattern
-product_agent = Agent(
-    name="product_agent",  # Hardcoded to avoid .env conflicts when loaded as sub-agent
-    model=GEMINI_MODEL,
-    instruction=PRODUCT_AGENT_INSTRUCTION,
-    description=PRODUCT_SHORT_DESCRIPTION,
-    tools=[
-        # Product catalog tools - structured data
-        list_available_products,
-        get_product_by_id,
-        search_products_by_criteria,
-        get_product_categories,
-        # Comparison tools
-        compare_products,
-        suggest_alternatives,
-        get_best_value_product,
-        # RAG knowledge base — narrative Q&A, SLAs, use cases, install details
-        search_product_knowledge,
-    ],
-    generate_content_config=types.GenerateContentConfig(
-        temperature=0.0,  # Deterministic - no creativity needed for factual responses
-        top_p=0.2,        # Low sampling for determinism
-        top_k=20,         # Restrict token selection
-        max_output_tokens=2048,  # Sufficient for detailed product explanations
-        safety_settings=[
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-            ),
-        ],
-    ),
+#: Tools served by the catalog MCP server (services/catalog).
+CATALOG_TOOLS = (
+    "list_available_products",
+    "get_product_by_id",
+    "search_products_by_criteria",
+    "get_product_categories",
+    "compare_products",
+    "suggest_alternatives",
+    "get_best_value_product",
+    "search_product_knowledge",
 )
 
 
-def get_agent() -> Agent:
-    """
-    Public accessor for the product agent.
-    
-    This function is used when integrating the agent as a sub-agent
-    in the Super Agent orchestration system.
-    
-    Returns:
-        Configured product Agent instance
-    """
-    return product_agent
+def _generate_config():
+    config = generate_config(temperature=0.0, max_output_tokens=2048)
+    # Deterministic sampling, unchanged from the pre-MCP agent.
+    config.top_p = 0.2
+    config.top_k = 20
+    return config
 
 
-logger.info(f"Product Agent initialized: {product_agent.name}")
+def build_agent(
+    model: Optional[str | BaseLlm] = None,
+    *,
+    catalog_mcp_url: Optional[str] = None,
+) -> Agent:
+    url = catalog_mcp_url or require_env("CATALOG_MCP_URL")
+    return Agent(
+        name=AGENT_NAME,
+        model=model or model_name(),
+        description=PRODUCT_SHORT_DESCRIPTION,
+        static_instruction=PRODUCT_AGENT_INSTRUCTION,
+        instruction=JOURNEY_CONTEXT_INSTRUCTION,
+        tools=[mcp_toolset(url, tool_filter=CATALOG_TOOLS)],
+        before_agent_callback=[import_forwarded_context],
+        after_tool_callback=[export_context_delta],
+        generate_content_config=_generate_config(),
+    )
+
+
+root_agent = build_agent()

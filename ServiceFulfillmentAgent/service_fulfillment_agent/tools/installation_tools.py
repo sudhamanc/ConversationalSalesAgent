@@ -1,362 +1,247 @@
+"""Installation coordination tools: technician dispatch, progress and completion.
+
+``dispatch_technician`` and ``complete_installation`` update the
+``fulfillments`` row (``dispatched`` / ``installed``). ``complete_installation``
+enqueues an ``installation_complete`` notification in the same transaction.
 """
-Installation coordination tools for the Service Fulfillment Agent.
 
-These tools handle technician dispatch, installation tracking, and completion.
-"""
+from __future__ import annotations
 
-import json
-import os
-import sqlite3
-import sys
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-from ..utils.logger import get_logger
+import logging
+from typing import Any, List, Optional
 
-logger = get_logger(__name__)
+import psycopg
+from google.adk.tools.tool_context import ToolContext
+
+from sales_common import db, notifications
+
+from ._common import find_fulfillment, get_order, stable_number, state_dict, state_order_id, update_order_context
+
+logger = logging.getLogger(__name__)
+
+TECHNICIANS = [
+    {"id": "TECH-101", "name": "Mike Johnson", "phone": "555-0101"},
+    {"id": "TECH-102", "name": "Sarah Williams", "phone": "555-0102"},
+    {"id": "TECH-103", "name": "David Brown", "phone": "555-0103"},
+]
+
+VALID_PROGRESS_STATUSES = [
+    "scheduled",
+    "technician_en_route",
+    "on_site",
+    "in_progress",
+    "testing",
+    "complete",
+    "failed",
+]
 
 
-def _get_db_connection():
-    """Return a connection to the unified sales_agent.db, or None if not configured."""
-    db_path = os.getenv("SALES_AGENT_DB_PATH")
-    if not db_path:
-        return None
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+def _installation_from_state(tool_context) -> dict[str, Any]:
+    installation = state_dict(tool_context, "order_context").get("installation")
+    return installation if isinstance(installation, dict) else {}
 
 
 def dispatch_technician(
-    appointment_id: str,
-    order_id: str,
-    scheduled_date: str
-) -> Dict[str, Any]:
-    """
-    Dispatches a technician for an installation appointment.
-    
-    For production: Integrates with dispatch management system
-    For testing: Simulates technician assignment
-    
+    appointment_id: Optional[str] = None,
+    order_id: Optional[str] = None,
+    scheduled_date: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Dispatches a technician for a scheduled installation appointment.
+
+    appointment_id, order_id and scheduled_date default to the journey
+    order_context (installation booked earlier) when not passed.
+
     Args:
-        appointment_id: Appointment identifier
+        appointment_id: Appointment identifier (APT-...)
         order_id: Order identifier
-        scheduled_date: Scheduled installation date
-    
+        scheduled_date: Scheduled installation date (YYYY-MM-DD)
+
     Returns:
         Dispatch details with technician information
     """
-    logger.info(f"Dispatching technician for appointment {appointment_id}")
-    
+    installation = _installation_from_state(tool_context)
+    appointment_id = appointment_id or installation.get("appointment_id")
+    order_id = order_id or state_order_id(tool_context)
+    if not appointment_id and not order_id:
+        return {"success": False, "error": "appointment_id or order_id is required"}
+
     try:
-        # Simulate technician assignment
-        # In production: Call dispatch management system API
-        
-        # Generate dispatch ID
-        dispatch_id = f"DISP-{appointment_id.split('-')[-1]}"
-        
-        # Assign technician (simulated)
-        technicians = [
-            {"id": "TECH-101", "name": "Mike Johnson", "phone": "555-0101"},
-            {"id": "TECH-102", "name": "Sarah Williams", "phone": "555-0102"},
-            {"id": "TECH-103", "name": "David Brown", "phone": "555-0103"},
-        ]
-        
-        # Select technician based on appointment ID hash
-        tech_idx = hash(appointment_id) % len(technicians)
-        assigned_tech = technicians[tech_idx]
-        
-        dispatch = {
-            "success": True,
-            "dispatch_id": dispatch_id,
-            "appointment_id": appointment_id,
-            "order_id": order_id,
-            "technician_id": assigned_tech["id"],
-            "technician_name": assigned_tech["name"],
-            "technician_phone": assigned_tech["phone"],
-            "vehicle_id": f"VEH-{assigned_tech['id'].split('-')[1]}",
-            "scheduled_date": scheduled_date,
-            "dispatched_at": datetime.now().isoformat(),
-            "status": "dispatched",
-            "message": f"Technician {assigned_tech['name']} assigned and dispatched"
-        }
-        
-        logger.info(f"Technician dispatched: {assigned_tech['name']}")
-        
-        # Update fulfillment record in unified DB
-        _update_fulfillment(appointment_id, dispatch_id=dispatch_id, status="dispatched")
+        with db.transaction() as conn:
+            row = find_fulfillment(conn, appointment_id, order_id, for_update=True)
+            if row is None:
+                return {
+                    "success": False,
+                    "error": f"No installation appointment found for {appointment_id or order_id}",
+                }
+            if row["status"] not in ("scheduled", "dispatched"):
+                return {
+                    "success": False,
+                    "error": f"Appointment {row['fulfillment_id']} is {row['status']}; cannot dispatch",
+                }
+            appointment_id = row["fulfillment_id"]
+            order_id = row["order_id"]
+            scheduled_date = row["appointment_date"] or scheduled_date
+            dispatch_id = row["dispatch_id"] or f"DISP-{appointment_id.split('-')[-1]}"
+            conn.execute(
+                "UPDATE fulfillments SET dispatch_id = %s, status = 'dispatched', updated_at = %s "
+                "WHERE fulfillment_id = %s",
+                (dispatch_id, db.now_iso(), appointment_id),
+            )
+    except psycopg.Error as exc:
+        logger.error("Dispatch failed for %s: %s", appointment_id or order_id, exc)
+        return {"success": False, "error": f"Technician dispatch error: {type(exc).__name__}"}
 
-        # Auto-send INSTALL_DISPATCHED notification
-        # Look up customer email from orders table
-        _notif_email = None
-        _notif_customer_name = ""
-        _notif_customer_id = ""
-        _notif_conn = _get_db_connection()
-        if _notif_conn:
-            try:
-                _row = _notif_conn.execute(
-                    "SELECT customer_id, customer_name, contact_email FROM orders WHERE order_id = ?",
-                    (order_id,),
-                ).fetchone()
-                if _row:
-                    _notif_email = _row["contact_email"]
-                    _notif_customer_id = _row["customer_id"] or ""
-                    _notif_customer_name = _row["customer_name"] or ""
-            except Exception:
-                pass
-            finally:
-                _notif_conn.close()
-
-        _auto_send_notification(
-            notification_type="INSTALL_DISPATCHED",
-            order_id=order_id,
-            customer_id=_notif_customer_id,
-            recipient_email=_notif_email,
-            metadata={"appointment_id": appointment_id, "dispatch_id": dispatch_id,
-                       "technician_name": assigned_tech["name"],
-                       "technician_phone": assigned_tech["phone"],
-                       "customer_name": _notif_customer_name},
-        )
-
-        return dispatch
-    
-    except Exception as e:
-        logger.error(f"Error dispatching technician: {e}")
-        return {
-            "success": False,
-            "error": f"Technician dispatch error: {str(e)}"
-        }
+    tech = TECHNICIANS[stable_number(appointment_id, len(TECHNICIANS))]
+    installation = {**installation, "appointment_id": appointment_id, "status": "dispatched",
+                    "dispatch_id": dispatch_id, "technician_name": tech["name"]}
+    if scheduled_date:
+        installation["scheduled_date"] = scheduled_date
+    update_order_context(tool_context, order_id, installation=installation)
+    logger.info("Technician %s dispatched for %s", tech["name"], appointment_id)
+    return {
+        "success": True,
+        "dispatch_id": dispatch_id,
+        "appointment_id": appointment_id,
+        "order_id": order_id,
+        "technician_id": tech["id"],
+        "technician_name": tech["name"],
+        "technician_phone": tech["phone"],
+        "vehicle_id": f"VEH-{tech['id'].split('-')[1]}",
+        "scheduled_date": scheduled_date,
+        "dispatched_at": db.now_iso(),
+        "status": "dispatched",
+        "message": f"Technician {tech['name']} assigned and dispatched",
+    }
 
 
 def update_installation_status(
     appointment_id: str,
     status: str,
-    notes: str = None,
-    issues: Optional[List[str]] = None
-) -> Dict[str, Any]:
-    """
-    Updates the status of an ongoing installation.
-    
+    notes: Optional[str] = None,
+    issues: Optional[List[str]] = None,
+) -> dict[str, Any]:
+    """Records progress of an ongoing installation (simulated field update).
+
     Args:
         appointment_id: Appointment identifier
         status: New status (technician_en_route, on_site, in_progress, testing, complete, failed)
         notes: Optional status notes
         issues: Optional list of issues encountered
-    
+
     Returns:
         Updated installation status
     """
-    logger.info(f"Updating installation status for {appointment_id}: {status}")
-    
-    try:
-        valid_statuses = [
-            "scheduled",
-            "technician_en_route",
-            "on_site",
-            "in_progress",
-            "testing",
-            "complete",
-            "failed"
-        ]
-        
-        if status not in valid_statuses:
-            return {
-                "success": False,
-                "error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
-            }
-        
-        # Simulate status update
-        # In production: Update installation tracking system
-        
-        status_update = {
-            "success": True,
-            "appointment_id": appointment_id,
-            "status": status,
-            "updated_at": datetime.now().isoformat(),
-            "notes": notes,
-            "issues": issues or [],
-            "message": f"Installation status updated to: {status}"
-        }
-        
-        logger.info(f"Status updated: {status}")
-        return status_update
-    
-    except Exception as e:
-        logger.error(f"Error updating installation status: {e}")
+    if status not in VALID_PROGRESS_STATUSES:
         return {
             "success": False,
-            "error": f"Status update error: {str(e)}"
+            "error": f"Invalid status. Must be one of: {', '.join(VALID_PROGRESS_STATUSES)}",
         }
+    return {
+        "success": True,
+        "appointment_id": appointment_id,
+        "status": status,
+        "updated_at": db.now_iso(),
+        "notes": notes,
+        "issues": issues or [],
+        "message": f"Installation status updated to: {status}",
+    }
 
 
 def complete_installation(
-    appointment_id: str,
-    order_id: str,
     equipment_installed: List[str],
+    appointment_id: Optional[str] = None,
+    order_id: Optional[str] = None,
     tests_passed: bool = True,
-    customer_signature: str = None,
-    notes: str = None
-) -> Dict[str, Any]:
-    """
-    Completes an installation and marks it as finished.
-    
+    customer_signature: Optional[str] = None,
+    notes: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Completes an installation and marks it as installed.
+
     Args:
-        appointment_id: Appointment identifier
-        order_id: Order identifier
         equipment_installed: List of equipment IDs installed
+        appointment_id: Appointment identifier (defaults to the booked appointment)
+        order_id: Order identifier (defaults to the journey order)
         tests_passed: Whether all service tests passed
         customer_signature: Customer signature (name or digital signature)
         notes: Completion notes
-    
+
     Returns:
         Installation completion record
     """
-    logger.info(f"Completing installation for appointment {appointment_id}")
-    
-    try:
-        if not tests_passed:
-            return {
-                "success": False,
-                "error": "Cannot complete installation - service tests failed. Please resolve issues first."
-            }
-        
-        # Generate completion record
-        completion = {
-            "success": True,
-            "appointment_id": appointment_id,
-            "order_id": order_id,
-            "status": "installation_complete",
-            "completed_at": datetime.now().isoformat(),
-            "equipment_installed": equipment_installed,
-            "tests_passed": tests_passed,
-            "customer_signature": customer_signature,
-            "notes": notes,
-            "next_steps": [
-                "Service activation initiated",
-                "Customer portal access will be emailed",
-                "Billing will begin on next cycle"
-            ],
-            "message": "Installation completed successfully"
-        }
-        
-        logger.info(f"Installation completed: {appointment_id}")
-        
-        # Update fulfillment record in unified DB
-        _update_fulfillment(appointment_id, status="installed")
-
-        # Auto-send INSTALL_COMPLETE notification
-        # Look up customer email from orders table
-        _notif_email2 = None
-        _notif_customer_name2 = ""
-        _notif_customer_id2 = ""
-        _notif_conn2 = _get_db_connection()
-        if _notif_conn2:
-            try:
-                _row2 = _notif_conn2.execute(
-                    "SELECT customer_id, customer_name, contact_email FROM orders WHERE order_id = ?",
-                    (order_id,),
-                ).fetchone()
-                if _row2:
-                    _notif_email2 = _row2["contact_email"]
-                    _notif_customer_id2 = _row2["customer_id"] or ""
-                    _notif_customer_name2 = _row2["customer_name"] or ""
-            except Exception:
-                pass
-            finally:
-                _notif_conn2.close()
-
-        _auto_send_notification(
-            notification_type="INSTALL_COMPLETE",
-            order_id=order_id,
-            customer_id=_notif_customer_id2,
-            recipient_email=_notif_email2,
-            metadata={"appointment_id": appointment_id,
-                       "equipment_installed": equipment_installed,
-                       "customer_name": _notif_customer_name2},
-        )
-
-        return completion
-    
-    except Exception as e:
-        logger.error(f"Error completing installation: {e}")
+    if not tests_passed:
         return {
             "success": False,
-            "error": f"Installation completion error: {str(e)}"
+            "error": "Cannot complete installation - service tests failed. Please resolve issues first.",
         }
+    installation = _installation_from_state(tool_context)
+    appointment_id = appointment_id or installation.get("appointment_id")
+    order_id = order_id or state_order_id(tool_context)
+    if not appointment_id and not order_id:
+        return {"success": False, "error": "appointment_id or order_id is required"}
 
-
-# ---------------------------------------------------------------------------
-# DB persistence helpers
-# ---------------------------------------------------------------------------
-
-def _update_fulfillment(
-    fulfillment_id: str,
-    dispatch_id: str | None = None,
-    status: str | None = None,
-) -> None:
-    """Update a fulfillment record in the unified DB (best-effort)."""
-    conn = _get_db_connection()
-    if conn is None:
-        return
+    completed_at = db.now_iso()
     try:
-        now = datetime.now().isoformat()
-        sets = ["updated_at = ?"]
-        params: list = [now]
-        if dispatch_id is not None:
-            sets.append("dispatch_id = ?")
-            params.append(dispatch_id)
-        if status is not None:
-            sets.append("status = ?")
-            params.append(status)
-        params.append(fulfillment_id)
-        conn.execute(
-            f"UPDATE fulfillments SET {', '.join(sets)} WHERE fulfillment_id = ?",
-            params,
-        )
-        conn.commit()
-        logger.info(f"Fulfillment {fulfillment_id} updated: status={status}")
-    except Exception as exc:
-        logger.warning(f"Failed to update fulfillment (non-fatal): {exc}")
-    finally:
-        conn.close()
+        with db.transaction() as conn:
+            row = find_fulfillment(conn, appointment_id, order_id, for_update=True)
+            if row is None:
+                return {
+                    "success": False,
+                    "error": f"No installation appointment found for {appointment_id or order_id}",
+                }
+            if row["status"] not in ("scheduled", "dispatched", "installed"):
+                return {
+                    "success": False,
+                    "error": f"Appointment {row['fulfillment_id']} is {row['status']}; cannot complete",
+                }
+            appointment_id = row["fulfillment_id"]
+            order_id = row["order_id"]
+            already_installed = row["status"] == "installed"
+            notification_id = None
+            if not already_installed:
+                conn.execute(
+                    "UPDATE fulfillments SET status = 'installed', updated_at = %s WHERE fulfillment_id = %s",
+                    (completed_at, appointment_id),
+                )
+                order = get_order(conn, order_id) or {}
+                notification_id = notifications.enqueue(
+                    "installation_complete",
+                    recipient_email=order.get("contact_email"),
+                    customer_id=row["customer_id"],
+                    order_id=order_id,
+                    args={
+                        "order_id": order_id,
+                        "appointment_id": appointment_id,
+                        "customer_name": order.get("customer_name") or "",
+                        "equipment_installed": list(equipment_installed or []),
+                        "completed_at": completed_at,
+                    },
+                    conn=conn,
+                )
+    except psycopg.Error as exc:
+        logger.error("Completion failed for %s: %s", appointment_id or order_id, exc)
+        return {"success": False, "error": f"Installation completion error: {type(exc).__name__}"}
 
-
-def _auto_send_notification(
-    notification_type: str,
-    order_id: str,
-    metadata: dict,
-    customer_id: str = "",
-    recipient_email: str | None = None,
-) -> None:
-    """Send a notification via sys.modules dispatcher (best-effort, non-fatal)."""
-    try:
-        comms = sys.modules.get("customer_communication_agent.tools.notification_tools")
-        if comms is None:
-            return
-        if hasattr(comms, "send_notification"):
-            comms.send_notification(
-                notification_type=notification_type,
-                customer_id=customer_id,
-                order_id=order_id,
-                recipient_email=recipient_email,
-                metadata=metadata,
-            )
-            logger.info(f"Auto-sent {notification_type} notification")
-        elif notification_type == "INSTALL_DISPATCHED" and hasattr(comms, "send_install_dispatched_notification"):
-            comms.send_install_dispatched_notification(
-                order_id=order_id,
-                customer_name=metadata.get("customer_name", customer_id),
-                customer_email=recipient_email,
-                technician_name=metadata.get("technician_name", ""),
-                technician_phone=metadata.get("technician_phone", ""),
-            )
-            logger.info(f"Auto-sent {notification_type} notification to {recipient_email}")
-        elif notification_type == "INSTALL_COMPLETE" and hasattr(comms, "send_install_complete_notification"):
-            comms.send_install_complete_notification(
-                order_id=order_id,
-                customer_name=metadata.get("customer_name", customer_id),
-                customer_email=recipient_email,
-                equipment_installed=metadata.get("equipment_installed"),
-            )
-            logger.info(f"Auto-sent {notification_type} notification to {recipient_email}")
-    except Exception as exc:
-        logger.warning(f"Auto notification {notification_type} failed (non-fatal): {exc}")
+    update_order_context(
+        tool_context, order_id,
+        installation={**installation, "appointment_id": appointment_id, "status": "installed"},
+    )
+    return {
+        "success": True,
+        "appointment_id": appointment_id,
+        "order_id": order_id,
+        "status": "installation_complete",
+        "completed_at": completed_at,
+        "equipment_installed": list(equipment_installed or []),
+        "tests_passed": tests_passed,
+        "customer_signature": customer_signature,
+        "notes": notes,
+        "notification_queued": notification_id is not None,
+        "next_steps": [
+            "Service activation initiated",
+            "Customer portal access will be emailed",
+            "Billing will begin on next cycle",
+        ],
+        "message": "Installation completed successfully",
+    }

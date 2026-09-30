@@ -57,10 +57,14 @@ DsicoveryAgent/temp/
 temp/
 
 # Test files
-**/test_*
-**/tests/
 **/__tests__/
 **/verify_*
 *.db-shm
 *.db-wal
 *.pdf
+
+# Architecture brief skill scratch
+.cache/
+
+# Local run logs and PID files (scripts/start_local.sh)
+logs/

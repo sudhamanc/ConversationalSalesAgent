@@ -28,23 +28,23 @@ All Discovery Agent documentation (tools, database schema, intelligent inference
 
 When working on Discovery Agent:
 
-1. **Read AGENTS.md** for complete documentation
-2. **Follow ADK Bootstrap Template** structure (`bootstrap_agent/`)
-3. **Database operations** use SQLite at `data/discover_prospecting_clean.db`
+1. **Read AGENTS.md** and [docs/agent-service-guide.md](/docs/agent-service-guide.md)
+2. **Package:** `discovery_agent/` (agent.py, prompts.py, tools/, server.py)
+3. **Database:** PostgreSQL via `sales_common.db` (quoted columns such as `"Company Name"`)
 4. **Intelligent inference** - minimize questions by inferring industry, address, region
-5. **Test changes** with `pytest tests/test_discovery_agent.py`
+5. **Test changes** with `TEST_DATABASE_URL=... pytest DiscoveryAgent/tests -q`
 
 ---
 
 ## Quick Reference
 
-**Tools:** 8 database functions (search, add, update)
-**Temperature:** 0.7 (conversational)
-**Invocation:** Once per conversation when company mentioned
-**Database:** SQLite - `data/discover_prospecting_clean.db`
+**Tools:** 13 deterministic database functions (search, add, update, BANT, customer state)
+**Temperature:** 0.0
+**Hand-off:** none in the agent; the gateway runs Discovery -> Serviceability
+**Serving:** A2A service `discovery_agent.server:app`
 
 ---
 
 **Primary Reference:** [AGENTS.md](AGENTS.md)
 **Root Architecture:** [/AGENTS.md](/AGENTS.md)
-**SuperAgent Integration:** [/SuperAgent/super_agent/sub_agents/discovery/agent.py](/SuperAgent/super_agent/sub_agents/discovery/agent.py)
+**Service guide:** [/docs/agent-service-guide.md](/docs/agent-service-guide.md)

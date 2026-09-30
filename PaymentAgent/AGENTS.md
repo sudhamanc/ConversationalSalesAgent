@@ -1,107 +1,111 @@
 # Payment Agent
 
-**Type:** Transactional Agent (Transaction Phase)
-**Framework:** Google ADK 1.20.0+
-**Package:** `payment_agent`
-**Status:** ✅ Deployed in SuperAgent
+**Type:** Transactional agent (payment phase)
+**Framework:** Google ADK 2.10 (A2A service)
+**Package:** `payment_agent` (project `payment-agent`)
+**A2A name:** `payment_agent` (hardcoded) - local port 8206
+**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
 
 ---
 
 ## Purpose
 
-The Payment Agent handles **credit checks, payment validation, tokenization, and payment authorization**. It processes payments for confirmed orders and updates order status upon successful payment.
+Credit checks, payment method validation/tokenization, and payment processing for an
+order. On success the order is marked `paid`, a `payment_confirmation` notification is
+queued in the outbox, and `payment_context` is exported to the gateway.
 
----
+## Layout
 
-## Architecture
+```text
+PaymentAgent/
+├── pyproject.toml            # depends on sales-common
+├── Dockerfile                # build context = repo root
+├── payment_agent/
+│   ├── __init__.py           # build_agent, root_agent
+│   ├── agent.py              # build_agent(model=None) -> Agent
+│   ├── prompts.py            # PAYMENT_AGENT_INSTRUCTION (static_instruction)
+│   ├── server.py             # app = create_a2a_app(root_agent)
+│   ├── models/schemas.py     # pydantic models (not used by tools)
+│   └── tools/
+│       ├── payment_tools.py  # validate / tokenize / process / saved methods
+│       ├── credit_tools.py   # simulated credit check + report
+│       └── billing_tools.py  # invoice, history, installment plan (simulated)
+└── tests/                    # conftest.py, test_tools.py, test_agent.py
+```
 
-### Agent Configuration
+## Agent configuration
 
 | Attribute | Value |
-|-----------|-------|
-| **Agent Name** | `payment_agent` (hardcoded) |
-| **Model** | `os.getenv("GEMINI_MODEL")` — no default |
-| **Temperature** | 0.0 (deterministic) |
-| **Max Tokens** | 2048 |
-| **Database** | Unified `sales_agent.db` → `payments` table + reads/writes `orders` |
-
-### Component Structure
-
-```
-PaymentAgent/
-├── payment_agent/
-│   ├── __init__.py
-│   ├── agent.py                    # Agent definition
-│   ├── prompts.py                  # System instructions
-│   ├── tools/
-│   │   ├── payment_tools.py        # Core payment processing
-│   │   ├── credit_tools.py         # Credit check simulation
-│   │   └── billing_tools.py        # Invoice/billing utilities
-│   └── utils/
-│       └── logger.py
-└── tests/
-```
-
-### Database Tables (1 table — Payment Domain)
-
-| Table | Purpose | Key Fields |
-|-------|---------|------------|
-| `payments` | Payment records | payment_id (PK), order_id (FK), customer_id, transaction_id, amount, status, credit_score, payment_method, expires_at |
-
----
+|---|---|
+| `static_instruction` | `PAYMENT_AGENT_INSTRUCTION` (no transfer instructions) |
+| `instruction` | `sales_common.prompts.JOURNEY_CONTEXT_INSTRUCTION` |
+| Callbacks | `before_agent_callback=[import_forwarded_context]`, `after_tool_callback=[export_context_delta]` |
+| Generation | `generate_config(temperature=0.0, max_output_tokens=2048)` (safety from `SAFETY_*` env) |
+| Model | `GEMINI_MODEL` (required, no default) |
 
 ## Tools
 
-### Core Payment Tools (payment_tools.py)
+| Tool | Persistence | Notes |
+|---|---|---|
+| `validate_payment_method` | none | Luhn check (cards), 9-digit routing (ACH) |
+| `tokenize_payment_method` | none | Simulated token `tok_{brand}_{last4}` / `tok_ach_{last4}` |
+| `add_payment_method` | none (simulated) | Returns a JSON **string** |
+| `get_payment_methods` | none (simulated) | Static demo list |
+| `process_payment` | `payments`, `payment_events`, `payment_rate_limit`, `orders.status`, `notifications` | See below |
+| `check_business_credit`, `get_credit_report` | none | Rule-based simulation |
+| `generate_invoice`, `get_payment_history`, `setup_payment_plan` | none | Simulated |
 
-| Tool | Signature | Tables | Purpose |
-|------|-----------|--------|---------|
-| `validate_payment_method` | `(payment_type, card_number, routing_number, account_number)` | None | Validate payment details (Luhn check) |
-| `process_payment` | `(amount, payment_method_token, description, invoice_id, order_id, customer_name, customer_email, customer_phone)` | `payments` INSERT, `orders` UPDATE→paid | Process payment and update order |
-| `get_payment_methods` | `(customer_id)` | None (simulated) | List available payment methods |
-| `tokenize_payment_method` | `(payment_type, card_number, expiry_month, expiry_year, cvv, ...)` | None | Generate payment token |
+`customer_payment_methods` exists in the schema but is not used: the legacy module defined
+`get_payment_methods` / `tokenize_payment_method` / `add_payment_method` twice and the later
+(simulated) definitions were the effective ones; only those were kept.
 
-### Credit Tools (credit_tools.py)
+### `process_payment`
 
-| Tool | Signature | Purpose |
-|------|-----------|---------|
-| `check_business_credit` | `(company_name, tax_id)` | Simulated credit check (returns score 650-800) |
-| `get_credit_report` | `(company_name)` | Detailed credit report |
+Arguments: `amount, payment_method_token, description, invoice_id, order_id, customer_name,
+customer_email, customer_phone, idempotency_key, currency`. Missing `order_id` / customer
+contact fields default from `state["order_context"]` (`order_id`, `customer_name`,
+`contact_email`, `contact_phone`). An `order_id` is required and must exist in `orders`.
 
-### Billing Tools (billing_tools.py)
+One PostgreSQL transaction (`sales_common.db.transaction()`):
 
-| Tool | Signature | Purpose |
-|------|-----------|---------|
-| `generate_invoice` | `(order_id, ...)` | Generate invoice document |
-| `get_payment_history` | `(customer_id)` | Payment history lookup |
-| `setup_payment_plan` | `(order_id, num_installments)` | Configure installment plan |
+1. `pg_advisory_xact_lock(hashtext(idempotency_key))`; replay of a known key returns the stored result (`idempotent: true`).
+2. `SELECT ... FROM orders ... FOR UPDATE`; an already `completed` payment for the order is returned (`idempotent: true`).
+3. Hourly rate limit (5 attempts/customer) via `payment_rate_limit`.
+4. `payments` row `initiated -> processing -> completed | failed`, each transition in `payment_events`.
+5. Velocity check (10 completed payments or $500k per customer per 24h).
+6. On success `UPDATE orders SET status='paid'`.
+7. `notifications.enqueue("payment_confirmation", ..., conn=conn)` with args
+   `order_id, customer_name, payment_status ("success"|"failed"), amount, currency, payment_method, transaction_id, failure_reason`.
 
-### Cross-Agent Integration
-- Reads `orders` table to get customer_id for payment association
-- Updates `orders.status` → `paid` on successful payment
-- Auto-sends `PAYMENT_SUCCESS` or `PAYMENT_FAILED` notification via CustomerCommunicationAgent
+Success response fields: `success, payment_id, transaction_id, idempotency_key, order_id, amount,
+currency, status="completed", payment_method_token, description, invoice_id, order_status="paid",
+email_confirmation_queued, notification_id, message` (+ `_context_update` added by the callback).
+Decline: `success=false, payment_id, idempotency_key, status="failed", failure_reason, error`.
 
----
+Session state written on success (exported to the gateway as `_context_update.payment_context`):
 
-## Conversation Behavior
+```json
+{"transaction_id": "TXN-...", "order_id": "ORD-...", "customer_id": "CUST-...",
+ "amount": 249.0, "status": "completed", "payment_method": "tok_visa_1111"}
+```
 
-### When Invoked
-SuperAgent routes to PaymentAgent for:
-- **Programmatic handoff from ServiceFulfillmentAgent** — `after_agent_callback` auto-transfers after installation scheduling confirmation (no user message needed)
-- User explicitly says "Process payment", "Credit check", "Pay for this order"
-- Post-order payment flow
+There is no in-memory fallback: without `DATABASE_URL`, `sales_common.db` raises.
 
-### Response Pattern
-> "✅ Payment authorized! Transaction #TXN-12345. Credit score: 720. Order #ORD-12345 status updated to **paid**."
+## Conversation behaviour
 
-### Self-Inject Pattern
-When PaymentAgent receives an empty turn (after a programmatic handoff), the wrapper's `after_agent_callback` injects a payment opener prompt to kickstart the payment conversation naturally.
+- The gateway workflow engages this agent after installation scheduling with an explicit
+  message ("Installation is scheduled for order <id>; total <amount>. Start payment.").
+  The agent asks for payment details immediately (no SuperAgent opener callback any more).
+- After payment the agent replies with the one-line JSON block the UI parses:
+  `{"payment_confirmation": true, "amount": ..., "payment_method": "...", "transaction_id": "...", "status": "Approved"}`
+- The agent cannot transfer; the gateway routes the next step (order confirmation).
 
----
+## Tests
 
-## Integration with SuperAgent
+```bash
+TEST_DATABASE_URL=postgresql://csa:<password>@127.0.0.1:5432/csa_test_payment \
+  venv/bin/python -m pytest PaymentAgent/tests -q
+```
 
-Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/payment/agent.py`. Agent name `payment_agent` is hardcoded.
-
-**Inbound handoff:** Receives programmatic transfer from ServiceFulfillmentAgent's `after_agent_callback` (zero user input needed).
-**Self-inject:** `after_agent_callback` on payment wrapper injects opener text when agent produces empty output after handoff.
+DB tests run `sales_common.migrate.run(seed=True)` and are skipped without `TEST_DATABASE_URL`.
+Agent tests use `sales_common.testing.ScriptLlm`.

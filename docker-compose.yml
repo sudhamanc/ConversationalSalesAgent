@@ -1,0 +1,294 @@
+# Local full stack in containers: PostgreSQL 16, one-shot migrations + seed, 2 tool
+# services, 10 A2A agents and the gateway on a private network. Only the gateway is
+# published (http://localhost:8000 serves the UI and the API).
+#
+#   cp .env.example .env    # set GOOGLE_API_KEY and GEMINI_MODEL (POSTGRES_PASSWORD has a local default)
+#   docker compose up --build
+#
+# Service list mirrors scripts/services.conf (names, ports, module, Dockerfile per directory).
+# Build context is the repo root for every image.
+name: csa
+
+x-db-env: &db-env
+  DATABASE_URL: postgresql://csa:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/csa
+  SESSION_DB_URL: ""
+  SERVICE_AUTH: none
+  DB_DIR: /app/db
+
+x-healthcheck: &healthcheck
+  test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.environ['PORT'], timeout=3)"]
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 20s
+
+x-app: &app
+  env_file: .env
+  restart: unless-stopped
+  networks: [csa]
+  healthcheck: *healthcheck
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: csa
+      POSTGRES_DB: csa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [csa]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csa -d csa"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  db-init:
+    build:
+      context: .
+      dockerfile: SuperAgent/Dockerfile
+    image: csa/gateway:local
+    command: ["python", "-m", "sales_common.migrate", "--seed"]
+    env_file: .env
+    environment:
+      <<: *db-env
+    networks: [csa]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  catalog:
+    <<: *app
+    build:
+      context: .
+      dockerfile: services/catalog/Dockerfile
+    image: csa/catalog:local
+    environment:
+      <<: *db-env
+      PORT: "8101"
+      PUBLIC_URL: http://catalog:8101
+    healthcheck:
+      <<: *healthcheck
+      start_period: 90s
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  serviceability:
+    <<: *app
+    build:
+      context: .
+      dockerfile: services/serviceability/Dockerfile
+    image: csa/serviceability:local
+    environment:
+      <<: *db-env
+      PORT: "8102"
+      PUBLIC_URL: http://serviceability:8102
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  discovery:
+    <<: *app
+    build:
+      context: .
+      dockerfile: DiscoveryAgent/Dockerfile
+    image: csa/discovery:local
+    environment:
+      <<: *db-env
+      PORT: "8201"
+      PUBLIC_URL: http://discovery:8201
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  serviceability-agent:
+    <<: *app
+    build:
+      context: .
+      dockerfile: ServiceabilityAgent/Dockerfile
+    image: csa/serviceability-agent:local
+    environment:
+      <<: *db-env
+      PORT: "8202"
+      PUBLIC_URL: http://serviceability-agent:8202
+      SERVICEABILITY_MCP_URL: http://serviceability:8102/mcp/
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      serviceability:
+        condition: service_healthy
+
+  product:
+    <<: *app
+    build:
+      context: .
+      dockerfile: ProductAgent/Dockerfile
+    image: csa/product:local
+    environment:
+      <<: *db-env
+      PORT: "8203"
+      PUBLIC_URL: http://product:8203
+      CATALOG_MCP_URL: http://catalog:8101/mcp/
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      catalog:
+        condition: service_healthy
+
+  offer:
+    <<: *app
+    build:
+      context: .
+      dockerfile: OfferManagement/Dockerfile
+    image: csa/offer:local
+    environment:
+      <<: *db-env
+      PORT: "8204"
+      PUBLIC_URL: http://offer:8204
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  order:
+    <<: *app
+    build:
+      context: .
+      dockerfile: OrderAgent/Dockerfile
+    image: csa/order:local
+    environment:
+      <<: *db-env
+      PORT: "8205"
+      PUBLIC_URL: http://order:8205
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  payment:
+    <<: *app
+    build:
+      context: .
+      dockerfile: PaymentAgent/Dockerfile
+    image: csa/payment:local
+    environment:
+      <<: *db-env
+      PORT: "8206"
+      PUBLIC_URL: http://payment:8206
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  fulfillment:
+    <<: *app
+    build:
+      context: .
+      dockerfile: ServiceFulfillmentAgent/Dockerfile
+    image: csa/fulfillment:local
+    environment:
+      <<: *db-env
+      PORT: "8207"
+      PUBLIC_URL: http://fulfillment:8207
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  communication:
+    <<: *app
+    build:
+      context: .
+      dockerfile: CustomerCommunicationAgent/Dockerfile
+    image: csa/communication:local
+    environment:
+      <<: *db-env
+      PORT: "8208"
+      PUBLIC_URL: http://communication:8208
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  greeting:
+    <<: *app
+    build:
+      context: .
+      dockerfile: GreetingAgent/Dockerfile
+    image: csa/greeting:local
+    environment:
+      <<: *db-env
+      PORT: "8209"
+      PUBLIC_URL: http://greeting:8209
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  faq:
+    <<: *app
+    build:
+      context: .
+      dockerfile: FAQAgent/Dockerfile
+    image: csa/faq:local
+    environment:
+      <<: *db-env
+      PORT: "8210"
+      PUBLIC_URL: http://faq:8210
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  gateway:
+    <<: *app
+    build:
+      context: .
+      dockerfile: SuperAgent/Dockerfile
+    image: csa/gateway:local
+    ports:
+      - "${GATEWAY_BIND:-127.0.0.1}:8000:8000"
+    environment:
+      <<: *db-env
+      PORT: "8000"
+      RUN_MIGRATIONS: "false"
+      # Local-only fallback so a fresh clone starts; set SESSION_SECRET_KEY in .env to override.
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-compose-local-dev-only-not-a-secret}
+      ALLOWED_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+      AGENT_URL_DISCOVERY_AGENT: http://discovery:8201
+      AGENT_URL_SERVICEABILITY_AGENT: http://serviceability-agent:8202
+      AGENT_URL_PRODUCT_AGENT: http://product:8203
+      AGENT_URL_OFFER_MANAGEMENT_AGENT: http://offer:8204
+      AGENT_URL_ORDER_AGENT: http://order:8205
+      AGENT_URL_PAYMENT_AGENT: http://payment:8206
+      AGENT_URL_SERVICE_FULFILLMENT_AGENT: http://fulfillment:8207
+      AGENT_URL_CUSTOMER_COMMUNICATION_AGENT: http://communication:8208
+      AGENT_URL_GREETING_AGENT: http://greeting:8209
+      AGENT_URL_FAQ_AGENT: http://faq:8210
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      discovery:
+        condition: service_healthy
+      serviceability-agent:
+        condition: service_healthy
+      product:
+        condition: service_healthy
+      offer:
+        condition: service_healthy
+      order:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      fulfillment:
+        condition: service_healthy
+      communication:
+        condition: service_healthy
+      greeting:
+        condition: service_healthy
+      faq:
+        condition: service_healthy
+
+networks:
+  csa:
+    driver: bridge
+
+volumes:
+  pgdata:

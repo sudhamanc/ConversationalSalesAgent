@@ -1,3 +1,5 @@
+> **Superseded (ADK 2.x rewrite):** these results are for the legacy in-process tools (`main.py`, `tools/gis_tools.py`), which were removed. Current tests: `services/serviceability/tests` and `ServiceabilityAgent/tests`; see [README.md](README.md).
+
 # 🧪 Serviceability Agent - Test Results
 
 **Test Date**: February 10, 2026  

@@ -1,0 +1,60 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"serviceable\": true,\n  \"address\": {\n    \"street\": \"123 Main St\",\n    \"city\": \"Philadelphia\",\n    \"state\": \"PA\",\n    \"zip_code\": \"19103\"\n  },\n  \"infrastructure\": {\n    \"type\": \"Fiber\",\n    \"service_class\": \"Business\",\n    \"network_element\": {\n      \"olt_port\": \"1/2/3\",\n      \"switch_id\": \"PHI-SW-002\",\n      \"cabinet_id\": \"PHI-CAB-023\",\n      \"olt_chassis\": \"CISCO-ASR9K-002\",\n      \"splice_point\": \"SP-19103-BRD\",\n      \"switch_location\": \"456 Broad St CO\",\n      \"fiber_pairs_available\": 36\n    },\n    \"speed_capability\": {\n      \"symmetrical\": true,\n      \"max_speed_mbps\": 5000,\n      \"min_speed_mbps\": 100\n    },\n    \"redundancy_available\": true\n  },\n  \"infrastructure_type\": \"FTTP\",\n  \"max_speed_mbps\": 5000,\n  \"service_zone\": \"Metro-Center-PA\",\n  \"estimated_install_days\": 5,\n  \"available_product_categories\": [\n    \"Internet\",\n    \"Voice\",\n    \"SD-WAN\",\n    \"Mobile\"\n  ],\n  \"available_products\": [\n    \"FIB-1G\",\n    \"FIB-5G\",\n    \"VOICE-BAS\",\n    \"VOICE-STD\",\n    \"VOICE-ENT\",\n    \"VOICE-UCAAS\",\n    \"SDWAN-ESS\",\n    \"SDWAN-PRO\",\n    \"MOB-BAS\",\n    \"MOB-UNL\",\n    \"MOB-PREM\"\n  ]\n}"
+    }
+  ],
+  "structuredContent": {
+    "serviceable": true,
+    "address": {
+      "street": "123 Main St",
+      "city": "Philadelphia",
+      "state": "PA",
+      "zip_code": "19103"
+    },
+    "infrastructure": {
+      "type": "Fiber",
+      "service_class": "Business",
+      "network_element": {
+        "olt_port": "1/2/3",
+        "switch_id": "PHI-SW-002",
+        "cabinet_id": "PHI-CAB-023",
+        "olt_chassis": "CISCO-ASR9K-002",
+        "splice_point": "SP-19103-BRD",
+        "switch_location": "456 Broad St CO",
+        "fiber_pairs_available": 36
+      },
+      "speed_capability": {
+        "symmetrical": true,
+        "max_speed_mbps": 5000,
+        "min_speed_mbps": 100
+      },
+      "redundancy_available": true
+    },
+    "infrastructure_type": "FTTP",
+    "max_speed_mbps": 5000,
+    "service_zone": "Metro-Center-PA",
+    "estimated_install_days": 5,
+    "available_product_categories": [
+      "Internet",
+      "Voice",
+      "SD-WAN",
+      "Mobile"
+    ],
+    "available_products": [
+      "FIB-1G",
+      "FIB-5G",
+      "VOICE-BAS",
+      "VOICE-STD",
+      "VOICE-ENT",
+      "VOICE-UCAAS",
+      "SDWAN-ESS",
+      "SDWAN-PRO",
+      "MOB-BAS",
+      "MOB-UNL",
+      "MOB-PREM"
+    ]
+  },
+  "isError": false
+}

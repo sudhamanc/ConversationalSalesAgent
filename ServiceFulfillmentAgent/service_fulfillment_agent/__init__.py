@@ -1,8 +1,5 @@
-"""
-Service Fulfillment Agent - Order scheduling and service activation.
-"""
+"""Service Fulfillment Agent - installation scheduling, provisioning and service activation."""
 
-from .agent import get_agent, service_fulfillment_agent
+from .agent import build_agent, root_agent
 
-__all__ = ['get_agent', 'service_fulfillment_agent']
-__version__ = '0.1.0'
+__all__ = ["build_agent", "root_agent"]

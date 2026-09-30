@@ -1,63 +1,48 @@
 """
-Offer Management Agent - deterministic quote and discount engine.
+Offer Management Agent - deterministic quote and discount engine (A2A service).
+
+All pricing math lives in ``tools/pricing_tools.py``; the model only chooses
+tools and formats their output.
 """
 
-import os
-from google.adk.agents import Agent
-from google.genai import types
+from typing import Optional
+
+from google.adk import Agent
+from google.adk.models.base_llm import BaseLlm
+
+from sales_common.config import generate_config, model_name
+from sales_common.context import export_context_delta, import_forwarded_context
+from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
 
 from .prompts import OFFER_MANAGEMENT_AGENT_INSTRUCTION, OFFER_MANAGEMENT_SHORT_DESCRIPTION
-from .tools.pricing_tools import find_best_bundle_offer, generate_offer_quote, get_existing_quotes, get_quote_details
-from .utils.logger import get_logger
+from .tools.pricing_tools import (
+    find_best_bundle_offer,
+    generate_offer_quote,
+    get_existing_quotes,
+    get_quote_details,
+)
 
-logger = get_logger(__name__)
+AGENT_NAME = "offer_management_agent"
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL")
-if not GEMINI_MODEL:
-    raise ValueError("GEMINI_MODEL environment variable is not set")
 
-logger.info(f"Initializing Offer Management Agent with model: {GEMINI_MODEL}")
-
-offer_management_agent = Agent(
-    name="offer_management_agent",
-    model=GEMINI_MODEL,
-    instruction=OFFER_MANAGEMENT_AGENT_INSTRUCTION,
-    description=OFFER_MANAGEMENT_SHORT_DESCRIPTION,
-    tools=[
-        find_best_bundle_offer,
-        generate_offer_quote,
-        get_existing_quotes,
-        get_quote_details,
-    ],
-    generate_content_config=types.GenerateContentConfig(
-        temperature=0.0,
-        max_output_tokens=2048,
-        safety_settings=[
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
+def build_agent(model: Optional[str | BaseLlm] = None) -> Agent:
+    """Build the offer_management_agent."""
+    return Agent(
+        name=AGENT_NAME,
+        model=model or model_name(),
+        description=OFFER_MANAGEMENT_SHORT_DESCRIPTION,
+        static_instruction=OFFER_MANAGEMENT_AGENT_INSTRUCTION,
+        instruction=JOURNEY_CONTEXT_INSTRUCTION,
+        tools=[
+            find_best_bundle_offer,
+            generate_offer_quote,
+            get_existing_quotes,
+            get_quote_details,
         ],
-    ),
-)
+        before_agent_callback=[import_forwarded_context],
+        after_tool_callback=[export_context_delta],
+        generate_content_config=generate_config(temperature=0.0, max_output_tokens=2048),
+    )
 
 
-def get_agent() -> Agent:
-    return offer_management_agent
-
-
-logger.info(
-    f"Offer Management Agent initialized: {offer_management_agent.name} with {len(offer_management_agent.tools)} tools"
-)
+root_agent = build_agent()

@@ -1,137 +1,130 @@
 # Service Fulfillment Agent
 
-**Type:** Transactional Agent — POST-SALE (Transaction Phase)
-**Framework:** Google ADK 1.20.0+
-**Package:** `service_fulfillment_agent`
-**Status:** ✅ Deployed in SuperAgent
+**Type:** Transactional agent — installation scheduling and post-sale fulfillment
+**Framework:** Google ADK 2.10 (`google-adk==2.10.0` via `sales-common`)
+**Package:** `service_fulfillment_agent` (distribution `service-fulfillment-agent`)
+**Runtime:** independent A2A service (`uvicorn service_fulfillment_agent.server:app`), port 8207 locally
+**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
 
 ---
 
 ## Purpose
 
-The Service Fulfillment Agent manages the **post-sale lifecycle**: installation scheduling, technician dispatch, installation completion, and service activation. It is the final agent in the sales pipeline and performs the critical "prospect → customer" transition.
+Books the installation appointment for a created order (before payment), then handles
+provisioning, technician dispatch, installation completion and service activation. Activation is
+the only point where a prospect becomes a customer (`customer_master`).
 
 ---
 
-## Architecture
-
-### Agent Configuration
+## Agent Configuration
 
 | Attribute | Value |
 |-----------|-------|
-| **Agent Name** | `service_fulfillment_agent` (hardcoded) |
-| **Model** | `os.getenv("GEMINI_MODEL")` — no default |
-| **Temperature** | 0.0 (deterministic) |
-| **Max Tokens** | 2048 |
-| **Database** | Unified `sales_agent.db` → `fulfillments`, `customer_master`, `accounts`, `orders` |
+| Agent name | `service_fulfillment_agent` (hardcoded; the gateway routes by it) |
+| Model | `sales_common.config.model_name()` — `GEMINI_MODEL`, no default |
+| Temperature | 0.3 (0.0 produced empty replies after tool calls) |
+| Max tokens | 2048 |
+| `static_instruction` | `prompts.SERVICE_FULFILLMENT_AGENT_INSTRUCTION` (long, cacheable) |
+| `instruction` | `sales_common.prompts.JOURNEY_CONTEXT_INSTRUCTION` (templated journey context) |
+| Callbacks | `before_agent_callback=[import_forwarded_context]`, `after_tool_callback=[export_context_delta]` |
+| Database | PostgreSQL via `sales_common.db` (`DATABASE_URL`, required — no fallback) |
 
-### Component Structure
+### Layout
 
-```
+```text
 ServiceFulfillmentAgent/
+├── pyproject.toml / Dockerfile / README.md / AGENTS.md
 ├── service_fulfillment_agent/
-│   ├── __init__.py
-│   ├── agent.py                    # Agent definition
-│   ├── prompts.py                  # System instructions
-│   ├── tools/
-│   │   ├── scheduling_tools.py     # Appointment scheduling
-│   │   ├── installation_tools.py   # Technician dispatch & install
-│   │   └── activation_tools.py     # Service activation (lifecycle capstone)
-│   └── utils/
-│       └── logger.py
-└── tests/
+│   ├── __init__.py          # build_agent, root_agent
+│   ├── agent.py             # build_agent(model=None) -> Agent
+│   ├── prompts.py
+│   ├── server.py            # app = create_a2a_app(root_agent)
+│   ├── models/schemas.py    # pydantic models (reference only)
+│   └── tools/
+│       ├── _common.py           # order/fulfillment lookups, journey-state helpers
+│       ├── scheduling_tools.py
+│       ├── equipment_tools.py   # simulated, deterministic
+│       ├── installation_tools.py
+│       ├── activation_tools.py
+│       └── order_tools.py       # read-only get_fulfillment_status
+└── tests/                   # conftest.py, test_tools.py, test_agent.py
 ```
-
-### Database Tables
-
-| Table | Access | Purpose |
-|-------|--------|---------|
-| `fulfillments` | R/W (primary) | Fulfillment lifecycle records |
-| `customer_master` | W (on activation) | Post-fulfillment customer record |
-| `accounts` | R/W (on activation) | Update Existing Customer → Y |
-| `orders` | R/W (on activation) | Update status → fulfilled |
-| `order_items` | R (on activation) | Read ordered products |
 
 ---
 
-## Tools (3 Tool Modules, 10 Functions)
+## Tools
 
-### Scheduling Tools (scheduling_tools.py)
+Tools return JSON-serializable dicts with `success`. Errors are `{"success": false, "error": ...}`
+(only `psycopg.Error` / validation errors are caught). IDs derive from `uuid4` or `sha256`
+(never the per-process salted `hash()`).
 
-| Tool | Signature | Tables | Purpose |
-|------|-----------|--------|---------|
-| `check_availability` | `(service_address, service_type, start_date, num_days)` | None (simulated) | Check available installation slots |
-| `schedule_installation` | `(service_address, scheduled_date, window, order_id, customer_id, ...)` | `fulfillments` INSERT | Book installation appointment |
-| `reschedule_appointment` | `(appointment_id, new_date, new_window, reason)` | None (simulated) | Reschedule existing appointment |
-| `cancel_appointment` | `(appointment_id, reason)` | None (simulated) | Cancel appointment |
+| Tool | Tables | Journey keys written | Notification |
+|------|--------|----------------------|--------------|
+| `check_availability` | — (business rules) | — | — |
+| `schedule_installation` | `orders` R, `fulfillments` INSERT/UPDATE | `order_context.installation` | `installation_scheduled` |
+| `reschedule_appointment` | `fulfillments` UPDATE date | `order_context.installation` | — |
+| `cancel_appointment` | `fulfillments` status → `cancelled` | `order_context.installation` | — |
+| `provision_equipment` / `track_equipment` / `verify_equipment_delivery` | — (simulated) | — | — |
+| `dispatch_technician` | `fulfillments` → `dispatched`, `dispatch_id` | `order_context.installation` | — (no outbox type yet) |
+| `update_installation_status` | — (simulated) | — | — |
+| `complete_installation` | `fulfillments` → `installed`, `orders` R | `order_context.installation` | `installation_complete` |
+| `activate_service` | `fulfillments` → `activated`, `customer_master` UPSERT, `accounts` UPDATE, `orders` → `fulfilled`, `order_items` R | `order_context.status/activation/installation` | `service_activated` |
+| `run_service_tests` | — (simulated) | — | — |
+| `get_fulfillment_status` | `orders`, `fulfillments` R | — | — |
+| `get_service_details` (not registered) | `fulfillments`, `order_items` R | — | — |
 
-### Installation Tools (installation_tools.py)
+Tools read `order_context` / `payment_context` from `tool_context.state` (forwarded by the gateway)
+to default `order_id`, `service_address`, `customer_id`, `customer_name`, `service_type`,
+`appointment_id` and `scheduled_date`. `order_context` is updated only when its `order_id` matches.
 
-| Tool | Signature | Tables | Purpose |
-|------|-----------|--------|---------|
-| `dispatch_technician` | `(appointment_id, order_id, scheduled_date)` | `fulfillments` UPDATE | Assign technician + dispatch_id |
-| `update_installation_status` | `(appointment_id, status, notes, issues)` | None (simulated) | Update install progress |
-| `complete_installation` | `(appointment_id, order_id, equipment_installed, tests_passed, ...)` | `fulfillments` UPDATE→installed | Mark installation complete |
+### `schedule_installation` response (gateway contract)
 
-### Activation Tools (activation_tools.py) — LIFECYCLE CAPSTONE
+The gateway's `ContextBridgePlugin` sets `temp:appointment_confirmed` when this tool returns
+`success == true`; `HandoffPolicyNode` then runs `payment_agent` in the same turn.
 
-| Tool | Signature | Tables | Purpose |
-|------|-----------|--------|---------|
-| `activate_service` | `(order_id, service_type, circuit_id)` | `fulfillments`, `customer_master`, `accounts`, `orders` | **Full lifecycle completion** |
-| `run_service_tests` | `(circuit_id, test_types)` | None (simulated) | Run service quality tests |
-| `get_service_details` | `(circuit_id, account_id)` | None (simulated) | Get active service details |
-
-### The Activation Capstone (`_update_fulfillment_activation`)
-
-This is the most important cross-table operation in the system. When `activate_service` is called:
-
-1. **Updates `fulfillments`** — sets activation_id, circuit_id, account_id, status → `activated`
-2. **Inserts `customer_master`** — creates the official customer record
-3. **Updates `accounts`** — sets `Existing Customer` → `Y`
-4. **Updates `orders`** — sets status → `fulfilled`
-
-This is the only point where a prospect becomes a customer.
-
-### Fulfillment State Machine
-
-```
-scheduled → dispatched → installed → activated
+```json
+{"success": true, "appointment_id": "APT-20261005-3F9A1C", "fulfillment_id": "APT-20261005-3F9A1C",
+ "order_id": "ORD-...", "customer_id": "CUST-...", "customer_name": "...", "service_address": "...",
+ "scheduled_date": "2026-10-05", "window": "AM", "start_time": "08:00", "end_time": "12:00",
+ "customer_contact": "...", "customer_phone": "...", "special_instructions": null,
+ "status": "scheduled", "notification_queued": true, "message": "Installation scheduled for ...",
+ "_context_update": {"order_context": {"...": "...", "installation": {"appointment_id": "...",
+   "scheduled_date": "...", "window": "AM", "start_time": "08:00", "end_time": "12:00", "status": "scheduled"}}}}
 ```
 
-### Cross-Agent Notifications
-- `INSTALL_SCHEDULED` — on schedule_installation
-- `INSTALL_DISPATCHED` — on dispatch_technician
-- `INSTALL_COMPLETE` — on complete_installation
-- `SERVICE_ACTIVATED` — on activate_service
+Failure: `{"success": false, "error": "..."}` (no order, unknown order, cancelled/fulfilled order,
+past date, weekend, bad window, database error). Re-booking an order with an open
+(`scheduled`/`dispatched`) appointment moves that appointment and keeps its id.
+
+### Activation capstone (`activate_service`, one transaction)
+
+1. `fulfillments` → `activated` with `activation_id`, `circuit_id`, `account_id` (inserts a row if none was booked)
+2. `customer_master` upsert (`first_order_id` and `created_at` kept on conflict)
+3. `accounts."Existing Customer" = 'Y'`, `accounts."Current Products"` merged with ordered services
+4. `orders.status = 'fulfilled'`
+5. `service_activated` notification enqueued
+
+Idempotent: a second call for an activated order returns the same ids and does not re-notify.
+
+State machine: `scheduled → dispatched → installed → activated` (or `cancelled`).
 
 ---
 
-## Conversation Behavior
+## Handoffs
 
-### When Invoked
-SuperAgent routes to ServiceFulfillmentAgent for: "Schedule installation", "Activate service", "When can you install?"
-
-### Response Pattern
-> "✅ Installation scheduled for Feb 20, 9:00 AM - 12:00 PM. Appointment ID: APT-12345."
-
-### Outbound Handoff (Programmatic — Zero User Input)
-
-After confirming installation scheduling, the SuperAgent wrapper's `after_agent_callback` **programmatically transfers to `payment_agent`** in the same turn — no user message needed.
-
-**Mechanism:** `SuperAgent/super_agent/sub_agents/service_fulfillment/agent.py` attaches `_fulfillment_after_agent` callback which:
-1. Scans the agent's last output for phrases like "installation is confirmed", "appointment confirmed", "scheduled for"
-2. Verifies order is in `pending_payment` state and payment not already completed
-3. Sets `callback_context.actions.transfer_to_agent = "payment_agent"`
-4. PaymentAgent executes immediately in the same ADK invocation
-
-This mirrors the Discovery → Serviceability zero-click handoff pattern.
+The agent cannot transfer. After booking it confirms the appointment and says payment is next;
+the gateway's `HandoffPolicyNode` continues with `payment_agent` in the same turn (conditions:
+`success == true`, payment not completed, `order_context.status` in pending_payment/draft/None).
+The former SuperAgent `after_agent_callback` phrase-matching transfer was removed.
 
 ---
 
-## Integration with SuperAgent
+## Tests
 
-Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/service_fulfillment/agent.py`. Agent name `service_fulfillment_agent` is hardcoded.
+```bash
+TEST_DATABASE_URL=postgresql://csa:<password>@127.0.0.1:5432/csa_test_fulfillment \
+  venv/bin/python -m pytest ServiceFulfillmentAgent/tests -q
+```
 
-**Wrapper features:**
-- Importlib isolation (avoids `__init__.py` parent-binding)
-- `after_agent_callback` for programmatic Fulfillment → Payment handoff
+DB tests run `sales_common.migrate.run(seed=True)` and create their own account/order rows; they
+skip without `TEST_DATABASE_URL`. Agent tests use `sales_common.testing.ScriptLlm`.

@@ -7,9 +7,10 @@ These tools handle invoice generation, payment history, and payment plans.
 import json
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
-from ..utils.logger import get_logger
+import logging
+from sales_common.ids import new_id
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def generate_invoice(
@@ -53,7 +54,7 @@ def generate_invoice(
             due_date_obj = datetime.now() + timedelta(days=30)
         
         # Generate invoice ID
-        invoice_id = f"INV-{datetime.now().strftime('%Y%m%d')}-{hash(customer_name) % 1000:03d}"
+        invoice_id = new_id("INV")
         
         # Format line items with totals
         formatted_items = []
@@ -215,7 +216,7 @@ def setup_payment_plan(
                 "status": "pending"
             })
         
-        plan_id = f"PLAN-{datetime.now().strftime('%Y%m%d')}-{hash(str(total_amount)) % 1000:03d}"
+        plan_id = new_id("PLAN")
         
         plan = {
             "success": True,

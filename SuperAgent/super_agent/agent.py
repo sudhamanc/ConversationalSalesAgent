@@ -1,100 +1,56 @@
-"""
-Super Agent – the central orchestrator for the B2B Sales system.
+"""Gateway ADK application: the ``sales_journey`` workflow wrapped in an ``App``.
 
-Uses Google ADK Agent with Gemini as the backbone LLM.
-Sub-agents are conditionally loaded based on configuration.
+Domain agents are remote A2A services (``RemoteA2aAgent``); the router is the
+only in-process LLM. See ``workflow.py`` for the graph and
+``openspec/changes/adk2-workflow-orchestration/design.md`` for the rationale.
 """
 
-from google.adk.agents import Agent
-from google.genai import types
+from __future__ import annotations
+
+from typing import Mapping, Optional
+
+from google.adk.agents import BaseAgent
+from google.adk.apps import App
+
+from sales_common.a2a_client import remote_agent
+from sales_common.adk_app import build_app
+from sales_common.config import model_name
+from sales_common.context import build_forwarded_metadata
 
 from .config import settings
-from .prompts import ORCHESTRATOR_INSTRUCTION
-from .sub_agents.greeting import greeting_agent
-from .sub_agents.faq import faq_agent
-from .sub_agents.discovery import discovery_agent
-from .sub_agents.serviceability import serviceability_agent
-from .sub_agents.product import product_agent
-from .sub_agents.offer_management import offer_management_agent
-from .sub_agents.payment import payment_agent
-from .sub_agents.order import order_agent
-from .sub_agents.service_fulfillment import service_fulfillment_agent
-from .sub_agents.customer_communication import customer_communication_agent
-
-_safety = settings.safety
-_model = settings.model
+from .plugins import ContextBridgePlugin
+from .registry import AGENTS
+from .workflow import build_workflow
 
 
-def _build_safety_settings() -> list[types.SafetySetting]:
-    """Map config strings to google.genai safety setting objects."""
-    mapping = {
-        "BLOCK_NONE": types.HarmBlockThreshold.BLOCK_NONE,
-        "BLOCK_LOW_AND_ABOVE": types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
-        "BLOCK_MEDIUM_AND_ABOVE": types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-        "BLOCK_ONLY_HIGH": types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+def forwarded_metadata(ctx, _message) -> dict:
+    """A2A request metadata: journey context, transcript, and user profile."""
+    state = ctx.session.state
+    profile = {
+        "customer_id": state.get("user:customer_id"),
+        "company_name": state.get("user:company_name"),
     }
-    return [
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold=mapping.get(_safety.dangerous_content, types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE),
-        ),
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold=mapping.get(_safety.harassment, types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE),
-        ),
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold=mapping.get(_safety.hate_speech, types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE),
-        ),
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold=mapping.get(_safety.sexually_explicit, types.HarmBlockThreshold.BLOCK_LOW_AND_ABOVE),
-        ),
-    ]
+    return build_forwarded_metadata(
+        state,
+        session_id=ctx.session.id,
+        transcript=state.get("transcript", ""),
+        user_profile={k: v for k, v in profile.items() if v},
+    )
 
 
-def _build_sub_agents() -> list[Agent]:
-    """Return the list of active sub-agents based on config."""
-    agents: list[Agent] = []
-    if settings.agent.enable_sub_agents:
-        agents.extend([
-            discovery_agent,
-            serviceability_agent,
-            product_agent,
-            offer_management_agent,
-            payment_agent,
-            order_agent,
-            service_fulfillment_agent,
-            customer_communication_agent,
-            greeting_agent,
-            faq_agent
-        ])
-    return agents
+def build_remote_agents() -> dict[str, BaseAgent]:
+    return {
+        spec.name: remote_agent(
+            spec.name, spec.base_url(), description=spec.description, meta_provider=forwarded_metadata
+        )
+        for spec in AGENTS
+    }
 
 
-root_agent = Agent(
-    name=settings.agent.agent_name,
-    model=_model.model_name,
-    instruction=ORCHESTRATOR_INSTRUCTION,
-    description=settings.agent.agent_description,
-    sub_agents=_build_sub_agents(),
-    tools=[],
-    generate_content_config=types.GenerateContentConfig(
-        temperature=_model.temperature,
-        top_p=_model.top_p,
-        top_k=_model.top_k,
-        max_output_tokens=_model.max_output_tokens,
-        safety_settings=_build_safety_settings(),
-        http_options=types.HttpOptions(
-            retry_options=types.HttpRetryOptions(
-                initial_delay=2.0,
-                attempts=3,
-            ),
-        ),
-    ),
-)
-
-
-def get_agent() -> Agent:
-    """Public accessor used by the FastAPI app."""
-    return root_agent
+def build_gateway_app(
+    agents: Optional[Mapping[str, BaseAgent]] = None,
+    router_model=None,
+) -> App:
+    """Build the gateway App. Tests pass in-process agents and a scripted router model."""
+    workflow = build_workflow(agents or build_remote_agents(), router_model or model_name())
+    return build_app(settings.agent.app_name, workflow, plugins=[ContextBridgePlugin()])

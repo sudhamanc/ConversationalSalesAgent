@@ -1,23 +1,20 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "order-agent"
-version = "1.0.0"
-description = "Order Agent for B2B Conversational Sales - manages order lifecycle, cart, and contracts"
+version = "2.0.0"
+description = "Order agent A2A service: cart, order lifecycle and contracts (Conversational Sales Agent)"
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "google-genai>=1.0.0",
-]
+requires-python = ">=3.11"
+dependencies = ["sales-common"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
+test = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [tool.setuptools.packages.find]
-where = ["."]
 include = ["order_agent*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

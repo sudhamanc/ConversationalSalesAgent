@@ -1,84 +1,93 @@
-"""
-Lightweight session-based authentication.
+"""Stateless session tokens (any gateway instance can verify them).
 
-In production, swap this for OAuth 2.0 / JWT verification against
-an identity provider.  For development, sessions are created on
-first contact and tracked via a Bearer token.
+Token = ``itsdangerous.URLSafeTimedSerializer(SESSION_SECRET_KEY)`` over
+``{"sid": <session id>, "uid": <ADK user id>}`` with max age
+``SESSION_TOKEN_EXPIRY_MIN``. Revocation is recorded in the ``revoked_sessions``
+table (migration 003).
 """
 
-import hashlib
+from __future__ import annotations
+
+import re
 import secrets
-import time
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass
+from typing import Optional
 
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+
+from sales_common import db
+from sales_common.config import require_env
 from super_agent.config import settings
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_SALT = "csa-session-v1"
+_SID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
-@dataclass
+
+@dataclass(frozen=True)
 class Session:
     session_id: str
-    token: str
-    created_at: float = field(default_factory=time.time)
-    last_active: float = field(default_factory=time.time)
+    user_id: str
+    token: str = ""
+
+
+def normalize_client_uid(raw: Optional[str]) -> str:
+    """Map a browser-supplied anonymous id to an ADK user id (``web:<uuid4>``)."""
+    try:
+        return f"web:{uuid.UUID(str(raw), version=4)}"
+    except (ValueError, TypeError, AttributeError):
+        return f"web:{uuid.uuid4()}"
 
 
 class SessionAuthenticator:
-    """In-memory session store with token-based auth."""
+    def __init__(self, secret_key: Optional[str] = None, expiry_minutes: Optional[int] = None):
+        self._serializer = URLSafeTimedSerializer(secret_key or require_env("SESSION_SECRET_KEY"), salt=_SALT)
+        self._max_age = 60 * (expiry_minutes or settings.session.token_expiry_minutes)
 
-    def __init__(self, expiry_minutes: int = settings.session.token_expiry_minutes):
-        self._sessions: dict[str, Session] = {}
-        self._token_index: dict[str, str] = {}  # token -> session_id
-        self._expiry_seconds = expiry_minutes * 60
+    def create_session(self, client_uid: Optional[str] = None) -> Session:
+        session_id = secrets.token_urlsafe(18)
+        user_id = normalize_client_uid(client_uid)
+        token = self._serializer.dumps({"sid": session_id, "uid": user_id})
+        logger.info("Session created: %s", session_id)
+        return Session(session_id=session_id, user_id=user_id, token=token)
 
-    def create_session(self) -> Session:
-        """Create a new session and return it."""
-        session_id = hashlib.sha256(secrets.token_bytes(32)).hexdigest()[:24]
-        token = secrets.token_urlsafe(48)
-        session = Session(session_id=session_id, token=token)
-        self._sessions[session_id] = session
-        self._token_index[token] = session_id
-        logger.info(f"Session created: {session_id}")
-        return session
-
-    def validate_token(self, token: str) -> Session | None:
-        """Validate a Bearer token and return the session if valid."""
-        session_id = self._token_index.get(token)
-        if not session_id:
+    def validate_token(self, token: str) -> Optional[Session]:
+        if not token:
             return None
-
-        session = self._sessions.get(session_id)
-        if not session:
+        try:
+            payload = self._serializer.loads(token, max_age=self._max_age)
+        except SignatureExpired:
+            logger.info("Expired session token")
             return None
-
-        # Check expiry
-        if time.time() - session.created_at > self._expiry_seconds:
-            logger.info(f"Session expired: {session_id}")
-            self.revoke_session(session_id)
+        except BadSignature:
+            logger.warning("Rejected tampered or invalid session token")
             return None
+        sid, uid = payload.get("sid"), payload.get("uid")
+        if not (isinstance(sid, str) and _SID_RE.match(sid) and isinstance(uid, str) and uid.startswith("web:")):
+            return None
+        if self.is_revoked(sid):
+            return None
+        return Session(session_id=sid, user_id=uid, token=token)
 
-        session.last_active = time.time()
-        return session
+    @staticmethod
+    def is_revoked(session_id: str) -> bool:
+        return db.fetch_one("SELECT 1 AS r FROM revoked_sessions WHERE session_id = %s", (session_id,)) is not None
 
-    def revoke_session(self, session_id: str) -> None:
-        """Remove a session."""
-        session = self._sessions.pop(session_id, None)
-        if session:
-            self._token_index.pop(session.token, None)
-
-    def cleanup_expired(self) -> None:
-        """Purge all expired sessions."""
-        now = time.time()
-        expired = [
-            sid
-            for sid, s in self._sessions.items()
-            if now - s.created_at > self._expiry_seconds
-        ]
-        for sid in expired:
-            self.revoke_session(sid)
+    @staticmethod
+    def revoke_session(session_id: str) -> None:
+        db.execute(
+            "INSERT INTO revoked_sessions (session_id) VALUES (%s) ON CONFLICT DO NOTHING", (session_id,)
+        )
 
 
-# Module-level singleton
-authenticator = SessionAuthenticator()
+_authenticator: Optional[SessionAuthenticator] = None
+
+
+def get_authenticator() -> SessionAuthenticator:
+    global _authenticator
+    if _authenticator is None:
+        _authenticator = SessionAuthenticator()
+    return _authenticator

@@ -1,138 +1,91 @@
 # Discovery Agent
 
-**Type:** Operational Agent (Discovery Phase)
-**Framework:** Google ADK 1.20.0+
-**Package:** `bootstrap_agent`
-**Status:** ✅ Deployed in SuperAgent
+**Type:** Domain agent (Discovery phase), served as an A2A service
+**Framework:** Google ADK 2.10 + `sales_common` (see [docs/agent-service-guide.md](../docs/agent-service-guide.md))
+**Package:** `discovery_agent`
+**A2A app:** `discovery_agent.server:app` (port 8201 in local compose)
 
 ---
 
 ## Purpose
 
-The Discovery Agent specializes in **prospect identification, qualification, and data collection** for B2B sales. It:
+The Discovery Agent is the first business-context agent in the sales journey. It:
 
-1. **Extracts** company details from natural conversation
-2. **Looks up** existing prospects in the unified database
-3. **Creates** new prospect records with intelligent slot-filling
-4. **Qualifies** leads using conversational BANT scoring (Budget, Authority, Need, Timeline)
-5. **Maps** contact personas and decision-makers
-6. **Captures** products of interest using explicit keyword-to-category mapping
-7. **Creates** opportunity records with automatic BANT scoring
-
-This is the **first agent invoked** when a customer shares their company information.
+1. Extracts company and address details from conversation (intelligent inference)
+2. Looks up existing accounts, or registers new companies/locations
+3. Publishes `customer_context` for downstream agents
+4. Gathers BANT signals conversationally and records a scored opportunity
+5. Maps contact personas (email/phone collection)
+6. Checks a returning customer's pipeline (`check_customer_state`)
 
 ---
 
-## Architecture
-
-### Agent Configuration
+## Configuration
 
 | Attribute | Value |
 |-----------|-------|
-| **Agent Name** | `discovery_agent` (hardcoded) |
-| **Model** | `os.getenv("GEMINI_MODEL")` — no default, fails fast |
-| **Temperature** | 0.7 (conversational but structured) |
-| **Phase** | Discovery (Phase 1 of sales cycle) |
-| **Database** | Unified `sales_agent.db` via `SALES_AGENT_DB_PATH` env var |
-| **Fallback DB** | `DiscoveryAgent/data/discover_prospecting_clean.db` |
+| Agent name | `discovery_agent` (hardcoded; the gateway routes by it) |
+| Model | `GEMINI_MODEL` via `sales_common.config.model_name()` (no default) |
+| Generation | `generate_config(temperature=0.0)` |
+| `static_instruction` | `prompts.DISCOVERY_AGENT_INSTRUCTION` (long, cacheable, not templated) |
+| `instruction` | `sales_common.prompts.JOURNEY_CONTEXT_INSTRUCTION` |
+| Callbacks | `before_agent_callback=[import_forwarded_context]`, `after_tool_callback=[export_context_delta]` |
+| Database | PostgreSQL via `sales_common.db` (`DATABASE_URL`); schema in `db/migrations/` |
 
-### Component Structure
+Environment variables are listed in the service guide (§10): `GEMINI_MODEL`, `GOOGLE_API_KEY`, `DATABASE_URL`, `PUBLIC_URL`, optional `SERVICE_AUTH`, `LOG_LEVEL`.
 
-```
+## Layout
+
+```text
 DiscoveryAgent/
-├── pyproject.toml
-├── bootstrap_agent/
-│   ├── __init__.py
-│   ├── agent.py                            # Root agent (standalone mode)
-│   ├── sub_agents/
-│   │   ├── discovery/
-│   │   │   ├── __init__.py
-│   │   │   ├── discovery_agent.py          # Agent definition + instructions
-│   │   │   └── db_tools.py                 # ProspectingDatabase class
-│   │   └── lead_gen/
-│   │       └── qualification_tools.py      # BANT scoring
-│   └── utils/
-│       ├── custom_logger.py
-│       └── gcp_tools.py
-├── data/
-│   └── discover_prospecting_clean.db       # Legacy standalone DB
-└── tests/
+├── pyproject.toml              # discovery-agent, depends on sales-common
+├── Dockerfile                  # build context = repo root
+├── discovery_agent/
+│   ├── __init__.py             # build_agent, root_agent
+│   ├── agent.py                # build_agent(model=None) -> Agent; root_agent
+│   ├── prompts.py              # DISCOVERY_AGENT_INSTRUCTION, DISCOVERY_SHORT_DESCRIPTION
+│   ├── server.py               # app = create_a2a_app(root_agent)
+│   └── tools/
+│       ├── discovery_tools.py  # the 13 ADK tools (return dicts)
+│       ├── db_tools.py         # PostgreSQL queries (accounts, contacts, spend, insights, actions)
+│       └── qualification_tools.py  # BANT scoring + opportunities table
+├── tests/                      # pytest (TEST_DATABASE_URL + ScriptLlm)
 ```
 
-### Database Tables (6 tables — Discovery Domain)
+## Tables (PostgreSQL, quoted column names)
 
-| Table | Purpose | Key Fields |
-|-------|---------|------------|
-| `accounts` | Company records | Company Name (PK), Street, City, State, zip_code, Industry, customer_id |
-| `contacts` | People at companies | Company Name (FK), Name, Title, Role, Email, Phone |
-| `spend` | Advertising spend data | Company Name (FK), Estimated Annual Spend, channel breakdowns |
-| `opportunities` | Sales pipeline | Company Name (FK), Stage, BANT scores, Target Close Date |
-| `insights` | Buying intelligence | Company Name (FK), Buying Signals, Pain Points |
-| `actions` | Follow-up tasks | Company Name (FK), Owner, Priority, Cadence |
+`accounts` (PK `"Company Name"`, `"Street"`, `"City"`, `"State"`, `zip_code`, `"Industry"`, `"Website"`, `customer_id`), `contacts`, `spend`, `opportunities`, `insights`, `actions`. Always double-quote capitalized columns in SQL. Agents never create tables at runtime.
 
----
+## Tools (13)
 
-## Tools (13 Functions)
+| Tool | Tables | Writes `customer_context` |
+|------|--------|---------------------------|
+| `search_companies` | `accounts` (case-insensitive substring, compound name+address) | no |
+| `get_company_profile` | `accounts` LEFT JOIN `spend` | yes, when the account has a `customer_id` |
+| `get_contact_personas` | `contacts` | no |
+| `get_customer_intent` | `insights`, `opportunities`, `actions` | no |
+| `search_by_intent_signals` | `accounts` JOIN `insights` | no |
+| `get_high_priority_opportunities` | `opportunities` | no |
+| `add_new_company` | `accounts` INSERT (generates `CUST-YYYYMMDD-NNN`) | yes, on success |
+| `update_company_info` | `accounts` UPDATE | no |
+| `add_new_contact` / `update_contact_info` | `contacts` | no |
+| `add_or_update_insights` | `insights` (update, else insert) | no |
+| `create_opportunity_from_bant` | `opportunities` INSERT with BANT scores | no |
+| `check_customer_state` | cross-table, via `sales_common.repositories.customer_state` | no |
 
-### Read Tools
+`customer_context` shape: `{customer_id, company_name, address: {street, address_line2, city, state, zip_code}}`. It is written to `tool_context.state`; `export_context_delta` adds it to the tool response as `_context_update` so the gateway merges it into the journey state.
 
-| Tool | Signature | Tables Read |
-|------|-----------|-------------|
-| `search_companies` | `(company_name, industry, region, customer_status, street, city, state)` | `accounts` |
-| `get_company_profile` | `(company_name)` | `accounts` JOIN `spend` |
-| `get_contact_personas` | `(company_name)` | `contacts` |
-| `get_customer_intent` | `(company_name)` | `insights`, `opportunities` |
-| `search_by_intent_signals` | `(keyword)` | `accounts` JOIN `insights` |
-| `get_high_priority_opportunities` | `(limit=10)` | `opportunities` |
-| `check_customer_state` | `(customer_id)` | All tables (cross-domain query) |
+Database errors (`psycopg.Error`) are returned as `{"success": false, "error": ...}`.
 
-### Write Tools
+## Hand-off
 
-| Tool | Signature | Tables Written |
-|------|-----------|----------------|
-| `add_new_company` | `(company_name, industry, region, street, city, state, zip_code, ...)` | `accounts` INSERT |
-| `update_company_info` | `(company_name, **fields)` | `accounts` UPDATE |
-| `add_new_contact` | `(company_name, contact_name, title, role, email, phone, notes)` | `contacts` INSERT |
-| `update_contact_info` | `(company_name, contact_name, **fields)` | `contacts` UPDATE |
-| `add_or_update_insights` | `(company_name, buying_signals, pain_points, positioning)` | `insights` INSERT OR REPLACE |
-| `create_opportunity_from_bant` | `(company_name, opportunity_name, budget, authority, need, timeline_days, total_mrc, next_step)` | `opportunities` INSERT |
+The agent never transfers. After registering or confirming an address it says it will check service availability. The gateway's `HandoffPolicyNode` runs the Discovery -> Serviceability hand-off deterministically when `customer_context.address.zip_code` is present and `serviceability_context` is absent.
 
-### Intelligent Features
+## Tests
 
-- **Company Name fuzzy matching** via SQL LIKE
-- **Auto-generated customer_id** (UUID) on company creation
-- **BANT scoring** — automatic weighted score (0-100) with priority bucketing (A/B/C)
-- **Zip code validation** — NOT NULL constraint enforced
-- **Email & phone collection** — both required during BANT Authority phase; asked explicitly, retried once if skipped
-- **JSON tool outputs** — all tools return structured JSON to prevent LLM hallucination
+```bash
+TEST_DATABASE_URL=postgresql://user:pw@127.0.0.1:5432/scratch_db \
+  venv/bin/python -m pytest DiscoveryAgent/tests -q
+```
 
----
-
-## Conversation Behavior
-
-### When Invoked
-SuperAgent routes to DiscoveryAgent when user mentions a company name, business, or office location.
-
-### Handoff Pattern (Programmatic — Zero User Input)
-
-After registering a company with a full address, DiscoveryAgent signals completion:
-> "Welcome! I've registered **[Company]** at **[Address]**. Let me check if this address is serviceable..."
-
-The SuperAgent wrapper's `after_agent_callback` detects this completion phrase and **programmatically transfers to `serviceability_agent`** in the same turn — no user message needed.
-
-**Mechanism:** `SuperAgent/super_agent/sub_agents/discovery/agent.py` attaches `_discovery_after_agent` callback which:
-1. Scans the agent's last output for phrases like "let me check", "serviceability", "check if this address"
-2. Sets `callback_context.actions.transfer_to_agent = "serviceability_agent"`
-3. ServiceabilityAgent executes immediately in the same ADK invocation
-
-This is a **deterministic, same-turn handoff** — no LLM variability.
-
----
-
-## Integration with SuperAgent
-
-Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/discovery/agent.py` to avoid ADK parent-binding conflicts. The agent name `discovery_agent` is hardcoded — never read from environment.
-
-**Wrapper features:**
-- Importlib isolation (avoids `__init__.py` parent-binding)
-- `after_agent_callback` for programmatic Discovery → Serviceability handoff
+Tool tests migrate + seed the scratch DB (`sales_common.migrate.run(seed=True)`) and skip without `TEST_DATABASE_URL`. The agent test uses `sales_common.testing.ScriptLlm` with `Runner` + `InMemorySessionService` (no API key).

@@ -13,13 +13,16 @@ All system architecture, agent development patterns, and technical guidelines ar
 1. **Read the documentation first** - in this order:
    - This file (CLAUDE.md)
    - [AGENTS.md](AGENTS.md)
-   - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`)
+   - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`, `services/catalog/README.md`)
    - [README.md](README.md)
 
 2. **Common tasks → Required reading:**
-   - Configuration changes → [SuperAgent/README.md](SuperAgent/README.md) (`.env` variables)
-   - Agent development → Component's AGENTS.md
-   - Sub-agent work → [super_agent/sub_agents/CLAUDE.md](SuperAgent/super_agent/sub_agents/CLAUDE.md)
+   - Configuration changes → [.env.example](.env.example) (shared variables) and [SuperAgent/README.md](SuperAgent/README.md) (gateway variables)
+   - Agent development → [docs/agent-service-guide.md](docs/agent-service-guide.md) + the component's AGENTS.md
+   - Orchestration / routing / handoffs → [SuperAgent/README.md](SuperAgent/README.md) + [openspec/changes/adk2-workflow-orchestration/design.md](openspec/changes/adk2-workflow-orchestration/design.md)
+   - Tool services (catalog, serviceability) → `services/<name>/README.md`
+   - Database schema → [db/README.md](db/README.md) (migrations and seed files, table ownership)
+   - Running or deploying → [README.md](README.md#getting-started-local) and [GCP_DEPLOY.md](GCP_DEPLOY.md)
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
 
@@ -27,27 +30,27 @@ All system architecture, agent development patterns, and technical guidelines ar
 
 ## 🎯 The Golden Rule
 
-**A LL AGENTS MUST STRICTLY FOLLOW ADK STANDARDS **
+**ALL AGENTS MUST STRICTLY FOLLOW ADK STANDARDS**
 
 See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete details.
 
 **Critical Requirements:**
 
-1. ADK Bootstrap Template structure
-2. Importlib isolation for external sub-agents
-3. Tools use `@FunctionTool` decorator
+1. ADK Bootstrap Template structure (`build_agent()` + `root_agent` + `server.py`)
+2. Each agent is an A2A service: see [docs/agent-service-guide.md](docs/agent-service-guide.md). No `importlib` isolation, no `sys.modules` lookups, no imports of another agent's package
+3. Deterministic tools via MCP services (`services/*`, consumed with `McpToolset`) or in-process `FunctionTool`s that return JSON dicts. No LLM calls inside tools
 4. No inline styles in React (Tailwind CSS only)
-5. Test before committing
+5. Test before committing (per-service `pytest`, gateway tests, `tests/integration`)
 
 ---
 
 ## 🚨 Before Any Code Changes
 
 1. Read relevant section in [AGENTS.md](AGENTS.md)
-2. Check subdirectory AGENTS.md if working in specific agent/component
-3. Follow established patterns (reference implementations in AGENTS.md)
+2. Check subdirectory AGENTS.md / README.md if working in a specific agent, service or the UI
+3. Follow established patterns (reference implementations in AGENTS.md and the agent service guide)
 4. Run tests after changes
-5. Update documentation if architecture changes
+5. Update documentation if architecture changes (and the matching `openspec/changes/*` design when relevant)
 
 ---
 
@@ -55,19 +58,25 @@ See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete detail
 
 When working in specific directories, also read:
 
-- **Agent Development:** `[AgentName]/AGENTS.md` (e.g., `DiscoveryAgent/AGENTS.md`)
-- **Sub-agent Development:** `SuperAgent/super_agent/sub_agents/AGENTS.md`
+- **Agent Development:** [docs/agent-service-guide.md](docs/agent-service-guide.md) and `[AgentName]/AGENTS.md` (e.g., `DiscoveryAgent/AGENTS.md`)
+- **Gateway / Orchestration:** [SuperAgent/README.md](SuperAgent/README.md)
+- **Tool services (REST + MCP):** [services/catalog/README.md](services/catalog/README.md), [services/serviceability/README.md](services/serviceability/README.md)
+- **Shared library:** `libs/sales_common/sales_common/` (module docstrings; overview in `__init__.py`)
+- **Database:** [db/README.md](db/README.md)
 - **UI Development:** `SuperAgent/client/AGENTS.md`
 - **Bootstrap Template:** `BootStrapAgent/AGENTS.md`
+- **Design decisions and specs:** `openspec/changes/*/{proposal,design}.md` (`mcp-remaining-domains` is a planned follow-up, not implemented)
+- **Operations scripts:** `scripts/` (service list in `scripts/services.conf`)
 
 ---
 
 ## ✅ Quick Checks
 
 - [ ] Read AGENTS.md relevant section
-- [ ] Follow ADK Bootstrap Template pattern
-- [ ] Use importlib for external agents
-- [ ] No LLM hallucination for deterministic data (use tools)
+- [ ] Follow ADK Bootstrap Template pattern (`build_agent()`, `root_agent`, `server.py` with `create_a2a_app`)
+- [ ] Agent talks to other agents only through the gateway workflow (A2A), never by import
+- [ ] No LLM hallucination for deterministic data (use tools; tools return JSON)
+- [ ] New service registered in `scripts/services.conf` (+ `docker-compose.yml`, + gateway registry for agents)
 - [ ] Tests pass
 - [ ] Documentation updated
 
@@ -75,4 +84,5 @@ When working in specific directories, also read:
 
 **Primary Reference:** [AGENTS.md](AGENTS.md)
 **Project Overview:** [README.md](README.md)
+**Agent Service Guide:** [docs/agent-service-guide.md](docs/agent-service-guide.md)
 **Test Scenarios:** [Scenarios.md](Scenarios.md)

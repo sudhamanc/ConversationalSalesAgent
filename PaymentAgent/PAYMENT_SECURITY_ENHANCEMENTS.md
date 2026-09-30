@@ -1,5 +1,12 @@
 # Payment Agent — Security & Robustness Enhancements
 
+> **Historical (SQLite era).** The PostgreSQL port replaced `BEGIN EXCLUSIVE` + thread lock with
+> an advisory lock on the idempotency key and `SELECT ... FOR UPDATE` on the order, removed the
+> no-DB simulation fallback, and replaced the CustomerComm call with the notification outbox.
+> The DB-backed duplicate definitions of `get_payment_methods` / `tokenize_payment_method` /
+> `add_payment_method` described below were never effective (shadowed by later simulated
+> definitions) and were deleted. Current behaviour: [AGENTS.md](AGENTS.md).
+
 ## 1. What Was Originally Implemented
 
 ### Tools (9 total)

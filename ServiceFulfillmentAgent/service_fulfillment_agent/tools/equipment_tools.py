@@ -5,17 +5,19 @@ These tools handle equipment ordering, tracking, and delivery verification.
 """
 
 import json
-from typing import Dict, Any, List
+import logging
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from ..utils.logger import get_logger
 
-logger = get_logger(__name__)
+from ._common import stable_number
+
+logger = logging.getLogger(__name__)
 
 
 def provision_equipment(
     order_id: str,
     service_type: str,
-    equipment_list_json: str = None
+    equipment_list_json: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Orders equipment for an installation.
@@ -55,7 +57,7 @@ def provision_equipment(
         
         for idx, item in enumerate(equipment_list):
             equipment_id = f"EQ-{order_id.split('-')[-1]}-{idx+1:03d}"
-            tracking_number = f"TRACK-{datetime.now().strftime('%Y%m%d')}-{hash(equipment_id) % 100000:05d}"
+            tracking_number = f"TRACK-{datetime.now().strftime('%Y%m%d')}-{stable_number(equipment_id, 100000):05d}"
             
             provisioned_items.append({
                 "equipment_id": equipment_id,
@@ -85,8 +87,8 @@ def provision_equipment(
 
 
 def track_equipment(
-    order_id: str = None,
-    tracking_number: str = None
+    order_id: Optional[str] = None,
+    tracking_number: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Tracks equipment shipment status.
@@ -172,7 +174,7 @@ def track_equipment(
 
 def verify_equipment_delivery(
     order_id: str,
-    equipment_ids: List[str] = None
+    equipment_ids: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """
     Verifies equipment has been delivered and is ready for installation.

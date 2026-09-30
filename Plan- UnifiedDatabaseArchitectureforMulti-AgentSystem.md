@@ -1,5 +1,7 @@
 # Plan: Unified Database Architecture for Multi-Agent System
 
+> **Superseded (historical document).** The unified SQLite `sales_agent.db` and its GCS sync described here were replaced by one PostgreSQL 16 database with versioned migrations and seed files. See [db/README.md](db/README.md), [README.md](README.md#database-architecture-postgresql), [GCP_DEPLOY.md](GCP_DEPLOY.md) and `openspec/changes/a2a-agent-services/design.md`.
+
 ## TL;DR
 The system currently has 4 independent SQLite databases (Discovery, Orders, Quotes, Notifications) with no enforced cross-references, plus 4 agents using in-memory mocks. GCP deployment only syncs 1 database. This plan presents 3 options for consolidation, with a recommended approach (Option B: Unified DB) that merges all tables into a single `sales_agent.db`, adds a `customer_master` table as the central entity, and modifies the GCS sync to handle it.
 

@@ -8,73 +8,31 @@ Moved from ServiceFulfillmentAgent to maintain proper separation of concerns:
 """
 
 import json
-import sys
-from typing import Dict, Any, Optional
+import re
 from datetime import datetime
+from typing import Any, Dict, Optional
 
+import psycopg
 from google.adk.tools.tool_context import ToolContext
 
-from ..utils.logger import get_logger
-from ..utils.database import save_order, load_order, load_orders_for_customer, update_order_field
+from sales_common import db, notifications
+from sales_common.ids import new_id
+from sales_common.repositories.quotes import mark_ordered
+
 from ..models import Order, OrderStatus
+from ..utils.database import load_order, quote_exists, save_order, update_order_field
+from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-
-def _mark_quote_ordered(offer_id: str) -> None:
-    """Mark the source quote as 'ordered' via OfferManagement's quote_db (best-effort)."""
-    try:
-        quote_mod = sys.modules.get("offer_management.utils.quote_db")
-        if quote_mod and hasattr(quote_mod, "mark_quote_ordered"):
-            quote_mod.mark_quote_ordered(offer_id)
-            logger.info(f"Marked quote {offer_id} as ordered")
-        else:
-            logger.debug("offer_management.utils.quote_db not available for mark_quote_ordered")
-    except Exception as exc:
-        logger.warning(f"Failed to mark quote {offer_id} as ordered (non-fatal): {exc}")
+_PHONE_RE = re.compile(r"\d{3}")
 
 
-def _auto_send_order_confirmation(
-    order_id: str,
-    customer_name: str,
-    contact_email: str,
-    contact_phone: str,
-    service_type: str,
-    total_amount: float,
-) -> Dict[str, Any]:
-    """
-    Automatically send an order confirmation email/SMS immediately after order creation.
-
-    Uses sys.modules to call the already-loaded CustomerCommunicationAgent notification
-    tools without a hard cross-package import dependency.  All sub-agents are initialised
-    before the first user interaction, so the module is always present at call time.
-    """
-    try:
-        # Prefer the notification_tools submodule; fall back to the tools package itself
-        notif_mod = sys.modules.get("customer_communication_agent.tools.notification_tools")
-        if notif_mod is None:
-            notif_mod = sys.modules.get("customer_communication_agent.tools")
-
-        if notif_mod is None or not hasattr(notif_mod, "send_order_confirmation"):
-            logger.warning(
-                "CustomerCommunicationAgent notification tools not found in sys.modules; "
-                "order confirmation email will not be sent automatically."
-            )
-            return {"success": False, "error": "Notification module unavailable"}
-
-        result = notif_mod.send_order_confirmation(
-            order_id=order_id,
-            customer_name=customer_name,
-            customer_email=contact_email or None,
-            customer_phone=contact_phone or None,
-            service_type=service_type,
-            total_amount=total_amount,
-        )
-        logger.info(f"Auto order confirmation triggered for {order_id}: {result}")
-        return result
-    except Exception as exc:
-        logger.warning(f"Auto order confirmation failed (non-fatal): {exc}")
-        return {"success": False, "error": str(exc)}
+def _recipient_phone(contact_phone: Optional[str]) -> Optional[str]:
+    """Only real phone numbers are used as SMS recipients (not "Not provided")."""
+    if contact_phone and _PHONE_RE.search(contact_phone):
+        return contact_phone
+    return None
 
 
 def create_order(
@@ -133,11 +91,11 @@ def create_order(
 
         # Auto-generate customer_id if not provided (fixes critical bug)
         if not customer_id:
-            customer_id = f"CUST-{datetime.now().strftime('%Y%m%d')}-{hash(customer_name) % 1000:03d}"
+            customer_id = new_id("CUST")
             logger.info(f"Auto-generated customer_id: {customer_id}")
         
         # Generate order ID
-        order_id = f"ORD-{datetime.now().strftime('%Y%m%d')}-{hash(customer_name) % 1000:03d}"
+        order_id = new_id("ORD")
         
         # Create order instance (starts as pending_payment — confirmed after payment)
         order = Order(
@@ -150,37 +108,58 @@ def create_order(
             offer_id=offer_id,
             status=OrderStatus.PENDING_PAYMENT,
         )
-        
+
         # Add service as order item
         if price:
             order.add_item(service_type=service_type, price=price, quantity=1)
         else:
             order.add_item(service_type=service_type, price=0.0, quantity=1)
-        
-        # Persist order to SQLite
-        save_order(order.to_dict())
-        
+
+        # Persist the order, mark the source quote as 'ordered' and enqueue the
+        # ORDER_CONFIRMATION notification in ONE transaction (outbox pattern).
+        offer_warning = None
+        with db.transaction() as conn:
+            # orders.offer_id is a foreign key to quotes; an unknown id would
+            # abort the order, so it is dropped (and reported) instead.
+            if offer_id and not quote_exists(offer_id, conn=conn):
+                offer_warning = f"Offer {offer_id} not found; order created without a quote link"
+                logger.warning(offer_warning)
+                offer_id = None
+                order.offer_id = None
+
+            save_order(order.to_dict(), conn=conn)
+
+            # Mark the source quote as 'ordered' so it can't be reused
+            if offer_id:
+                mark_ordered(offer_id, conn=conn)
+                logger.info(f"Marked quote {offer_id} as ordered")
+
+            email_notification_id = notifications.enqueue(
+                "order_confirmation",
+                recipient_email=contact_email,
+                recipient_phone=_recipient_phone(contact_phone),
+                customer_id=customer_id,
+                order_id=order_id,
+                args={
+                    "order_id": order_id,
+                    "customer_id": customer_id,
+                    "customer_name": customer_name,
+                    "customer_email": contact_email,
+                    "customer_phone": contact_phone,
+                    "service_address": service_address,
+                    "service_type": service_type,
+                    "items": order.items,
+                    "price": price,
+                    "total_amount": order.total_amount,
+                    "offer_id": offer_id,
+                    "status": OrderStatus.PENDING_PAYMENT.value,
+                    "created_at": order.created_at,
+                },
+                conn=conn,
+            )
+
         logger.info(f"Order created: {order_id} for customer {customer_id}")
-
-        # Mark the source quote as 'ordered' so it can't be reused
-        if offer_id:
-            _mark_quote_ordered(offer_id)
-
-        # Automatically send order confirmation email/SMS
-        email_result = _auto_send_order_confirmation(
-            order_id=order_id,
-            customer_name=customer_name,
-            contact_email=contact_email,
-            contact_phone=contact_phone,
-            service_type=service_type,
-            total_amount=price or 0.0,
-        )
-        email_sent = bool(
-            email_result
-            and email_result.get("success")
-            # "deduped" status means a notification was already sent recently — still counts
-        )
-        email_notification_id = email_result.get("notification_id") if email_result else None
+        email_sent = email_notification_id is not None
 
         # Publish order to session state so PaymentAgent and ServiceFulfillmentAgent
         # can read order_id / customer_id / amount directly without LLM extraction.
@@ -196,12 +175,12 @@ def create_order(
                 "price": price,
                 "offer_id": offer_id,
                 "total_amount": order.total_amount,
-                "status": order.status,
+                "status": OrderStatus.PENDING_PAYMENT.value,
             }
             logger.info(f"[STATE WRITE] create_order -> order_context order_id={order_id} customer_id={customer_id} offer_id={offer_id}")
 
         # Return JSON structure
-        return json.loads(json.dumps({
+        response = {
             "success": True,
             "order_id": order_id,
             "customer_name": customer_name,
@@ -211,15 +190,18 @@ def create_order(
             "contact_phone": contact_phone,
             "contact_email": contact_email,
             "offer_id": offer_id,
-            "status": order.status,
+            "status": OrderStatus.PENDING_PAYMENT.value,
             "total_amount": order.total_amount,
             "created_at": order.created_at,
             "email_confirmation_sent": email_sent,
             "email_notification_id": email_notification_id,
             "message": f"Order {order_id} created successfully. Customer ID: {customer_id}"
-        }))
+        }
+        if offer_warning:
+            response["warning"] = offer_warning
+        return json.loads(json.dumps(response))
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error creating order: {e}")
         return json.loads(json.dumps({
             "success": False,
@@ -269,7 +251,7 @@ def update_order_status(
             }))
         
         old_status = order_dict["status"]
-        now = datetime.now().isoformat()
+        now = db.now_iso()
         update_order_field(order_id, status=new_status, updated_at=now)
         
         logger.info(f"Order {order_id} status updated: {old_status} -> {new_status}")
@@ -284,7 +266,7 @@ def update_order_status(
             "message": f"Order status updated to {new_status}"
         }))
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error updating order status: {e}")
         return json.loads(json.dumps({
             "success": False,
@@ -317,7 +299,7 @@ def get_order(order_id: str) -> Dict[str, Any]:
             "order": order_dict
         }))
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error getting order: {e}")
         return json.loads(json.dumps({
             "success": False,
@@ -369,11 +351,11 @@ def modify_order(
                 order_dict["items"].append({"service_type": service_type, "price": 0.0, "quantity": 1, "subtotal": 0.0})
                 order_dict["total_amount"] = 0.0
         
-        order_dict["updated_at"] = datetime.now().isoformat()
+        order_dict["updated_at"] = db.now_iso()
         save_order(order_dict)
         
         logger.info(f"Order {order_id} modified successfully")
-        
+
         return json.loads(json.dumps({
             "success": True,
             "order_id": order_id,
@@ -381,7 +363,7 @@ def modify_order(
             "message": f"Order {order_id} modified successfully"
         }))
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error modifying order: {e}")
         return json.loads(json.dumps({
             "success": False,
@@ -424,7 +406,7 @@ def generate_contract(order_id: str) -> Dict[str, Any]:
                 "billing_cycle": "monthly",
                 "payment_terms": "NET-30"
             },
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": db.now_iso(),
             "status": "pending_signature"
         }
         
@@ -436,7 +418,7 @@ def generate_contract(order_id: str) -> Dict[str, Any]:
             "message": f"Contract {contract['contract_id']} generated successfully"
         }))
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error generating contract: {e}")
         return json.loads(json.dumps({
             "success": False,
@@ -465,7 +447,7 @@ def cancel_order(order_id: str, reason: str = None) -> Dict[str, Any]:
                 "error": f"Order {order_id} not found"
             }))
         
-        now = datetime.now().isoformat()
+        now = db.now_iso()
         update_order_field(order_id, status=OrderStatus.CANCELLED, updated_at=now)
         
         logger.info(f"Order {order_id} cancelled. Reason: {reason}")
@@ -478,7 +460,7 @@ def cancel_order(order_id: str, reason: str = None) -> Dict[str, Any]:
             "message": f"Order {order_id} cancelled successfully"
         }))
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error cancelling order: {e}")
         return json.loads(json.dumps({
             "success": False,

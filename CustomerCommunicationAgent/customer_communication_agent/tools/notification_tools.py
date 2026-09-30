@@ -1,145 +1,155 @@
-"""
-Notification tools for the Customer Communication Agent.
+"""Agent-facing notification tools for the Customer Communication Agent.
 
-These tools handle sending notifications via email, SMS, and multi-channel delivery
-for various customer communication scenarios.
+Every ``send_*`` tool writes to the shared notification outbox
+(``sales_common.notifications.enqueue``) and then immediately dispatches that one
+row (:func:`customer_communication_agent.dispatcher.dispatch_pending`), so the
+model gets the real delivery status (``sent``, ``simulated``, ``deduped``,
+``failed``) in the same turn. Rendering, de-duplication and SMTP delivery live in
+the dispatcher, shared with the background outbox loop.
 """
 
-import json
-import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from __future__ import annotations
+
+import logging
+from typing import Any, Optional
+
+import psycopg
 
 from google.adk.tools.tool_context import ToolContext
+from sales_common import notifications
+from sales_common.config import ConfigError
 
-from ..utils.logger import get_logger
-from ..utils.db import store_notification, check_duplicate as db_check_duplicate, get_history as db_get_history, clear_all as db_clear_all
-from ..models import Notification, NotificationType, NotificationStatus
+from ..dispatcher import DEDUP_WINDOW_MINUTES, dispatch_pending
+from ..models import normalize_type
+from ..utils.db import get_history, get_notification
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Email configuration (set via environment variables)
-# ---------------------------------------------------------------------------
-SMTP_ENABLED = os.getenv("SMTP_ENABLED", "false").lower() == "true"
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")  # Gmail: use App Password
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "B2B Sales Notifications")
+MAX_HISTORY_LIMIT = 50
 
-if SMTP_ENABLED:
-    if not SMTP_USER or not SMTP_PASSWORD:
-        logger.error("SMTP_ENABLED=true but SMTP_USER or SMTP_PASSWORD not set")
-        SMTP_ENABLED = False
-    else:
-        logger.info(f"Real email delivery enabled via {SMTP_HOST}:{SMTP_PORT}")
-else:
-    logger.info("Email delivery in simulation mode (set SMTP_ENABLED=true to send real emails)")
+_LABELS = {
+    "order_confirmation": "Order confirmation",
+    "quote_confirmation": "Quote confirmation",
+    "payment_confirmation": "Payment notification",
+    "installation_reminder": "Installation reminder",
+    "service_activated": "Service activation notification",
+    "abandoned_cart": "Abandoned cart reminder",
+    "order_status_update": "Order status update",
+}
 
 
-def _send_email(to_address: str, subject: str, body: str) -> dict:
-    """
-    Send a real email via SMTP when SMTP_ENABLED=true, otherwise simulate.
+def _clean(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
-    Returns:
-        dict with "sent" (bool) and "detail" (str)
-    """
-    if not SMTP_ENABLED:
-        logger.info(f"[SIMULATED] Email to {to_address}: {subject}")
-        return {"sent": True, "detail": "simulated"}
 
+def _state_defaults(
+    tool_context: Optional[ToolContext], email: Optional[str], phone: Optional[str]
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Fill customer_id (and contact details when none were given) from journey state."""
+    if tool_context is None:
+        return None, email, phone
+    cust = tool_context.state.get("customer_context") or {}
+    order = tool_context.state.get("order_context") or {}
+    customer_id = cust.get("customer_id") if isinstance(cust.get("customer_id"), str) else None
+    if not email and not phone:
+        email = _clean(order.get("contact_email")) if isinstance(order.get("contact_email"), str) else None
+        phone = _clean(order.get("contact_phone")) if isinstance(order.get("contact_phone"), str) else None
+    return customer_id, email, phone
+
+
+def _send(
+    notification_type: str,
+    *,
+    customer_email: Optional[str],
+    customer_phone: Optional[str],
+    args: dict[str, Any],
+    order_id: Optional[str] = None,
+    email_only: bool = False,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    label = _LABELS.get(notification_type, "Notification")
+    email, phone = _clean(customer_email), _clean(customer_phone)
+    customer_id, email, phone = _state_defaults(tool_context, email, phone)
+    if not email and not phone:
+        return {"success": False, "error": "No contact information provided (email or phone required)"}
+    if email_only and not email:
+        return {"success": False, "error": f"{label} is email-only (marketing); no email address provided"}
+
+    channels = (["email"] if email else []) + (["sms"] if phone and not email_only else [])
     try:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
-        msg["To"] = to_address
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+        notification_id = notifications.enqueue(
+            notification_type,
+            recipient_email=email,
+            recipient_phone=None if email_only else phone,
+            args={k: v for k, v in args.items() if v is not None},
+            customer_id=customer_id,
+            order_id=_clean(order_id),
+            channels=channels,
+        )
+        if notification_id is None:
+            return {"success": False, "error": "Invalid email address and no phone number provided"}
+        dispatch_pending(limit=1, notification_id=notification_id)
+        record = get_notification(notification_id)
+    except (psycopg.Error, ConfigError) as exc:
+        logger.error("%s failed: %s", label, type(exc).__name__)
+        return {"success": False, "error": f"Notification error: {type(exc).__name__}"}
 
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, [to_address], msg.as_string())
+    if record is None:  # pragma: no cover - row was just inserted
+        return {"success": False, "error": "Notification record not found after enqueue"}
 
-        logger.info(f"Email delivered to {to_address}: {subject}")
-        return {"sent": True, "detail": "delivered"}
-    except smtplib.SMTPAuthenticationError as exc:
-        logger.error(f"SMTP auth failed: {exc}")
-        return {"sent": False, "detail": f"SMTP auth error: {exc}"}
-    except Exception as exc:
-        logger.error(f"Email send failed to {to_address}: {exc}")
-        return {"sent": False, "detail": f"SMTP error: {exc}"}
-
-
-# In-memory mirrors kept for backward compatibility with tests that
-# reference _NOTIFICATIONS / _DEDUP_CACHE directly.  The canonical store
-# is now SQLite (see utils/db.py).
-_NOTIFICATIONS: Dict[str, Notification] = {}
-_DEDUP_CACHE: Dict[str, datetime] = {}  # Track recent notifications for deduplication
-
-
-def _generate_notification_id(notification_type: str, recipient: str) -> str:
-    """Generate unique notification ID using microsecond precision to avoid collisions."""
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    return f"NOTIF-{timestamp}"
-
-
-def _check_duplicate(notification_type: str, recipient: str, window_minutes: int = 5) -> bool:
-    """
-    Check if a similar notification was sent recently.
-    
-    Delegates to SQLite-backed dedup_cache for persistence across restarts.
-    Also updates the in-memory _DEDUP_CACHE mirror for backward compatibility.
-    
-    Args:
-        notification_type: Type of notification
-        recipient: Recipient identifier
-        window_minutes: Time window for deduplication (default 5 minutes)
-    
-    Returns:
-        True if duplicate found, False otherwise
-    """
-    is_dup = db_check_duplicate(notification_type, recipient, window_minutes)
-    # Keep in-memory mirror in sync
-    _DEDUP_CACHE[f"{notification_type}:{recipient}"] = datetime.now()
-    return is_dup
-
-
-def _persist_notification(notification: Notification) -> None:
-    """Write notification to both in-memory mirror and SQLite."""
-    _NOTIFICATIONS[notification.notification_id] = notification
-    store_notification(
-        notification_id=notification.notification_id,
-        notification_type=notification.notification_type,
-        recipient_email=notification.recipient_email,
-        recipient_phone=notification.recipient_phone,
-        subject=notification.subject,
-        message=notification.message,
-        metadata=notification.metadata,
-        status=notification.status,
-        channels=notification.channels,
-        created_at=notification.created_at,
-        sent_at=notification.sent_at,
-        error=notification.error,
-    )
+    status = record["status"]
+    result: dict[str, Any] = {
+        "notification_id": notification_id,
+        "notification_type": notification_type,
+        "recipient_email": record["recipient_email"],
+        "recipient_phone": record["recipient_phone"],
+        "status": status,
+        "channels": record["channels"] if status in {"sent", "simulated"} else [],
+    }
+    if status in {"sent", "simulated"}:
+        via = ", ".join(result["channels"])
+        result.update(
+            success=True,
+            email_delivery=("delivered" if status == "sent" else "simulated")
+            if "email" in result["channels"] else None,
+            message=f"{label} sent successfully via {via}"
+            + (" (simulated: SMTP delivery is disabled)" if status == "simulated" else ""),
+        )
+    elif status == "deduped":
+        result.update(
+            success=True,
+            message=f"Duplicate notification prevented (already sent within {DEDUP_WINDOW_MINUTES} minutes)",
+        )
+    elif status == "pending" and not record["attempts"]:
+        # Another dispatcher instance holds the row; it will be delivered shortly.
+        result.update(success=True, status="queued", message=f"{label} queued for delivery")
+    else:
+        result.update(
+            success=False,
+            error=record["error"] or "Delivery failed",
+            attempts=record["attempts"],
+            message=(
+                f"{label} delivery failed; it will be retried automatically"
+                if status == "pending" else f"{label} delivery failed"
+            ),
+        )
+    return result
 
 
 def send_order_confirmation(
     order_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    service_type: str = None,
-    total_amount: float = None
-) -> Dict[str, Any]:
-    """
-    Send order confirmation notification to customer.
-    
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    service_type: Optional[str] = None,
+    total_amount: Optional[float] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send an order confirmation notification to the customer (email and/or SMS).
+
     Args:
         order_id: Order identifier
         customer_name: Customer name
@@ -147,124 +157,30 @@ def send_order_confirmation(
         customer_phone: Customer phone number
         service_type: Type of service ordered
         total_amount: Total order amount
-    
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending order confirmation for order {order_id} to {customer_name}")
-    
-    try:
-        # Validate contact info
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided (email or phone required)"
-            }))
-        
-        # Check for duplicate
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.ORDER_CONFIRMATION, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented (already sent within 5 minutes)"
-            }))
-        
-        # Generate notification
-        notification_id = _generate_notification_id(NotificationType.ORDER_CONFIRMATION, recipient)
-        
-        subject = f"Order Confirmation - {order_id}"
-        message = f"""
-Dear {customer_name},
-
-Thank you for your order! We're excited to serve you.
-
-Order Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Service: {service_type or 'N/A'}
-Total Amount: ${f'{total_amount:.2f}' if total_amount is not None else '0.00'}
-
-Your order has been confirmed and is now being processed.
-
-Next Steps:
-1. Payment validation
-2. Installation scheduling
-3. Service activation
-
-You'll receive updates via email and SMS as your order progresses.
-
-Questions? Contact us at 1-800-BUSINESS
-
-Thank you for choosing our services!
-"""
-        
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.ORDER_CONFIRMATION,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "order_id": order_id,
-                "customer_name": customer_name,
-                "service_type": service_type,
-                "total_amount": total_amount
-            }
-        )
-        
-        # Send via real or simulated channels
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-        
-        if customer_phone:
-            # SMS remains simulated (real SMS requires Twilio or similar)
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
-        
-        # Store notification
-        _persist_notification(notification)
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": NotificationType.ORDER_CONFIRMATION,
-            "channels": channels_sent,
-            "recipient_email": customer_email,
-            "recipient_phone": customer_phone,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Order confirmation sent successfully via {', '.join(channels_sent)}"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error sending order confirmation: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}"
-        }))
+    return _send(
+        "order_confirmation",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        order_id=order_id,
+        args={"order_id": order_id, "customer_name": customer_name,
+              "service_type": service_type, "total_amount": total_amount},
+        tool_context=tool_context,
+    )
 
 
 def send_quote_confirmation(
     quote_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    items_summary: str = None,
-    monthly_total: float = None,
-    term_months: int = None,
-    total_discount: float = None,
-) -> Dict[str, Any]:
-    """
-    Send quote confirmation notification when a quote is saved.
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    items_summary: Optional[str] = None,
+    monthly_total: Optional[float] = None,
+    term_months: Optional[int] = None,
+    total_discount: Optional[float] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send a quote confirmation notification when a quote is saved.
 
     Args:
         quote_id: Saved quote identifier
@@ -275,124 +191,30 @@ def send_quote_confirmation(
         monthly_total: Monthly total price after discounts
         term_months: Contract term in months
         total_discount: Total monthly discount amount
-
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending quote confirmation for quote {quote_id} to {customer_name}")
-
-    try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided (email or phone required)",
-            }))
-
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.QUOTE_SAVED, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented (already sent within 5 minutes)",
-            }))
-
-        notification_id = _generate_notification_id(NotificationType.QUOTE_SAVED, recipient)
-
-        term_display = f"{term_months} months" if term_months else "N/A"
-        discount_line = (
-            f"Your Savings: ${total_discount:.2f}/mo\n" if total_discount else ""
-        )
-
-        subject = f"Your Quote is Ready - {quote_id}"
-        message = f"""
-Dear {customer_name},
-
-Thank you for your interest! Your customised quote is ready.
-
-Quote Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Quote ID: {quote_id}
-Products: {items_summary or 'See attached quote'}
-Contract Term: {term_display}
-Monthly Total: ${f'{monthly_total:.2f}' if monthly_total is not None else 'TBD'}
-{discount_line}
-This quote is valid for 30 days.
-
-Next Steps:
-1. Review the quote details above
-2. Reply to this email or call 1-800-BUSINESS to proceed
-3. We'll handle installation scheduling and payment setup
-
-Questions? Contact us at 1-800-BUSINESS
-
-We look forward to serving your business!
-"""
-
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.QUOTE_SAVED,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "quote_id": quote_id,
-                "customer_name": customer_name,
-                "items_summary": items_summary,
-                "monthly_total": monthly_total,
-                "term_months": term_months,
-                "total_discount": total_discount,
-            },
-        )
-
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
-
-        _persist_notification(notification)
-
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": NotificationType.QUOTE_SAVED,
-            "channels": channels_sent,
-            "recipient_email": customer_email,
-            "recipient_phone": customer_phone,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Quote confirmation sent successfully via {', '.join(channels_sent)}",
-        }))
-
-    except Exception as e:
-        logger.error(f"Error sending quote confirmation: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}",
-        }))
+    return _send(
+        "quote_confirmation",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        args={"quote_id": quote_id, "customer_name": customer_name, "items_summary": items_summary,
+              "monthly_total": monthly_total, "term_months": term_months,
+              "total_discount": total_discount},
+        tool_context=tool_context,
+    )
 
 
 def send_payment_notification(
     order_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
     payment_status: str = "success",
-    amount: float = None,
-    payment_method: str = None
-) -> Dict[str, Any]:
-    """
-    Send payment status notification (success or failure).
-    
+    amount: Optional[float] = None,
+    payment_method: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send a payment status notification (success or failure).
+
     Args:
         order_id: Order identifier
         customer_name: Customer name
@@ -401,127 +223,31 @@ def send_payment_notification(
         payment_status: Payment status ("success" or "failed")
         amount: Payment amount
         payment_method: Payment method used
-    
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending payment {payment_status} notification for order {order_id}")
-    
-    try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided"
-            }))
-        
-        recipient = customer_email or customer_phone
-        notif_type = NotificationType.PAYMENT_SUCCESS if payment_status == "success" else NotificationType.PAYMENT_FAILED
-        
-        if _check_duplicate(notif_type, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented"
-            }))
-        
-        notification_id = _generate_notification_id(notif_type, recipient)
-        
-        if payment_status == "success":
-            subject = f"Payment Processed - Order {order_id}"
-            message = f"""
-Dear {customer_name},
-
-Your payment has been processed successfully!
-
-Payment Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Amount: ${f'{amount:.2f}' if amount is not None else 'N/A'}
-Payment Method: {payment_method or 'N/A'}
-Status: ✓ Paid
-
-Your order is now confirmed and will proceed to fulfillment.
-
-Next step: Installation scheduling
-
-Thank you!
-"""
-        else:
-            subject = f"Payment Failed - Order {order_id}"
-            message = f"""
-Dear {customer_name},
-
-We were unable to process your payment for order {order_id}.
-
-Order ID: {order_id}
-Amount: ${f'{amount:.2f}' if amount is not None else 'N/A'}
-Status: ✗ Payment Failed
-
-Action Required:
-Please update your payment method or contact us at 1-800-BUSINESS
-
-Your order is on hold until payment is received.
-"""
-        
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=notif_type,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "order_id": order_id,
-                "payment_status": payment_status,
-                "amount": amount
-            }
-        )
-        
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
-        
-        _persist_notification(notification)
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": notif_type,
-            "channels": channels_sent,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Payment notification sent via {', '.join(channels_sent)}"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error sending payment notification: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}"
-        }))
+    status = "success" if (payment_status or "success").strip().lower() == "success" else "failed"
+    return _send(
+        "payment_confirmation",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        order_id=order_id,
+        args={"order_id": order_id, "customer_name": customer_name, "payment_status": status,
+              "amount": amount, "payment_method": payment_method},
+        tool_context=tool_context,
+    )
 
 
 def send_installation_reminder(
     order_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    installation_date: str = None,
-    installation_time: str = None,
-    service_address: str = None
-) -> Dict[str, Any]:
-    """
-    Send installation reminder notification (24 hours before).
-    
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    installation_date: Optional[str] = None,
+    installation_time: Optional[str] = None,
+    service_address: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send an installation reminder notification (24 hours before).
+
     Args:
         order_id: Order identifier
         customer_name: Customer name
@@ -530,114 +256,31 @@ def send_installation_reminder(
         installation_date: Installation date
         installation_time: Installation time window
         service_address: Service installation address
-    
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending installation reminder for order {order_id}")
-    
-    try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided"
-            }))
-        
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.INSTALLATION_REMINDER, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented"
-            }))
-        
-        notification_id = _generate_notification_id(NotificationType.INSTALLATION_REMINDER, recipient)
-        
-        subject = f"Installation Reminder - Tomorrow"
-        message = f"""
-Dear {customer_name},
-
-This is a friendly reminder about your installation appointment tomorrow.
-
-Installation Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Date: {installation_date or 'TBD'}
-Time: {installation_time or 'TBD'}
-Address: {service_address or 'N/A'}
-
-Preparation Checklist:
-□ Business representative on-site
-□ Access to telecom room available
-□ Parking spot reserved for service vehicle
-□ Any pets secured
-
-Our technician will call 30 minutes before arrival.
-
-Need to reschedule? Call 1-800-BUSINESS (48-hour notice required)
-
-See you tomorrow!
-"""
-        
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.INSTALLATION_REMINDER,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "order_id": order_id,
-                "installation_date": installation_date,
-                "installation_time": installation_time
-            }
-        )
-        
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
-        
-        _persist_notification(notification)
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": NotificationType.INSTALLATION_REMINDER,
-            "channels": channels_sent,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Installation reminder sent via {', '.join(channels_sent)}"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error sending installation reminder: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}"
-        }))
+    return _send(
+        "installation_reminder",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        order_id=order_id,
+        args={"order_id": order_id, "customer_name": customer_name,
+              "installation_date": installation_date, "installation_time": installation_time,
+              "service_address": service_address},
+        tool_context=tool_context,
+    )
 
 
 def send_service_activated_notification(
     order_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    service_type: str = None,
-    account_number: str = None,
-    circuit_id: str = None
-) -> Dict[str, Any]:
-    """
-    Send service activation notification.
-    
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    service_type: Optional[str] = None,
+    account_number: Optional[str] = None,
+    circuit_id: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send a service activation notification.
+
     Args:
         order_id: Order identifier
         customer_name: Customer name
@@ -646,222 +289,60 @@ def send_service_activated_notification(
         service_type: Type of service activated
         account_number: Customer account number
         circuit_id: Service circuit ID
-    
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending service activation notification for order {order_id}")
-    
-    try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided"
-            }))
-        
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.SERVICE_ACTIVATED, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented"
-            }))
-        
-        notification_id = _generate_notification_id(NotificationType.SERVICE_ACTIVATED, recipient)
-        
-        subject = f"Service Activated - Welcome!"
-        message = f"""
-Dear {customer_name},
-
-🎉 Great news! Your service is now active!
-
-Service Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Service: {service_type or 'N/A'}
-Account Number: {account_number or 'TBD'}
-Circuit ID: {circuit_id or 'TBD'}
-Status: ✓ ACTIVE
-
-Your Resources:
-• Customer Portal: business.comcast.com
-• Technical Support: 1-800-TECH-HELP (24/7)
-• Billing Questions: 1-800-BILLING
-
-Thank you for choosing our services. We're here to support your business!
-
-Welcome aboard! 🚀
-"""
-        
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.SERVICE_ACTIVATED,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "order_id": order_id,
-                "service_type": service_type,
-                "account_number": account_number
-            }
-        )
-        
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
-        
-        _persist_notification(notification)
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": NotificationType.SERVICE_ACTIVATED,
-            "channels": channels_sent,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Service activation notification sent via {', '.join(channels_sent)}"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error sending service activation notification: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}"
-        }))
+    return _send(
+        "service_activated",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        order_id=order_id,
+        args={"order_id": order_id, "customer_name": customer_name, "service_type": service_type,
+              "account_number": account_number, "circuit_id": circuit_id},
+        tool_context=tool_context,
+    )
 
 
 def send_abandoned_cart_reminder(
     cart_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    cart_items: str = None,
-    total_amount: float = None
-) -> Dict[str, Any]:
-    """
-    Send abandoned cart recovery notification.
-    
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    cart_items: Optional[str] = None,
+    total_amount: Optional[float] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send an abandoned cart recovery notification (email only; marketing message).
+
     Args:
         cart_id: Cart identifier
         customer_name: Customer name
         customer_email: Customer email
-        customer_phone: Customer phone
+        customer_phone: Customer phone (not used: no SMS for marketing without opt-in)
         cart_items: Description of cart items
         total_amount: Total cart amount
-    
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending abandoned cart reminder for cart {cart_id}")
-    
-    try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided"
-            }))
-        
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.ABANDONED_CART, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented"
-            }))
-        
-        notification_id = _generate_notification_id(NotificationType.ABANDONED_CART, recipient)
-        
-        subject = "Complete Your Order - Your Quote is Waiting"
-        message = f"""
-Dear {customer_name},
-
-You're so close! Complete your order and get started with our services.
-
-Your Quote:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Cart ID: {cart_id}
-Items: {cart_items or 'Your selected services'}
-Total: ${f'{total_amount:.2f}' if total_amount is not None else 'TBD'}
-
-Don't miss out! This quote expires in 7 days.
-
-Complete Your Order:
-Visit business.comcast.com or call 1-800-BUSINESS
-
-Questions? We're here to help!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-P.S. Need help choosing the right service? Our sales team is standing by!
-"""
-        
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.ABANDONED_CART,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "cart_id": cart_id,
-                "cart_items": cart_items,
-                "total_amount": total_amount
-            }
-        )
-        
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-        if customer_phone:
-            # SMS only if explicitly opted in for marketing
-            pass  # Skip SMS for marketing messages unless opt-in
-        
-        _persist_notification(notification)
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": NotificationType.ABANDONED_CART,
-            "channels": channels_sent,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Abandoned cart reminder sent via {', '.join(channels_sent)}" if channels_sent else "Abandoned cart reminder queued (email only)"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error sending abandoned cart reminder: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}"
-        }))
+    return _send(
+        "abandoned_cart",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        email_only=True,
+        args={"cart_id": cart_id, "customer_name": customer_name, "cart_items": cart_items,
+              "total_amount": total_amount},
+        tool_context=tool_context,
+    )
 
 
 def send_order_status_update(
     order_id: str,
     customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    old_status: str = None,
-    new_status: str = None,
-    status_message: str = None
-) -> Dict[str, Any]:
-    """
-    Send order status update notification.
-    
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    old_status: Optional[str] = None,
+    new_status: Optional[str] = None,
+    status_message: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
+) -> dict[str, Any]:
+    """Send an order status update notification.
+
     Args:
         order_id: Order identifier
         customer_name: Customer name
@@ -870,587 +351,49 @@ def send_order_status_update(
         old_status: Previous order status
         new_status: New order status
         status_message: Status update message
-    
-    Returns:
-        Notification result as JSON
     """
-    logger.info(f"Sending order status update for order {order_id}: {old_status} -> {new_status}")
-    
-    try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided"
-            }))
-        
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.ORDER_STATUS_UPDATE, recipient):
-            return json.loads(json.dumps({
-                "success": True,
-                "status": "deduped",
-                "message": "Duplicate notification prevented"
-            }))
-        
-        notification_id = _generate_notification_id(NotificationType.ORDER_STATUS_UPDATE, recipient)
-        
-        subject = f"Order Update - {order_id}"
-        message = f"""
-Dear {customer_name},
-
-Your order status has been updated.
-
-Order Status Update:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Previous Status: {old_status or 'N/A'}
-New Status: {new_status or 'N/A'}
-
-{status_message or 'Your order is progressing as scheduled.'}
-
-Track your order: business.comcast.com/orders/{order_id}
-
-Questions? Contact us at 1-800-BUSINESS
-"""
-        
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.ORDER_STATUS_UPDATE,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={
-                "order_id": order_id,
-                "old_status": old_status,
-                "new_status": new_status
-            }
-        )
-        
-        channels_sent = []
-        email_detail = None
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-            email_detail = email_result["detail"]
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-            logger.info(f"[SIMULATED] SMS sent to {customer_phone}")
-        
-        _persist_notification(notification)
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "notification_id": notification_id,
-            "notification_type": NotificationType.ORDER_STATUS_UPDATE,
-            "channels": channels_sent,
-            "status": "sent",
-            "email_delivery": email_detail,
-            "message": f"Order status update sent via {', '.join(channels_sent)}"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error sending order status update: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification error: {str(e)}"
-        }))
+    return _send(
+        "order_status_update",
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        order_id=order_id,
+        args={"order_id": order_id, "customer_name": customer_name, "old_status": old_status,
+              "new_status": new_status, "status_message": status_message},
+        tool_context=tool_context,
+    )
 
 
 def get_notification_history(
-    customer_email: str = None,
-    customer_phone: str = None,
-    notification_type: str = None,
-    limit: int = 10
-) -> Dict[str, Any]:
-    """
-    Retrieve notification history for a customer.
-    
+    customer_email: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    notification_type: Optional[str] = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Retrieve notification history for a customer, newest first.
+
     Args:
         customer_email: Customer email
         customer_phone: Customer phone
-        notification_type: Filter by notification type
-        limit: Maximum number of notifications to return
-    
-    Returns:
-        Notification history as JSON
+        notification_type: Filter by notification type (e.g. "order_confirmation")
+        limit: Maximum number of notifications to return (1-50)
     """
-    logger.info(f"Retrieving notification history for {customer_email or customer_phone}")
-    
+    email, phone = _clean(customer_email), _clean(customer_phone)
+    if not email and not phone:
+        return {"success": False, "error": "No contact information provided"}
+    ntype = normalize_type(notification_type) if _clean(notification_type) else None
     try:
-        if not customer_email and not customer_phone:
-            return json.loads(json.dumps({
-                "success": False,
-                "error": "No contact information provided"
-            }))
-        
-        # Query from SQLite (persistent store)
-        filtered = db_get_history(
-            customer_email=customer_email,
-            customer_phone=customer_phone,
-            notification_type=notification_type,
-            limit=limit,
-        )
-        
-        return json.loads(json.dumps({
-            "success": True,
-            "count": len(filtered),
-            "notifications": filtered,
-            "message": f"Retrieved {len(filtered)} notifications"
-        }))
-    
-    except Exception as e:
-        logger.error(f"Error retrieving notification history: {e}")
-        return json.loads(json.dumps({
-            "success": False,
-            "error": f"Notification history error: {str(e)}"
-        }))
-
-
-# ---------------------------------------------------------------------------
-# New notification functions for Phase 5 lifecycle events
-# ---------------------------------------------------------------------------
-
-def send_install_scheduled_notification(
-    order_id: str,
-    customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    appointment_date: str = None,
-    window: str = None,
-    service_address: str = None,
-) -> Dict[str, Any]:
-    """
-    Send notification when an installation is scheduled.
-
-    Args:
-        order_id: Order identifier
-        customer_name: Customer name
-        customer_email: Customer email
-        customer_phone: Customer phone
-        appointment_date: Scheduled installation date
-        window: Time window (AM/PM)
-        service_address: Installation address
-    """
-    logger.info(f"Sending INSTALL_SCHEDULED notification for order {order_id}")
+        limit = max(1, min(int(limit), MAX_HISTORY_LIMIT))
+    except (TypeError, ValueError):
+        limit = 10
     try:
-        if not customer_email and not customer_phone:
-            return {"success": False, "error": "No contact information provided"}
-
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.INSTALLATION_SCHEDULED, recipient):
-            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
-
-        notification_id = _generate_notification_id(NotificationType.INSTALLATION_SCHEDULED, recipient)
-        subject = f"Installation Scheduled - Order {order_id}"
-        message = f"""Dear {customer_name},
-
-Your installation has been scheduled!
-
-Installation Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Date: {appointment_date or 'TBD'}
-Time Window: {window or 'TBD'}
-Address: {service_address or 'On file'}
-
-Our technician will call 30 minutes before arrival.
-
-Need to reschedule? Call 1-800-BUSINESS (48-hour notice required)
-"""
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.INSTALLATION_SCHEDULED,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={"order_id": order_id, "appointment_date": appointment_date, "window": window},
-        )
-
-        channels_sent = []
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-
-        _persist_notification(notification)
-        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
-    except Exception as e:
-        logger.error(f"Error sending INSTALL_SCHEDULED: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def send_install_dispatched_notification(
-    order_id: str,
-    customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    technician_name: str = None,
-    technician_phone: str = None,
-) -> Dict[str, Any]:
-    """
-    Send notification when a technician is dispatched.
-
-    Args:
-        order_id: Order identifier
-        customer_name: Customer name
-        customer_email: Customer email
-        customer_phone: Customer phone
-        technician_name: Assigned technician name
-        technician_phone: Technician contact number
-    """
-    logger.info(f"Sending INSTALL_DISPATCHED notification for order {order_id}")
-    try:
-        if not customer_email and not customer_phone:
-            return {"success": False, "error": "No contact information provided"}
-
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.INSTALL_DISPATCHED, recipient):
-            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
-
-        notification_id = _generate_notification_id(NotificationType.INSTALL_DISPATCHED, recipient)
-        subject = f"Technician Dispatched - Order {order_id}"
-        message = f"""Dear {customer_name},
-
-Your technician is on the way!
-
-Dispatch Details:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Technician: {technician_name or 'Assigned'}
-Technician Phone: {technician_phone or 'Will call on arrival'}
-
-The technician will call 30 minutes before arrival.
-Please ensure access to the installation area is available.
-
-Questions? Call 1-800-BUSINESS
-"""
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.INSTALL_DISPATCHED,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={"order_id": order_id, "technician_name": technician_name},
-        )
-
-        channels_sent = []
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-
-        _persist_notification(notification)
-        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
-    except Exception as e:
-        logger.error(f"Error sending INSTALL_DISPATCHED: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def send_install_complete_notification(
-    order_id: str,
-    customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    equipment_installed: list = None,
-) -> Dict[str, Any]:
-    """
-    Send notification when installation is complete.
-
-    Args:
-        order_id: Order identifier
-        customer_name: Customer name
-        customer_email: Customer email
-        customer_phone: Customer phone
-        equipment_installed: List of equipment installed
-    """
-    logger.info(f"Sending INSTALL_COMPLETE notification for order {order_id}")
-    try:
-        if not customer_email and not customer_phone:
-            return {"success": False, "error": "No contact information provided"}
-
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.INSTALL_COMPLETE, recipient):
-            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
-
-        notification_id = _generate_notification_id(NotificationType.INSTALL_COMPLETE, recipient)
-        equipment_list = ", ".join(equipment_installed) if equipment_installed else "Standard equipment"
-        subject = f"Installation Complete - Order {order_id}"
-        message = f"""Dear {customer_name},
-
-Your installation is complete!
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Equipment Installed: {equipment_list}
-Status: ✓ Installation Complete
-
-Next Step: Service activation (usually within 1-2 hours)
-
-You'll receive another notification once your service is fully active.
-
-Questions? Call 1-800-BUSINESS
-"""
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.INSTALL_COMPLETE,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={"order_id": order_id, "equipment_installed": equipment_installed},
-        )
-
-        channels_sent = []
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-
-        _persist_notification(notification)
-        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
-    except Exception as e:
-        logger.error(f"Error sending INSTALL_COMPLETE: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def send_order_cancelled_notification(
-    order_id: str,
-    customer_name: str,
-    customer_email: str = None,
-    customer_phone: str = None,
-    reason: str = None,
-) -> Dict[str, Any]:
-    """
-    Send notification when an order is cancelled (e.g., TTL expiry).
-
-    Args:
-        order_id: Order identifier
-        customer_name: Customer name
-        customer_email: Customer email
-        customer_phone: Customer phone
-        reason: Cancellation reason
-    """
-    logger.info(f"Sending ORDER_CANCELLED notification for order {order_id}")
-    try:
-        if not customer_email and not customer_phone:
-            return {"success": False, "error": "No contact information provided"}
-
-        recipient = customer_email or customer_phone
-        if _check_duplicate(NotificationType.ORDER_CANCELLED, recipient):
-            return {"success": True, "status": "deduped", "message": "Duplicate notification prevented"}
-
-        notification_id = _generate_notification_id(NotificationType.ORDER_CANCELLED, recipient)
-        subject = f"Order Cancelled - {order_id}"
-        message = f"""Dear {customer_name},
-
-Your order has been cancelled.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Order ID: {order_id}
-Reason: {reason or 'Payment not received within required timeframe'}
-
-If this was unintentional, please contact us to place a new order.
-We're happy to help you get started again.
-
-Contact: 1-800-BUSINESS
-"""
-        notification = Notification(
-            notification_id=notification_id,
-            notification_type=NotificationType.ORDER_CANCELLED,
-            recipient_email=customer_email,
-            recipient_phone=customer_phone,
-            subject=subject,
-            message=message,
-            metadata={"order_id": order_id, "reason": reason},
-        )
-
-        channels_sent = []
-        if customer_email:
-            email_result = _send_email(customer_email, subject, message)
-            if email_result["sent"]:
-                notification.mark_sent("email")
-                channels_sent.append("email")
-        if customer_phone:
-            notification.mark_sent("sms")
-            channels_sent.append("sms")
-
-        _persist_notification(notification)
-        return {"success": True, "notification_id": notification_id, "channels": channels_sent, "status": "sent"}
-    except Exception as e:
-        logger.error(f"Error sending ORDER_CANCELLED: {e}")
-        return {"success": False, "error": str(e)}
-
-
-# ---------------------------------------------------------------------------
-# General-purpose dispatcher for cross-agent notification calls
-# ---------------------------------------------------------------------------
-
-def send_notification(
-    notification_type: str,
-    customer_id: str = "",
-    order_id: str = "",
-    recipient_email: str = None,
-    recipient_phone: str = None,
-    metadata: str = None,
-    tool_context: Optional[ToolContext] = None,
-    **kwargs,
-) -> Dict[str, Any]:
-    """
-    General notification dispatcher used by other agents via sys.modules.
-
-    Routes to the appropriate specific notification function based on notification_type.
-    This is the single entry point for cleanup_stale_records() and other cross-agent callers.
-
-    Args:
-        notification_type: Type string (e.g., 'ABANDONED_CART', 'ORDER_CANCELLED')
-        customer_id: Customer identifier
-        order_id: Order identifier
-        recipient_email: Email address
-        recipient_phone: Phone number
-        metadata: JSON string or dict with additional context
-    """
-    # Parse metadata if it's a JSON string
-    meta = {}
-    if metadata:
-        if isinstance(metadata, str):
-            try:
-                meta = json.loads(metadata)
-            except (json.JSONDecodeError, TypeError):
-                meta = {"raw": metadata}
-        else:
-            meta = metadata
-
-    # Read customer_context / order_context from session state when the LLM
-    # calls this tool without explicit IDs. Existing callers via sys.modules
-    # already pass full values, so they're unaffected.
-    if tool_context is not None:
-        cust_ctx = tool_context.state.get("customer_context") or {}
-        order_ctx = tool_context.state.get("order_context") or {}
-        logger.info(f"[STATE READ] send_notification <- customer_context customer_id={cust_ctx.get('customer_id')}")
-        logger.info(f"[STATE READ] send_notification <- order_context order_id={order_ctx.get('order_id')} email={order_ctx.get('contact_email')}")
-        if not customer_id:
-            state_cid = cust_ctx.get("customer_id")
-            if isinstance(state_cid, str):
-                customer_id = state_cid
-        if not order_id:
-            state_oid = order_ctx.get("order_id")
-            if isinstance(state_oid, str):
-                order_id = state_oid
-        if not recipient_email:
-            state_email = order_ctx.get("contact_email")
-            if isinstance(state_email, str):
-                recipient_email = state_email
-        if not recipient_phone:
-            state_phone = order_ctx.get("contact_phone")
-            if isinstance(state_phone, str):
-                recipient_phone = state_phone
-
-    customer_name = meta.get("customer_name", meta.get("company_name", customer_id or "Customer"))
-
-    # Route to specific handlers
-    ntype = notification_type.upper().replace("-", "_")
-
-    if ntype == "ABANDONED_CART":
-        return send_abandoned_cart_reminder(
-            cart_id=meta.get("cart_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            cart_items=meta.get("cart_items"),
-            total_amount=meta.get("total_amount"),
-        )
-    elif ntype == "ORDER_CANCELLED":
-        return send_order_cancelled_notification(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            reason=meta.get("reason"),
-        )
-    elif ntype == "INSTALL_SCHEDULED" or ntype == "INSTALLATION_SCHEDULED":
-        return send_install_scheduled_notification(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            appointment_date=meta.get("appointment_date"),
-            window=meta.get("window"),
-            service_address=meta.get("service_address"),
-        )
-    elif ntype == "INSTALL_DISPATCHED":
-        return send_install_dispatched_notification(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            technician_name=meta.get("technician_name"),
-            technician_phone=meta.get("technician_phone"),
-        )
-    elif ntype == "INSTALL_COMPLETE":
-        return send_install_complete_notification(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            equipment_installed=meta.get("equipment_installed"),
-        )
-    elif ntype == "SERVICE_ACTIVATED":
-        return send_service_activated_notification(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            service_type=meta.get("service_type"),
-            account_number=meta.get("account_id", meta.get("account_number")),
-            circuit_id=meta.get("circuit_id"),
-        )
-    elif ntype == "ORDER_CONFIRMATION":
-        return send_order_confirmation(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            service_type=meta.get("service_type"),
-            total_amount=meta.get("total_amount"),
-        )
-    elif ntype in ("PAYMENT_SUCCESS", "PAYMENT_FAILED"):
-        return send_payment_notification(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            payment_status="success" if ntype == "PAYMENT_SUCCESS" else "failed",
-            amount=meta.get("amount"),
-            payment_method=meta.get("payment_method"),
-        )
-    elif ntype == "INSTALLATION_REMINDER":
-        return send_installation_reminder(
-            order_id=order_id or meta.get("order_id", ""),
-            customer_name=customer_name,
-            customer_email=recipient_email,
-            customer_phone=recipient_phone,
-            installation_date=meta.get("installation_date"),
-            installation_time=meta.get("installation_time"),
-            service_address=meta.get("service_address"),
-        )
-    else:
-        # Generic fallback
-        logger.warning(f"Unknown notification type '{notification_type}', using generic handler")
-        return {"success": False, "error": f"Unknown notification type: {notification_type}"}
+        rows = get_history(customer_email=email, customer_phone=phone,
+                           notification_type=ntype, limit=limit)
+    except (psycopg.Error, ConfigError) as exc:
+        logger.error("Notification history query failed: %s", type(exc).__name__)
+        return {"success": False, "error": f"Notification history error: {type(exc).__name__}"}
+    return {
+        "success": True,
+        "count": len(rows),
+        "notifications": rows,
+        "message": f"Retrieved {len(rows)} notifications",
+    }

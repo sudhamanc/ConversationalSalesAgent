@@ -1,97 +1,127 @@
 # Serviceability Agent
 
-**Type:** Deterministic Configuration Agent (PRE-SALE)
-**Framework:** Google ADK 1.20.0+
+**Type:** Deterministic PRE-SALE agent (A2A service)
+**Framework:** Google ADK 2.10 + A2A, tools over MCP
 **Package:** `serviceability_agent`
-**Status:** ✅ Deployed in SuperAgent
+**Build guide:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
 
 ---
 
 ## Purpose
 
-The Serviceability Agent performs **pre-sale address validation and infrastructure assessment**. It determines whether a given business address can receive telecom services and what technologies are available.
+Validates a business address and reports whether it can receive service, with
+infrastructure details, speed capabilities and the product SKU ids sold there.
+It runs **before** product recommendations and pricing.
 
-This agent is **completely stateless** — it performs no database reads or writes. All lookups use an in-memory mock coverage map keyed by ZIP code.
+The agent has **no local tools and no coverage data**. All deterministic logic
+(address parsing, coverage lookup, optional upstream GIS) lives in the
+**serviceability service** ([services/serviceability](../services/serviceability/README.md)),
+which the agent consumes over MCP (streamable HTTP) with `McpToolset`.
 
 ---
 
 ## Architecture
 
-### Agent Configuration
-
 | Attribute | Value |
 |-----------|-------|
-| **Agent Name** | `serviceability_agent` (hardcoded) |
-| **Model** | `os.getenv("GEMINI_MODEL")` — no default |
-| **Temperature** | 0.0 (deterministic) |
-| **Max Tokens** | 2048 |
-| **Database** | None (stateless) |
-| **Data Source** | In-memory `MOCK_COVERAGE_DATA` dict (ZIP → infrastructure) |
+| **Agent name** | `serviceability_agent` (hardcoded; the gateway routes by it) |
+| **Model** | `GEMINI_MODEL` (required, no default) |
+| **Temperature** | 0.0, max 2048 tokens |
+| **Tools** | `sales_common.mcp_client.mcp_toolset(SERVICEABILITY_MCP_URL)` |
+| **Callbacks** | `before_agent_callback=[import_forwarded_context]`, `after_tool_callback=[record_serviceability_context, export_context_delta]` |
+| **Served by** | `serviceability_agent/server.py` → `create_a2a_app(root_agent)` |
+| **Data source** | serviceability service → PostgreSQL `coverage_zones` (or upstream GIS API) |
 
-### Component Structure
-
-```
+```text
 ServiceabilityAgent/
+├── pyproject.toml / Dockerfile (build context = repo root)
 ├── serviceability_agent/
-│   ├── __init__.py
-│   ├── agent.py                    # Agent definition
-│   ├── prompts.py                  # System instructions
-│   ├── tools/
-│   │   ├── address_tools.py        # Address parsing/validation
-│   │   └── gis_tools.py            # Coverage lookup (mock GIS)
-│   └── utils/
-│       ├── logger.py
-│       └── cache.py                # Result caching
-└── tests/
+│   ├── __init__.py      # build_agent, root_agent
+│   ├── agent.py         # Agent + McpToolset
+│   ├── callbacks.py     # record_serviceability_context
+│   ├── prompts.py       # static domain prompt (UI-parsed output format)
+│   └── server.py        # A2A app
+└── tests/               # construction + callback tests (no network, no API key)
 ```
 
 ---
 
-## Tools (6 Functions)
+## Tools (MCP, served by services/serviceability)
 
-### Address Tools (address_tools.py)
+| Tool | Arguments | Result (JSON object) |
+|------|-----------|----------------------|
+| `validate_and_parse_address` | `address_string` | `{valid, address{street,city,state,zip_code}}` or `{valid:false, error}` |
+| `normalize_address` | `street, city, state, zip_code` | `{normalized_address}` |
+| `extract_zip_code` | `address_string` | `{zip_code}` (`""` if none) |
+| `check_service_availability` | `street, city, state, zip_code` | see below |
+| `get_infrastructure_by_technology` | `technology, zone="all"` | `{technology, zone, infrastructure:[...]}` |
+| `get_coverage_zones` | – | `{zones:[...], count}` |
 
-| Tool | Signature | Purpose |
-|------|-----------|---------|
-| `validate_and_parse_address` | `(address_string) → Dict` | Parse free-text address into structured components |
-| `normalize_address` | `(street, city, state, zip_code) → str` | Standardize address format |
-| `extract_zip_code` | `(address_string) → str` | Extract ZIP code from any address string |
+`check_service_availability` result:
 
-### GIS Tools (gis_tools.py)
+```json
+{"serviceable": true, "address": {...}, "infrastructure": {"type", "network_element",
+ "speed_capability", "service_class", "redundancy_available"}, "infrastructure_type": "FTTP",
+ "max_speed_mbps": 5000, "service_zone": "Metro-Center-PA", "estimated_install_days": 5,
+ "available_product_categories": ["Internet","Voice","SD-WAN","Mobile"],
+ "available_products": ["FIB-1G", "..."]}
+```
 
-| Tool | Signature | Purpose |
-|------|-----------|---------|
-| `check_service_availability` | `(street, city, state, zip_code) → Dict` | Check if address is serviceable + available technologies |
-| `get_infrastructure_by_technology` | `(technology, zone) → List[Dict]` | Get infrastructure details for a technology type |
-| `get_coverage_zones` | `() → List[str]` | List all available coverage zones |
-
-### Mock Coverage Data
-
-The `MOCK_COVERAGE_DATA` dictionary maps ZIP codes to available infrastructure:
-- **Fiber (FTTP)** — 1G/5G/10G speeds
-- **Coax (HFC)** — up to 1G speeds
-- **Fixed Wireless (5G)** — 100M-1G speeds
-
-ZIPs not in the map return `"not_serviceable"`.
+Unserviceable: `{"serviceable": false, "address", "reason", "available_products": [], "available_product_categories": []}`.
+Invalid input (e.g. unknown state) is an MCP tool error.
 
 ---
 
-## Conversation Behavior
+## Journey context
 
-### When Invoked
-SuperAgent routes to ServiceabilityAgent when:
-- **Programmatic handoff from DiscoveryAgent** — `after_agent_callback` auto-transfers after company registration with address (no user message needed)
-- User asks "Is service available at [address]?"
-- User explicitly requests a coverage check
+`record_serviceability_context` (in `callbacks.py`) handles every successful
+`check_service_availability` result (serviceable or not) and writes:
 
-### Response Pattern
-Returns infrastructure details:
-> "✅ Your location at **[Address]** is serviceable! Available technologies: Fiber (FTTP) up to 10Gbps, Coax (HFC) up to 1Gbps..."
+```python
+state["serviceability_context"] = {
+    "is_serviceable", "infrastructure_type", "max_speed_mbps", "available_products",
+    "available_product_categories", "service_zone", "estimated_install_days", "service_address",
+}
+```
+
+It returns `None`, so the shared `export_context_delta` runs next and adds
+`_context_update.serviceability_context` to the tool response; the gateway merges
+it into its session. Tool errors and other tools leave state unchanged.
 
 ---
 
-## Integration with SuperAgent
+## Conversation behaviour
 
-Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/serviceability/agent.py`. Agent name `serviceability_agent` is hardcoded.
+- Invoked by the gateway workflow: the deterministic Discovery → Serviceability
+  handoff after company registration, or when the user asks about coverage.
+- The agent cannot transfer. For pricing or product specs it says what comes next;
+  the gateway routes the next message.
+- **Output format is parsed by the UI** (`SuperAgent/client/src/utils/responseFormatters.js`):
+  keep the "location is serviceable / not serviceable" summary, the `Key: Value`
+  lines (Infrastructure Type, Service Zone, Switch ID, Cabinet ID, Available Fiber
+  Pairs, OLT Equipment, Minimum/Maximum Speed, Symmetrical, Service Class,
+  Redundancy, Installation Timeline) and product lines `• **SKU** - Name`.
 
-**Inbound handoff:** Receives programmatic transfer from DiscoveryAgent's `after_agent_callback` (zero user input needed).
+---
+
+## Environment
+
+| Variable | Required | Notes |
+|---|---|---|
+| `GEMINI_MODEL`, `GOOGLE_API_KEY` | yes | model |
+| `SERVICEABILITY_MCP_URL` | yes | e.g. `http://serviceability:8102/mcp/` (trailing slash) |
+| `DATABASE_URL`, `PUBLIC_URL` | yes | A2A sessions/tasks, agent card |
+| `SERVICE_AUTH` | no | `gcp_id_token` on Cloud Run (ID token for the MCP call) |
+| `MCP_TIMEOUT_SECONDS`, `MCP_TOOL_CACHE_SECONDS` | no | defaults 15 / 300 |
+
+---
+
+## Tests
+
+```bash
+pytest ServiceabilityAgent/tests -q                  # agent (no DB, no network)
+TEST_DATABASE_URL=postgresql://... pytest services/serviceability/tests -q   # service
+```
+
+**Critical distinction:** ServiceabilityAgent (PRE-SALE) answers "can we serve
+this address?"; ServiceFulfillmentAgent (POST-SALE) answers "when can we install?".

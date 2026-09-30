@@ -1,109 +1,46 @@
 # Discovery Agent
 
-Discovery-phase agent for company identification, prospect lookup/creation, and BANT-oriented qualification context.
+Discovery-phase agent for company identification, prospect lookup/registration and conversational BANT qualification. It runs as an independent A2A service (`discovery_agent`) behind the SuperAgent gateway and stores data in PostgreSQL.
 
-## Overview
+See [AGENTS.md](AGENTS.md) for tools, tables and the `customer_context` contract, and [docs/agent-service-guide.md](../docs/agent-service-guide.md) for the service conventions.
 
-The DiscoveryAgent handles early sales-intelligence tasks in the conversational flow:
+## Scope
 
-- company discovery and matching,
-- contact and insight retrieval,
-- lead qualification context,
-- structured handoff data for downstream agents.
+Does: company lookup and enrichment, new company/location and contact records, BANT opportunity scoring, returning-customer pipeline check, publishing `customer_context`.
 
-It includes read/write database operations for company/contact/opportunity/insight records and is used as the first business-context step in SuperAgent.
+Does not: serviceability checks (ServiceabilityAgent, triggered by the gateway after Discovery), product fit, pricing, orders, payment or fulfillment.
 
-## Current Role
-
-The DiscoveryAgent is the first major business-context agent in the sales flow. It:
-
-- extracts company + location details from conversation,
-- looks up existing records in SQLite,
-- creates/updates prospect records when needed,
-- supports qualification signals used downstream.
-
-This agent is **active in SuperAgent**.
-
-## Scope Boundaries
-
-### DiscoveryAgent does
-
-- Prospect/company lookup and enrichment
-- New company/contact record creation
-- Qualification context capture (BANT-related fields)
-- Structured data return for reliable handoff
-- Opportunity context updates for downstream sales stages
-
-### DiscoveryAgent does not do
-
-- Serviceability verification (ServiceabilityAgent)
-- Product technical fit (ProductAgent)
-- Pricing/discounting (OfferManagementAgent)
-- Order/payment/fulfillment execution
-
-## Data Model (High-Level)
-
-Primary SQLite entities used by Discovery flow:
-
-- `accounts`: company profile, region, customer/prospect status, products
-- `contacts`: stakeholders and decision roles
-- `opportunities`: BANT components, score, and prioritization bucket
-- `insights`: buying signals, pain points, positioning notes
-- `spend`: spend profile and media breakdown (when available)
-
-## API/Run Modes
-
-- `main.py`: local/agent bootstrap entrypoint
-- `main_server.py`: FastAPI server mode for chat-style requests
-- Typical endpoint in standalone mode: `POST /chat`
-
-## Package Layout
+## Layout
 
 ```text
 DiscoveryAgent/
-├── bootstrap_agent/
-│   ├── agent.py
-│   ├── sub_agents/
-│   │   ├── discovery/
-│   │   └── lead_gen/
-│   └── ...
-├── data/
-│   └── discover_prospecting_clean.db
-├── main.py
-├── main_server.py
-└── tests/
+├── discovery_agent/   # agent.py, prompts.py, server.py, tools/
+├── tests/
+├── pyproject.toml     # discovery-agent (depends on sales-common)
+├── Dockerfile
 ```
 
-## SuperAgent Integration
-
-- Wrapper location: `SuperAgent/super_agent/sub_agents/discovery/agent.py`
-- Integration pattern: importlib isolation (ADK parent-binding safe)
-- Routed when user provides company/business identity details.
-
-## Typical Conversation Responsibilities
-
-- Parse company and location from user message
-- Determine existing customer vs new prospect path
-- Capture qualification context (BANT-related signals)
-- Return structured fields so Serviceability/Product/Offer flows can continue deterministically
-
-## Local Run
+## Run locally
 
 ```bash
-cd DiscoveryAgent
-pip install -e .
-python main.py
+uv pip install -p venv/bin/python -e libs/sales_common -e DiscoveryAgent
+DATABASE_URL=postgresql://csa:...@127.0.0.1:5432/csa \
+GEMINI_MODEL=gemini-3-flash-preview GOOGLE_API_KEY=... \
+PUBLIC_URL=http://127.0.0.1:8201 \
+  venv/bin/uvicorn discovery_agent.server:app --port 8201
+```
+
+Apply the schema first with `python -m sales_common.migrate --seed`. The agent card is at `/.well-known/agent-card.json` and the health check at `/healthz`.
+
+## Docker
+
+```bash
+docker build -f DiscoveryAgent/Dockerfile -t discovery-agent .   # from the repo root
 ```
 
 ## Tests
 
 ```bash
-cd /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent
-./.venv/bin/python -m pytest DiscoveryAgent -q
+TEST_DATABASE_URL=postgresql://user:pw@127.0.0.1:5432/scratch_db \
+  venv/bin/python -m pytest DiscoveryAgent/tests -q
 ```
-
-## References
-
-- Root architecture: `AGENTS.md`
-- SuperAgent runtime: `SuperAgent/README.md`
-- Scenario validation: `Scenarios.md`

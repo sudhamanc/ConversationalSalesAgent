@@ -1,4 +1,7 @@
 # B2B Agentic Sales Orchestration System
+
+> **Superseded (historical document).** Milestones and architecture notes here predate the ADK 2.x / A2A / PostgreSQL rewrite. For the current architecture see [AGENTS.md](AGENTS.md) and [README.md](README.md); for design decisions and remaining work see `openspec/changes/` (including the planned `mcp-remaining-domains`).
+
 ## Academic Milestone Plan & Sales Scenarios
 
 **Drexel University - Senior Design Project**

@@ -1,6 +1,6 @@
 # B2B Conversational Sales Agent
 
-A multi-agent orchestration system for end-to-end B2B telecom sales conversations, built on Google ADK with Gemini.
+A multi-agent system for end-to-end B2B telecom sales conversations, built on Google ADK 2.x with Gemini: an orchestration **workflow** in a gateway, **10 domain agents as independent A2A services**, and **REST + MCP tool services**, all backed by PostgreSQL.
 
 **Drexel University – Senior Design Project — Winter/Spring 2026**
 
@@ -8,224 +8,222 @@ A multi-agent orchestration system for end-to-end B2B telecom sales conversation
 
 ## What This Project Is
 
-This repository implements a **multi-agent orchestration system** — a hierarchical architecture where a central **SuperAgent** coordinates 10 specialized sub-agents to automate the full B2B telecom sales lifecycle, from initial prospect discovery through order fulfillment.
+This repository implements a **multi-agent system** that automates the full B2B telecom sales lifecycle, from prospect discovery through order fulfillment. A **gateway** (`SuperAgent/`) runs an ADK 2.x `Workflow` that routes each customer turn to one of 10 specialized agents. Each agent is its own **A2A (Agent2Agent) service**, deployable and scalable on its own.
 
-Built on **Google ADK (Agent Development Kit)** with **Google Gemini** as the backbone LLM, the system enforces a strict separation between:
+Built on **Google ADK 2.10 (Agent Development Kit)** with **Google Gemini**, the system enforces a strict separation between:
 
-- **LLM-driven reasoning** — intent classification, conversational routing, natural language generation
-- **Deterministic tool execution** — database lookups, pricing calculations, address validation, payment processing
+- **LLM-driven reasoning:** intent classification and natural-language conversation
+- **Deterministic execution:** database lookups, pricing, address validation, payment processing, and the business-mandatory handoffs between agents
 
-The LLM decides *what* to do; critical business data (addresses, prices, orders) is always sourced from deterministic tools, never hallucinated.
+The LLM decides *what* the customer wants; critical business data (addresses, prices, orders) always comes from deterministic tools, never from generated text.
 
 ---
 
 ## Architecture
 
-![System Architecture](./architecture-diagram.png)
-
-*Interactive version: open [architecture.html](./architecture.html) in your browser*
+```mermaid
+graph TD
+    USER["Browser<br/>React 19 UI"] -->|HTTPS SSE| GW["Gateway :8000<br/>FastAPI + sales_journey Workflow"]
+    GW -->|A2A JSON-RPC| AG["10 agent services :8201-8210<br/>ADK agents served with to_a2a"]
+    AG -->|MCP streamable HTTP| TS["Tool services<br/>catalog :8101, serviceability :8102<br/>REST /api/v1 + MCP /mcp/"]
+    GW --> PG[("PostgreSQL 16<br/>sessions, memory, A2A tasks,<br/>business tables")]
+    AG --> PG
+    TS --> PG
+    GW -->|router| GEM(("Gemini API"))
+    AG -->|agents| GEM
+```
 
 ```
-User → React Client → FastAPI → ADK Runner → SuperAgent → Sub-Agent → Tools → Infrastructure
+User → React UI → Gateway (FastAPI → ADK Runner → sales_journey Workflow)
+     → RemoteA2aAgent → Agent service (ADK agent → tools / MCP) → PostgreSQL
 ```
 
-Responses stream back to the browser via Server-Sent Events (SSE).
+Responses stream back to the browser via Server-Sent Events (SSE). A per-service overview with the full node graph is in [AGENTS.md](AGENTS.md#system-architecture).
+
+> `architecture-diagram.png` and `architecture.html` show the earlier single-process (ADK 1.x) architecture and are kept for presentation history.
 
 ### Architectural Layers
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  PRESENTATION    React 19 + FastAPI (SSE Streaming)     │
-├─────────────────────────────────────────────────────────┤
-│  ORCHESTRATION   SuperAgent (Router + Session State)    │
-├───────────┬───────────┬─────────────────────────────────┤
-│ DISCOVERY │   CONFIG  │  TRANSACTION                    │
-│ Discovery │ Service-  │ Order · Payment · Fulfillment   │
-│ Greeting  │ ability   │ Customer Communications         │
-│ FAQ       │ Product   │                                 │
-│           │ Offer Mgmt│                                 │
-├───────────┴───────────┴─────────────────────────────────┤
-│  INFRASTRUCTURE  SQLite · GIS API · Pricing · Scheduler │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  PRESENTATION    React 19 + Vite + Tailwind  ⇄  FastAPI SSE gateway │
+├─────────────────────────────────────────────────────────────────────┤
+│  ORCHESTRATION   sales_journey Workflow: router LLM, dispatch,      │
+│                  deterministic handoffs, sessions, memory           │
+├──────────────┬───────────────────┬──────────────────────────────────┤
+│ DISCOVERY    │ CONFIGURATION     │ TRANSACTION    (A2A services)    │
+│ Discovery    │ Serviceability    │ Order · Payment · Fulfillment    │
+│ Greeting     │ Product           │ Customer Communication           │
+│ FAQ          │ Offer Management  │                                  │
+├──────────────┴───────────────────┴──────────────────────────────────┤
+│  TOOL SERVICES   catalog: REST+MCP+RAG · serviceability: REST+MCP   │
+├─────────────────────────────────────────────────────────────────────┤
+│  DATA            PostgreSQL 16 (Cloud SQL in GCP) · SMTP · Gemini   │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Design Principles
 
 | Principle | Implementation |
 |-----------|----------------|
-| **Separation of concerns** | Each agent owns exactly one domain |
+| **Separation of concerns** | Each agent owns one domain and runs as its own service |
 | **Zero-hallucination for critical data** | Addresses, prices, orders always come from deterministic tools |
-| **Router-only orchestrator** | SuperAgent classifies intent and delegates — never generates user-facing text |
-| **Temperature-stratified agents** | Conversational agents use temp 0.7; transactional agents use temp 0.0 |
+| **Router-only orchestrator** | The gateway classifies intent and dispatches; it never writes customer-facing domain answers |
+| **Deterministic handoffs** | Mandatory next steps (Discovery → Serviceability, Scheduling → Payment) are Python rules in the workflow |
+| **Temperature-stratified agents** | Greeting/FAQ 0.7; transactional agents and the router 0.0 |
 | **Structured data contracts** | Tools return JSON (not prose) to prevent LLM rephrasing of critical values |
-| **Shared session-state contracts** | Agents publish authoritative context into ADK session state so downstream agents consume structured facts instead of re-reading conversation text |
-| **Importlib isolation** | Sub-agents loaded without triggering `__init__.py` to avoid ADK parent-binding conflicts |
+| **Shared journey-state contracts** | Agents publish authoritative context into ADK session state; it crosses the A2A boundary through metadata and `_context_update` |
+| **A2A service per agent** | No in-process coupling: no `importlib` loading or `sys.modules` calls between agents (see [docs/agent-service-guide.md](docs/agent-service-guide.md)) |
 
 ### How Agents Communicate
 
 ```
-User Message → SuperAgent (intent analysis)
-                  │
-                  ├─ SuperAgent → Sub-agent delegation
-                  │    transfer_to_agent("discovery_agent")
-                  │    transfer_to_agent("product_agent")
-                  │    transfer_to_agent("payment_agent")
-                  │
-                  ├─ Sub-agent → Sub-agent workflow continuation
-                  │    discovery_agent → serviceability_agent (programmatic)
-                  │    service_fulfillment_agent → payment_agent (programmatic)
-                  │    order_agent → service_fulfillment_agent
-                  │    payment_agent → order_agent
-                  │
-                  └─ Shared ADK session state
-                       customer_context → serviceability_context
-                       order_context → payment_context
-                       consumed by downstream agents/tools
+User message → Gateway workflow (sales_journey)
+                 │
+                 ├─ prepare_turn → route_intent (router LLM, RouteDecision)
+                 │     pure greetings skip the router (fast path)
+                 │
+                 ├─ dispatch → RemoteA2aAgent("<agent>")  ── A2A JSON-RPC ──►  agent service
+                 │     sends: directed message (a2a_outbound_message)
+                 │            + metadata: journey context, transcript, user profile
+                 │
+                 ├─ agent tools change journey keys → "_context_update" in tool responses
+                 │     ContextBridgePlugin merges them into gateway session state
+                 │
+                 └─ HandoffPolicyNode (deterministic, same turn, ≤ 2 hops)
+                       discovery_agent           → serviceability_agent
+                       service_fulfillment_agent → payment_agent
 ```
 
-- **SuperAgent → sub-agent routing** is ADK-native. SuperAgent declares `sub_agents=[...]` and always calls `transfer_to_agent(...)` rather than producing customer text.
-- **Sub-agent → sub-agent progression** is also ADK-native. Once a specialist finishes a step, it can call `transfer_to_agent(...)` itself to hand control to the next specialist without waiting for the root orchestrator to re-interpret the workflow.
-- **Shared session state is the data plane.** Agents exchange authoritative facts through ADK session keys such as `customer_context`, `serviceability_context`, `order_context`, and `payment_context`.
-- **Deterministic tools publish state; conversational agents consume it.** This prevents downstream agents from reconstructing addresses, order IDs, or payment results from natural-language history.
-- **Wrapper callbacks stabilize brittle handoffs.** Where Gemini occasionally fails to emit text plus transfer reliably, SuperAgent wrappers use `after_agent_callback` logic to enforce the intended next step without abandoning ADK's delegation model. Currently active programmatic handoffs:
-  - **Discovery → Serviceability** — auto-transfers when company registration includes an address and the agent promises a serviceability check
-  - **ServiceFulfillment → Payment** — auto-transfers when installation scheduling is confirmed, so the user doesn't need to explicitly request payment
-  - **Payment (self-inject)** — injects a payment opener when payment_agent receives an empty turn after a scheduling handoff
+- **Gateway → agent** is A2A. Each domain node in the workflow is a `RemoteA2aAgent` that fetches the agent's card (`/.well-known/agent-card.json`) and sends only the directed message for that agent, with the gateway session id as the A2A context id.
+- **Shared journey state is the data plane.** The five journey keys (`customer_context`, `serviceability_context`, `offer_context`, `order_context`, `payment_context`) travel to the agent as A2A request metadata. `import_forwarded_context` (a `before_agent_callback`) copies them into the agent's session state so its tools and templated instructions can use them.
+- **Agent → gateway.** A2A does not return remote state changes, so `export_context_delta` (an `after_tool_callback`) adds `_context_update` to a tool's response. The gateway's `ContextBridgePlugin` merges it into the session before the handoff node runs.
+- **Deterministic handoffs.** `HandoffPolicyNode` checks the merged state after each agent and routes to the next agent within the same turn. This replaces the former `after_agent_callback` transfers and the synthetic "Proceed to payment" re-run.
+- **Cross-domain side effects** do not call other agents. Notifications are written to a transactional **outbox** (`notifications` rows with `status='pending'`) that the customer communication service dispatches; quote status updates and customer-state lookups use shared SQL helpers (`sales_common.repositories`).
 
-### ADK Session State Implementation
+### Session State, Sessions and Memory
 
-The system uses **ADK session state as a shared structured memory layer** across the entire sales workflow. This is not just generic chat memory; it is a deliberate contract for moving critical business context between agents without re-parsing free-form conversation.
+The system uses **ADK session state as a shared, structured memory layer** across the sales journey. It is a deliberate contract for moving exact business facts between agents without re-parsing free-form conversation.
 
-**Current state contracts in use:**
+| Scope | Keys | Written by |
+|---|---|---|
+| Session (journey) | `customer_context` | discovery tools after registration or lookup |
+| | `serviceability_context` | serviceability agent callback after a coverage check |
+| | `offer_context` | offer management tools after a quote |
+| | `order_context` | order tools after order creation |
+| | `payment_context` | payment tools after processing |
+| Session (workflow) | `last_agent`, `last_reply`, `transcript`, `turn_user_message`, `handoff_hops`, `a2a_outbound_message`, `appointment_confirmed_order` | gateway workflow nodes and `ContextBridgePlugin` |
+| User (`user:`) | `user:customer_id`, `user:company_name` | `finish_turn`, so a returning browser is recognized in a new session |
 
-- `customer_context` — published by DiscoveryAgent after prospect registration or company lookup so downstream agents know the authoritative customer identity and service address.
-- `serviceability_context` — published by ServiceabilityAgent after GIS validation so ProductAgent and OfferManagementAgent can reason over confirmed access technology, serviceability status, and infrastructure details.
-- `order_context` — published by OrderAgent after quote-to-order conversion so PaymentAgent and Fulfillment can consume the exact `order_id`, `customer_id`, selected services, and commercial payload.
-- `payment_context` — published by PaymentAgent after successful processing so downstream confirmation, activation, and notification logic can consume the exact payment outcome and transaction identifiers.
+- **Sessions** are durable: ADK `DatabaseSessionService` on PostgreSQL in the gateway and in every agent service. They survive restarts and are shared by all instances.
+- **Identity:** the browser generates an anonymous `csa_uid` (UUIDv4); the ADK user id is `web:<uuid>`. Chat tokens are signed with `SESSION_SECRET_KEY` and can be revoked.
+- **Long-term memory:** `sales_common.memory.PostgresMemoryService` stores user and agent turns in `adk_memories` (PostgreSQL full-text search, scoped per app and user). The session is saved to memory after each turn, and relevant memories are given to the router.
+- **Context management:** every ADK `App` uses events compaction (every 8 invocations with overlap 2, or above 60k tokens) and Gemini context caching (TTL 30 min, min 4096 tokens).
 
-**Why this was implemented:**
-
-- **To prevent hallucinated handoff data.** Exact values like zip codes, order IDs, offer IDs, and transaction IDs should not be regenerated from conversation text.
-- **To support multi-turn workflows.** Payment, scheduling, activation, and notifications often happen on later turns; session state preserves authoritative context across those boundaries.
-- **To decouple reasoning from transaction semantics.** The LLM can decide what step comes next, while deterministic tools remain the source of truth for what already happened.
-- **To make recovery and retries safe.** If an agent transfer is retried or a model turn is empty, the next component can resume from state instead of guessing from chat history.
-
-**Benefits of this approach:**
-
-- **Higher reliability** for agent-to-agent workflows because downstream steps consume machine-written state instead of model-written prose.
-- **Cleaner prompt design** because prompts can assume structured context exists instead of repeatedly extracting the same facts.
-- **Safer transactional chaining** across quote → order → payment → fulfillment → activation.
-- **Better observability** because state reads and writes can be logged at each boundary.
-
-**Current implementation pattern:**
-
-1. A deterministic tool completes a business step.
-2. That tool writes a compact structured payload into `tool_context.state[...]`.
-3. The next agent reads the state key instead of inferring the result from prior messages.
-4. If the conversational handoff is brittle, a wrapper-level `after_agent_callback` can use that same state to enforce the next transfer or synthesize the next deterministic opener.
-
-This is why the current design still uses agents: the LLM remains responsible for conversational flexibility and routing, while **ADK session state provides the structured continuity layer** needed for exact business workflows.
+**Why:** exact values (zip codes, order ids, offer ids, transaction ids) are never regenerated from conversation text; multi-turn steps (payment, scheduling, activation) resume from state; retries and restarts are safe; and each state write is observable in logs.
 
 ---
 
 ## Agent Architecture
 
-### Super Agent / Sub-Agent Hierarchy
-
-The system implements a **hierarchical orchestration pattern** where a root SuperAgent delegates to 10 specialized sub-agents using ADK's native `sub_agents=[]` mechanism:
+### Gateway Workflow and Agent Services
 
 ```
-                         ┌─────────────────────┐
-                         │     SuperAgent       │
-                         │  (Root Orchestrator) │
-                         │                      │
-                         │  • Intent Analysis   │
-                         │  • Routing Rules     │
-                         │  • Session State     │
-                         │  • Guardrails        │
-                         └──────────┬───────────┘
-                                    │
-           ┌────────────────────────┼────────────────────────┐
-           │                        │                        │
-   ┌───────▼────────┐     ┌────────▼────────┐     ┌────────▼─────────┐
-   │   DISCOVERY     │     │  CONFIGURATION  │     │   TRANSACTION    │
-   │   CLUSTER       │     │  CLUSTER        │     │   CLUSTER        │
-   ├─────────────────┤     ├─────────────────┤     ├──────────────────┤
-   │ GreetingAgent   │     │ Serviceability  │     │ OrderAgent       │
-   │  └ phone script │     │  Agent          │     │  └ carts, orders │
-   │                 │     │  └ GIS/coverage  │     │                  │
-   │ DiscoveryAgent  │     │                 │     │ PaymentAgent     │
-   │  └ prospect DB  │     │ ProductAgent    │     │  └ credit, auth  │
-   │                 │     │  └ catalog+RAG   │     │                  │
-   │ FAQAgent        │     │                 │     │ ServiceFulfill.  │
-   │  └ knowledge    │     │ OfferManagement │     │  └ scheduling    │
-   │    base         │     │  └ pricing,     │     │  └ dispatch      │
-   │                 │     │    quotes       │     │  └ activation    │
-   │                 │     │                 │     │                  │
-   │                 │     │                 │     │ CustomerComms    │
-   │                 │     │                 │     │  └ notifications │
-   └─────────────────┘     └─────────────────┘     └──────────────────┘
+                        ┌───────────────────────────────┐
+                        │  Gateway (SuperAgent)          │
+                        │  sales_journey Workflow        │
+                        │  • route_intent (router LLM)   │
+                        │  • dispatch                    │
+                        │  • HandoffPolicyNode           │
+                        │  • sessions + memory           │
+                        └───────────────┬───────────────┘
+                                        │ A2A
+         ┌──────────────────────────────┼──────────────────────────────┐
+         │                              │                              │
+┌────────▼─────────┐        ┌───────────▼────────────┐       ┌─────────▼──────────────┐
+│ DISCOVERY        │        │ CONFIGURATION          │       │ TRANSACTION            │
+├──────────────────┤        ├────────────────────────┤       ├────────────────────────┤
+│ greeting_agent   │        │ serviceability_agent   │       │ order_agent            │
+│ discovery_agent  │        │   └ MCP: serviceability│       │ payment_agent          │
+│ faq_agent        │        │ product_agent          │       │ service_fulfillment_   │
+│                  │        │   └ MCP: catalog + RAG │       │   agent                │
+│                  │        │ offer_management_agent │       │ customer_communication_│
+│                  │        │                        │       │   agent (outbox)       │
+└──────────────────┘        └────────────────────────┘       └────────────────────────┘
 ```
 
 ### Agent Registry
 
-| Agent | Cluster | DB Tables Owned | Infrastructure |
-|-------|---------|----------------|----------------|
-| **SuperAgent** | Orchestrator | — (routes only) | ADK Runner |
-| **GreetingAgent** | Discovery | — | Static content |
-| **DiscoveryAgent** | Discovery | `accounts`, `contacts`, `spend`, `opportunities`, `insights`, `actions` | Unified SQLite |
-| **FAQAgent** | Discovery | — | Knowledge base |
-| **ServiceabilityAgent** | Configuration | — (stateless) | GIS API (mock) |
-| **ProductAgent** | Configuration | — | JSON Catalog + ChromaDB |
-| **OfferManagementAgent** | Configuration | `quotes` | Unified SQLite |
-| **OrderAgent** | Transaction | `carts`, `cart_items`, `orders`, `order_items` | Unified SQLite |
-| **PaymentAgent** | Transaction | `payments` | Unified SQLite + hardened payment pipeline (idempotency, state machine, audit trail, rate limiting) |
-| **ServiceFulfillmentAgent** | Transaction | `fulfillments`, `customer_master` | Unified SQLite + Scheduler |
-| **CustomerCommunicationAgent** | Transaction | `notifications`, `dedup_cache` | Unified SQLite + SMTP |
+| Agent (A2A name) | Directory | Port | Cluster | Tables owned | Tools / infrastructure |
+|-------|---------|------|---------|----------------|----------------|
+| Gateway (`sales_journey`) | `SuperAgent/` | 8000 | Orchestrator | `adk_memories`, `revoked_sessions` | ADK Runner, router LLM, React UI |
+| `greeting_agent` | `GreetingAgent/` | 8209 | Discovery | — | Prompt only |
+| `discovery_agent` | `DiscoveryAgent/` | 8201 | Discovery | `accounts`, `contacts`, `spend`, `opportunities`, `insights`, `actions` | PostgreSQL tools |
+| `faq_agent` | `FAQAgent/` | 8210 | Discovery | — | Prompt only |
+| `serviceability_agent` | `ServiceabilityAgent/` | 8202 | Configuration | — | MCP → serviceability service (`coverage_zones`) |
+| `product_agent` | `ProductAgent/` | 8203 | Configuration | — | MCP → catalog service (`products` + ChromaDB RAG) |
+| `offer_management_agent` | `OfferManagement/` | 8204 | Configuration | `quotes` | PostgreSQL tools, price book |
+| `order_agent` | `OrderAgent/` | 8205 | Transaction | `carts`, `cart_items`, `orders`, `order_items` | PostgreSQL tools |
+| `payment_agent` | `PaymentAgent/` | 8206 | Transaction | `payments`, `payment_events`, `payment_rate_limit`, `customer_payment_methods` | Hardened payment pipeline |
+| `service_fulfillment_agent` | `ServiceFulfillmentAgent/` | 8207 | Transaction | `fulfillments`, `customer_master` | Scheduling, provisioning, activation |
+| `customer_communication_agent` | `CustomerCommunicationAgent/` | 8208 | Transaction | `notifications`, `dedup_cache` | Outbox dispatcher, SMTP or simulated delivery |
+
+| Tool service | Directory | Port | Tables owned | Interfaces |
+|---|---|---|---|---|
+| Catalog | `services/catalog/` | 8101 | `products` | REST `/api/v1`, MCP `/mcp/` (8 tools), ChromaDB knowledge index |
+| Serviceability | `services/serviceability/` | 8102 | `coverage_zones` | REST `/api/v1`, MCP `/mcp/` (6 tools), optional upstream GIS |
+
+The service manifest used by all scripts is [`scripts/services.conf`](scripts/services.conf); the gateway's routing registry is `SuperAgent/super_agent/registry.py`.
 
 ### Agent Routing Priority
 
-SuperAgent routes user messages in this priority order:
+The router (`route_intent`) picks one agent per turn in this priority order:
 
 | Priority | Intent Pattern | Target Agent |
 |----------|---------------|--------------|
-| 1 | Company/business identification | DiscoveryAgent |
-| 2 | Address validation, coverage check | ServiceabilityAgent |
-| 3 | Product catalog, specs, SLA questions | ProductAgent |
-| 4 | Pricing, quotes, discounts | OfferManagementAgent |
-| 5 | Cart, checkout, order placement | OrderAgent |
-| 6 | Payment, credit check | PaymentAgent |
-| 7 | Installation, scheduling, activation | ServiceFulfillmentAgent |
-| 8 | Send notification, show history | CustomerCommunicationAgent |
-| 9 | Greetings ("Hi", "Hello") | GreetingAgent |
-| 10 | Policy, SLA, general questions | FAQAgent |
+| 1 | Company/business identification | `discovery_agent` |
+| 2 | Address validation, coverage check | `serviceability_agent` |
+| 3 | Product catalog, specs, SLA questions (no pricing) | `product_agent` |
+| 4 | Pricing, quotes, discounts | `offer_management_agent` |
+| 5 | Cart, checkout, order placement | `order_agent` |
+| 6 | Payment, credit check | `payment_agent` |
+| 7 | Installation, scheduling, activation | `service_fulfillment_agent` |
+| 8 | Send notification, show history | `customer_communication_agent` |
+| 9 | Greetings ("Hi", "Hello"); pure greetings skip the router | `greeting_agent` |
+| 10 | Policy, SLA, general questions; fallback for invalid router output | `faq_agent` |
 
 ---
 
-## Unified Database Architecture
+## Database Architecture (PostgreSQL)
 
-All agents share a **single SQLite database** (`sales_agent.db`) with WAL mode and foreign key enforcement. This replaces the earlier per-agent database design (separate `discover_prospecting_clean.db`, `orders.db`, `quotes.db`, `notifications.db`) with a consolidated schema of **17 tables across 7 domains**.
+All services share **one PostgreSQL 16 database** (a `postgres:16` container or your own server locally, Cloud SQL in GCP). It replaces the earlier SQLite `sales_agent.db` and its GCS sync.
+
+- **Schema** is managed only by versioned SQL migrations in `db/migrations/` (`001_sales_schema.sql` 19 sales tables, `002_catalog.sql` `products`, `003_platform.sql` `adk_memories` + `revoked_sessions`, `004_coverage.sql` `coverage_zones`). Services never create business tables at runtime.
+- **Seed data** in `db/seed/` (demo accounts exported from the legacy SQLite database, 16 SKUs, 38 coverage ZIPs) is applied once per database.
+- **Apply** with `scripts/db.sh migrate | seed | reset --yes` or `python -m sales_common.migrate [--seed]`. Applied files are tracked in `schema_migrations` / `seed_versions`.
+- **Library-managed tables:** ADK session tables (`sessions`, `events`, `app_states`, `user_states`) are created by `DatabaseSessionService`, and `a2a_tasks` by the a2a-sdk `DatabaseTaskStore`.
+- **Access:** agent tools use `sales_common.db` (psycopg 3 connection pool, dict rows, `transaction()`); ADK sessions and tasks use SQLAlchemy + asyncpg.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     sales_agent.db  (SQLite + WAL)                       │
-├──────────────┬───────────┬───────────┬──────────┬────────┬──────────────┤
-│  DISCOVERY   │   OFFER   │   ORDER   │ PAYMENT  │FULFILL │    COMMS     │
-│  (6 tables)  │ (1 table) │ (4 tables)│(1 table) │(1 tbl) │  (2 tables)  │
-│              │           │           │          │        │              │
-│ accounts     │ quotes    │ carts     │ payments │fulfill-│ notifications│
-│ contacts     │           │ cart_items│          │ ments  │ dedup_cache  │
-│ spend        │           │ orders    │          │        │              │
-│ opportunities│           │ order_    │          │        │              │
-│ insights     │           │   items   │          │        │              │
-│ actions      │           │           │          │        │              │
-├──────────────┴───────────┴───────────┴──────────┴────────┴──────────────┤
-│                 CUSTOMER DOMAIN (1 table — post-fulfillment only)        │
-│                              customer_master                             │
-└──────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│           PostgreSQL 16  (one database, table ownership per service)      │
+├──────────────┬───────────┬───────────┬──────────┬──────────┬──────────────┤
+│  DISCOVERY   │   OFFER   │   ORDER   │ PAYMENT  │ FULFILL  │    COMMS     │
+│ accounts     │ quotes    │ carts     │ payments │fulfill-  │ notifications│
+│ contacts     │           │ cart_items│ payment_ │ ments    │  (outbox)    │
+│ spend        │           │ orders    │  events  │customer_ │ dedup_cache  │
+│ opportunities│           │ order_    │ payment_ │ master   │              │
+│ insights     │           │  items    │ rate_... │          │              │
+│ actions      │           │           │ customer_│          │              │
+│              │           │           │ payment_ │          │              │
+│              │           │           │ methods  │          │              │
+├──────────────┴───────────┴───────────┴──────────┴──────────┴──────────────┤
+│ TOOL SERVICES   products (catalog) · coverage_zones (serviceability)      │
+│ PLATFORM        adk_memories · revoked_sessions · ADK sessions · a2a_tasks│
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Configuration:** Set `SALES_AGENT_DB_PATH` environment variable to override the default path (`SuperAgent/data/sales_agent.db`).
+Table ownership (the single writer per table, and the remaining cross-domain writers) is documented in [db/README.md](db/README.md).
 
 ### Entity Relationship Diagram
 
@@ -380,7 +378,7 @@ erDiagram
         text customer_id FK
         text transaction_id
         real amount
-        text status "pending/authorized/captured/failed"
+        text status "initiated/processing/completed/failed"
         int credit_score
         text payment_method
         text expires_at
@@ -425,8 +423,9 @@ erDiagram
         text message
         text customer_id FK
         text order_id FK
-        text status "pending/sent/failed"
+        text status "pending/sent/simulated/failed"
         text channels_json
+        text metadata_json "template + args"
     }
 
     dedup_cache {
@@ -437,24 +436,24 @@ erDiagram
 
 ### How Entities Are Updated Along the Sales Conversation
 
-The table below maps each conversation stage to the database operations performed. Each row represents a user turn that triggers one or more agent actions:
+Each row is a user turn that triggers one or more agent actions:
 
-| Stage | Conversation Trigger | Agent | Tables Written | Operation |
+| Stage | Conversation Trigger | Agent / service | Tables Written | Operation |
 |-------|---------------------|-------|---------------|-----------|
-| **1. Greeting** | "Hi, I need internet for my office" | GreetingAgent | — | No DB writes. Returns phone script. |
-| **2. Discovery** | "We're VoiceStream Networks at 123 Main St, Boston" | DiscoveryAgent | `accounts` | **INSERT** new company record with address, zip code, customer_id (UUID). |
-| | *(agent asks for contact info)* | DiscoveryAgent | `contacts` | **INSERT** contact with name, title, email (required), phone (required). |
-| | *(agent runs BANT qualification)* | DiscoveryAgent | `opportunities`, `insights` | **INSERT** opportunity with BANT scores; **INSERT** buying signals and pain points. |
-| **3. Serviceability** | "Yes, check if we're serviceable" | ServiceabilityAgent | — | No DB writes. Stateless GIS/coverage lookup returns available infrastructure. |
-| **4. Product** | "Show me Fiber 5G specs" | ProductAgent | — | No DB writes. Catalog tools read from hardcoded `PRODUCT_CATALOG` dict; RAG (`search_product_knowledge`) reads from ChromaDB vector store for documentation-level questions only. |
-| **5. Quote** | "Give me pricing for Fiber 5G + SD-WAN" | OfferManagementAgent | `quotes` | **INSERT** quote with offer_id, items_json, pricing breakdown, term, discounts, totals. Status: `active`. Expires in 30 days. |
-| **6. Order** | "Proceed with this quote" | OrderAgent | `carts`, `cart_items`, `orders`, `order_items` | **INSERT** cart + cart items from quote. **INSERT** order + order items. **UPDATE** `quotes.status` → `ordered`. Order status: `pending_payment`. Expires in 48h. |
-| **7. Payment** | "Process payment" | PaymentAgent | `payments`, `orders` | **INSERT** payment record with credit score, authorization. **UPDATE** `orders.status` → `paid`. |
-| **8. Scheduling** | "Schedule installation" | ServiceFulfillmentAgent | `fulfillments` | **INSERT** fulfillment record with appointment date. Status: `scheduled`. |
-| **9. Dispatch** | *(triggered by scheduling)* | ServiceFulfillmentAgent | `fulfillments` | **UPDATE** dispatch_id, status → `dispatched`. |
-| **10. Installation** | *(technician completes)* | ServiceFulfillmentAgent | `fulfillments` | **UPDATE** status → `installed`. |
-| **11. Activation** | "Activate service" | ServiceFulfillmentAgent | `fulfillments`, `customer_master`, `accounts`, `orders` | **UPDATE** fulfillment with circuit_id, account_id, status → `activated`. **INSERT** `customer_master` record. **UPDATE** `accounts.Existing_Customer` → `Y`. **UPDATE** `orders.status` → `fulfilled`. |
-| **Cross-cutting** | *(after each lifecycle event)* | CustomerCommunicationAgent | `notifications`, `dedup_cache` | **INSERT** notification (order confirmation, payment receipt, install reminder, activation notice). **INSERT** dedup key to prevent duplicates. |
+| **1. Greeting** | "Hi, I need internet for my office" | `greeting_agent` | — | No DB writes. Returns the phone script. |
+| **2. Discovery** | "We're VoiceStream Networks at 123 Main St, Boston" | `discovery_agent` | `accounts` | **INSERT** company with address, zip code, `customer_id`; publishes `customer_context`. |
+| | *(agent asks for contact info)* | `discovery_agent` | `contacts` | **INSERT** contact with name, title, email, phone. |
+| | *(agent runs BANT qualification)* | `discovery_agent` | `opportunities`, `insights` | **INSERT** opportunity with BANT scores; buying signals and pain points. |
+| **3. Serviceability** | *(same turn, deterministic handoff)* or "Check coverage" | `serviceability_agent` → serviceability service | — | No writes. Reads `coverage_zones` through MCP; publishes `serviceability_context`. |
+| **4. Product** | "Show me Fiber 5G specs" | `product_agent` → catalog service | — | No writes. Reads `products` through MCP; `search_product_knowledge` queries the ChromaDB index. |
+| **5. Quote** | "Give me pricing for Fiber 5G + SD-WAN" | `offer_management_agent` | `quotes`, `notifications` | **INSERT** quote (offer_id, items, discounts, totals; status `active`, 30-day expiry); outbox row for the quote confirmation. |
+| **6. Order** | "Proceed with this quote" | `order_agent` | `carts`, `cart_items`, `orders`, `order_items`, `quotes`, `notifications` | **INSERT** cart and order (status `pending_payment`, 48h expiry). **UPDATE** `quotes.status` → `ordered` via `sales_common.repositories.quotes`. Outbox row for the order confirmation. |
+| **7. Scheduling** | "Schedule installation" | `service_fulfillment_agent` | `fulfillments`, `notifications` | **INSERT** fulfillment with appointment (status `scheduled`); the workflow then hands off to payment in the same turn. |
+| **8. Payment** | *(same turn, deterministic handoff)* then card details | `payment_agent` | `payments`, `payment_events`, `orders`, `notifications` | **INSERT** payment + audit events; **UPDATE** `orders.status` → `paid`; outbox row for the payment receipt. |
+| **9. Dispatch / install** | "Simulate install day" | `service_fulfillment_agent` | `fulfillments` | **UPDATE** dispatch id, status → `dispatched` → `installed`. |
+| **10. Activation** | "Activate service" | `service_fulfillment_agent` | `fulfillments`, `customer_master`, `accounts`, `orders`, `notifications` | **UPDATE** fulfillment (circuit_id, account_id, `activated`); **INSERT** `customer_master`; **UPDATE** `accounts."Existing Customer"` → `Y` and `orders.status` → `fulfilled`. |
+| **Cross-cutting** | *(continuous)* | customer communication dispatcher | `notifications`, `dedup_cache` | Picks `pending` outbox rows (`FOR UPDATE SKIP LOCKED`), renders them, sends via SMTP or simulation, marks `sent` / `simulated` / `failed`, records dedup keys. |
+| **Maintenance** | *(startup + hourly)* | gateway (`sales_common.maintenance`) | `quotes`, `carts`, `orders`, `notifications` | Expires stale quotes and carts, cancels timed-out `pending_payment` orders, escalates stuck paid orders, enqueues abandoned-cart / order-cancelled notifications. |
 
 ### Entity Lifecycle State Machines
 
@@ -466,58 +465,57 @@ Cart:       active ──→ (consumed by order)
                  └──→ expired (TTL: 24 hours)
 
 Order:      draft ──→ pending_payment ──→ paid ──→ fulfilled
-                 │                    └──→ cancelled (TTL: 48h)
-                 └──→ escalated (stuck >7 days)
+                           │               └──→ escalated (paid, stuck >7 days)
+                           └──→ cancelled (pending_payment TTL: 48h)
 
-Payment:    pending ──→ authorized ──→ captured
-                 └──→ failed
+Payment:    initiated ──→ processing ──→ completed
+                                   └──→ failed
+
+Notification (outbox): pending ──→ sent | simulated | failed
 
 Fulfillment: scheduled ──→ dispatched ──→ installed ──→ activated
 
 Account:    Existing_Customer=N ──→ Existing_Customer=Y (on activation)
 ```
 
-### Table-to-Agent Access Matrix
 
-| Table | Discovery | Offer | Order | Payment | Fulfillment | Comms | DB Lifecycle |
-|-------|:---------:|:-----:|:-----:|:-------:|:-----------:|:-----:|:------------:|
-| **accounts** | R/W | — | — | — | R/W | — | R |
-| **contacts** | R/W | — | — | — | — | — | R |
-| **spend** | R | — | — | — | — | — | — |
-| **opportunities** | R | — | — | — | — | — | — |
-| **insights** | R/W | — | — | — | — | — | — |
-| **actions** | R | — | — | — | — | — | — |
-| **quotes** | — | R/W | W | — | — | — | W |
-| **carts** | — | — | R/W | — | — | — | W |
-| **cart_items** | — | — | R/W | — | — | — | — |
-| **orders** | — | — | R/W | R/W | R/W | — | R/W |
-| **order_items** | — | — | R/W | — | R | — | — |
-| **payments** | — | — | — | R/W | — | — | R |
-| **fulfillments** | — | — | — | — | R/W | — | R |
-| **customer_master** | — | — | — | — | W | — | R |
-| **notifications** | — | — | — | — | — | R/W | — |
-| **dedup_cache** | — | — | — | — | — | R/W | — |
+### Table-to-Service Access Matrix
 
-> **R** = SELECT, **W** = INSERT/UPDATE. **DB Lifecycle** = background `cleanup_stale_records()` for TTL enforcement.
+| Table | Discovery | Offer | Order | Payment | Fulfillment | Comms | Catalog svc | Serviceability svc | Gateway |
+|-------|:---------:|:-----:|:-----:|:-------:|:-----------:|:-----:|:-----------:|:------------------:|:-------:|
+| **accounts** | R/W | — | — | — | R/W | — | — | — | R |
+| **contacts** | R/W | — | — | — | — | — | — | — | R |
+| **spend**, **actions** | R | — | — | — | — | — | — | — | — |
+| **opportunities**, **insights** | R/W | — | — | — | — | — | — | — | — |
+| **quotes** | — | R/W | W | — | — | — | — | — | W |
+| **carts**, **cart_items** | — | — | R/W | — | — | — | — | — | W |
+| **orders** | — | — | R/W | R/W | R/W | — | — | — | R/W |
+| **order_items** | — | — | R/W | — | R | — | — | — | — |
+| **payments** + payment tables | — | — | — | R/W | — | — | — | — | — |
+| **fulfillments** | — | — | — | — | R/W | — | — | — | — |
+| **customer_master** | R | — | — | — | W | — | — | — | — |
+| **notifications** (outbox) | — | W | W | W | W | R/W | — | — | W |
+| **dedup_cache** | — | — | — | — | — | R/W | — | — | — |
+| **products** | — | — | — | — | — | — | R | — | — |
+| **coverage_zones** | — | — | — | — | — | — | — | R | — |
+| **adk_memories**, **revoked_sessions** | — | — | — | — | — | — | — | — | R/W |
+
+> **R** = SELECT, **W** = INSERT/UPDATE. **Gateway** includes the hourly `cleanup_stale_records()` maintenance. Every agent service and the gateway also use the library-managed ADK session and `a2a_tasks` tables. The follow-up `mcp-remaining-domains` removes the remaining cross-domain writers (e.g. Payment and Fulfillment updating `orders`).
 
 ### PaymentAgent Hardening
 
-The PaymentAgent is implemented as a **deterministic, defense-in-depth payment workflow** rather than a simple "charge card" wrapper. The current design assumes payment is a critical transaction boundary and hardens the flow accordingly.
-
-**Built-in safeguards include:**
+The PaymentAgent is a **deterministic, defense-in-depth payment workflow** rather than a simple "charge card" wrapper:
 
 - **Idempotency keys** on `process_payment()` so client retries return the original result instead of creating duplicate charges.
 - **Duplicate-payment protection** that checks whether an order already has a completed payment before inserting a new one.
-- A **payment state machine** with explicit transitions (`initiated → processing → completed/failed`) instead of writing a final status in one step.
-- **Per-customer rate limiting** for payment attempts to reduce brute-force or accidental repeated submissions.
-- **Velocity-aware approval checks** that simulate transaction-count and cumulative-spend controls before approval.
-- An **immutable `payment_events` audit trail** so every status transition is recorded append-only for traceability.
-- **Cryptographically random tokens and transaction identifiers** rather than predictable derived values.
-- **CVV discard behavior** after validation so sensitive verification data is never stored.
-- **Order-linked payment persistence** in unified SQLite, with `orders.status` updated to `paid` only after successful completion.
-- **Session-state propagation** back into the ADK workflow so downstream agents can consume authoritative `payment_context` without re-inferring payment results from conversation text.
-
-This means the PaymentAgent is designed as a **transaction-safe orchestration component**: the LLM handles conversational collection and routing, while the actual payment semantics are enforced through deterministic code paths, persisted state, and auditable transitions.
+- A **payment state machine** with explicit transitions (`initiated → processing → completed/failed`).
+- **Per-customer rate limiting** for payment attempts (`payment_rate_limit`).
+- **Velocity-aware approval checks** that simulate transaction-count and cumulative-spend controls.
+- An **append-only `payment_events` audit trail** for every status transition.
+- **Cryptographically random tokens and transaction identifiers.**
+- **CVV discard** after validation; sensitive verification data is never stored.
+- **Order-linked persistence** in PostgreSQL, with `orders.status` updated to `paid` only after successful completion, in the same transaction as the payment-receipt outbox row.
+- **Journey-state propagation:** `payment_context` is written to state and returned to the gateway as `_context_update`, so downstream steps never re-infer payment results from conversation text.
 
 ---
 
@@ -526,135 +524,65 @@ This means the PaymentAgent is designed as a **transaction-safe orchestration co
 ### Discovery → Serviceability (zero-click handoff)
 
 ```
-User: "We're Crane.io at 123 Main St, Philadelphia PA"
-  ↓ SuperAgent routes to DiscoveryAgent
-  ↓ Discovery looks up company → adds to database (JSON)
-  ↓ after_agent_callback: transfer_to_agent = "serviceability_agent"
-  ↓ ServiceabilityAgent validates address via GIS API
-  ↓ "✅ Serviceable with Fiber 1G/5G/10G"
-  (No user message needed between Discovery and Serviceability)
+User: "We're Crane.io at 123 Main St, Philadelphia PA 19103"
+  ↓ route_intent → discovery_agent (A2A)
+  ↓ Discovery registers the company; customer_context returns as _context_update
+  ↓ ContextBridgePlugin merges it into the gateway session
+  ↓ HandoffPolicyNode: customer has a zip code, no serviceability check yet
+  ↓ serviceability_agent receives "Check service availability for this address: {JSON}"
+  ↓ serviceability service (MCP) → "✅ Serviceable with Fiber 1G/5G/10G"
+  (Same turn: no user message needed between Discovery and Serviceability)
 ```
 
 ### Product → Offer → Order → Scheduling → Payment (zero-click handoff)
 
 ```
 User: "Fiber 5G pricing with SD-WAN?"
-  ↓ ProductAgent → Catalog lookup
-  ↓ OfferAgent → Pricing calculation (JSON quote)
+  ↓ route_intent → offer_management_agent
+  ↓ Pricing calculation (JSON quote) → quote card in the UI
   ↓ "Quote #12345: $X,XXX/month"
 
 User: "Proceed"
-  ↓ OrderAgent → Create cart + order (status: pending_payment)
+  ↓ route_intent → order_agent → cart + order (status: pending_payment)
 
 User: "Schedule installation for tomorrow morning"
-  ↓ FulfillmentAgent → Schedule installation → "Confirmed! APT-20260505-482"
-  ↓ after_agent_callback: transfer_to_agent = "payment_agent"
-  ↓ PaymentAgent → Credit check + authorization
-  ↓ "Payment authorized! Order confirmed."
-  (No user message needed between Scheduling and Payment)
+  ↓ route_intent → service_fulfillment_agent → schedule_installation → "Confirmed! APT-20260505-482"
+  ↓ ContextBridgePlugin records appointment_confirmed_order
+  ↓ HandoffPolicyNode: order unpaid → payment_agent
+  ↓ PaymentAgent asks for the payment method, then credit check + authorization
+  (Same turn: no user message needed between Scheduling and Payment)
 ```
 
 ---
 
 ## 🗃️ RAG / ChromaDB Knowledge Base
 
-The **ProductAgent** has **two independent data sources** — it is important to understand which is used when:
+Product data and product knowledge live in the **catalog service** (`services/catalog/`), not in the product agent. The product agent reaches both through MCP:
 
-| Data Source | Tools | When Used |
+| Data Source | MCP tools | When Used |
 |-------------|-------|-----------|
-| **`PRODUCT_CATALOG` dict** (hardcoded in `product_tools.py`) | `get_product_by_id`, `list_available_products`, `compare_products`, `search_products_by_criteria`, `suggest_alternatives`, `get_best_value_product` | Product lookups, comparisons, filtering by speed/category |
+| **`products` table** (PostgreSQL, 16 SKUs) | `get_product_by_id`, `list_available_products`, `compare_products`, `search_products_by_criteria`, `suggest_alternatives`, `get_best_value_product`, `get_product_categories` | Product lookups, comparisons, filtering by speed/category |
 | **ChromaDB vector store** (RAG) | `search_product_knowledge` | Documentation-level questions: SLA specifics, installation requirements, codec details, use-case fit |
 
-> **Key nuance:** "Compare Fiber 1G vs 5G" or "Show me Fiber 5G details" → reads from the **hardcoded catalog dict**, NOT RAG. RAG is only invoked when the LLM determines the question needs documentation-level depth beyond the structured catalog (e.g., "What codec does Business Voice use?" or "Is coax suitable for a medical practice?").
+> **Key nuance:** "Compare Fiber 1G vs 5G" reads the **catalog table**, not RAG. RAG is used only when the question needs documentation-level depth (e.g., "What codec does Business Voice use?"). Prices are never returned by the catalog service; they come only from the offer management agent.
 
 ### How RAG Works
 
-When a customer asks a question like *"What is the uptime SLA for Business Fiber 10G?"* or *"Is coax suitable for a medical practice?"*, the ProductAgent calls the `search_product_knowledge` tool instead of a catalog tool. That tool performs a semantic similarity search over the vector store and returns the most relevant documentation chunks as context, which the agent uses to compose a grounded, accurate answer.
-
 ```
 User question
-  → ProductAgent decides: call search_product_knowledge()
-  → Query encoded to 384-dim vector (sentence-transformers)
-  → ChromaDB cosine similarity search → top 3 matching chunks
-  → Formatted as [Source N: filename — section] context block
-  → Agent reads context → composes natural-language response
+  → product_agent calls search_product_knowledge (MCP → catalog service)
+  → query encoded to a 384-dim vector (sentence-transformers all-MiniLM-L6-v2)
+  → ChromaDB similarity search → top_k passages (default 4)
+  → structured passages {text, doc_file, section, product_ids, distance}
+  → agent composes a grounded answer
 ```
 
-### Initial Setup — Populate the Vector Store
+- **Sources:** `services/catalog/data/product_docs/*.md` (fiber, coax, voice, SD-WAN, mobile).
+- **Index:** `CHROMA_PATH` (default `services/catalog/data/embeddings`, gitignored). Build it with `python services/catalog/scripts/ingest_knowledge.py`, or let the service build it in the background on first start (`RAG_BUILD_ON_START=true`).
+- **Docker / Cloud Run:** the catalog image installs CPU-only PyTorch, pre-stages the embedding model at `EMBEDDING_MODEL_PATH` and builds the index at image build time; at runtime it works offline.
+- **Degraded mode:** when the model or index is unavailable, `search_product_knowledge` returns `available: false` and the rest of the catalog keeps working. (In the build sandbox used for the rewrite the model download was blocked, so this path was the one exercised.)
 
-```bash
-pip install chromadb>=0.5.0 sentence-transformers>=2.7.0
-cd ProductAgent
-python scripts/ingest_knowledge.py
-```
-
-> **Note:** `ProductAgent/data/embeddings/` is in `.gitignore` — each developer runs ingestion locally after checkout. The embedding model (`all-MiniLM-L6-v2`, ~87MB) is auto-downloaded from HuggingFace on first run and cached at `~/.cache/huggingface/hub/`.
-
-### RAG Pipeline — Detailed Flow
-
-#### Files on Disk
-
-```
-ProductAgent/
-├── data/
-│   ├── product_docs/              ← 5 markdown knowledge files (858 lines total)
-│   │   ├── fiber_internet.md      (SLAs, install process, use cases)
-│   │   ├── coax_internet.md
-│   │   ├── voice_services.md
-│   │   ├── sd_wan.md
-│   │   └── mobile_services.md
-│   └── embeddings/                ← ChromaDB vector store output (3.2 MB, gitignored)
-│       ├── chroma.sqlite3
-│       └── <uuid>/                (HNSW binary vector data)
-│
-.hf_models/                        ← Embedding model (87 MB, gitignored, project root)
-└── sentence-transformers/
-    └── all-MiniLM-L6-v2/
-        ├── model.safetensors      (neural network weights)
-        ├── tokenizer.json         (WordPiece tokenizer)
-        └── config.json            (architecture)
-```
-
-#### Local Development
-
-1. **Model download** (one-time): `SentenceTransformer('all-MiniLM-L6-v2')` auto-downloads 87 MB to `~/.cache/huggingface/hub/` on first use
-2. **Ingestion** (one-time or when docs change): `python ProductAgent/scripts/ingest_knowledge.py`
-   - Reads `.md` files → splits by `##`/`###` headings → encodes chunks to 384-dim vectors → stores in ChromaDB
-3. **Runtime**: First `search_product_knowledge()` call loads model from HF cache + opens ChromaDB. Subsequent calls reuse the singleton.
-
-#### Docker / Cloud Run
-
-1. **Build time**: `COPY ProductAgent/ ./ProductAgent/` brings pre-built embeddings. `COPY .hf_models/... /app/.hf_models/...` brings model files. **No Python/ingestion runs at build.**
-2. **Runtime**: Model loads from `/app/.hf_models/all-MiniLM-L6-v2` (disk), ChromaDB opens from `/app/ProductAgent/data/embeddings/`. No network needed.
-
-#### Why COPY Instead of RUN at Build Time?
-
-Running `SentenceTransformer(...)` during `docker build` requires PyTorch initialization. On ARM Macs building linux/amd64 images via QEMU, this takes **10+ minutes**. COPY'ing raw files is instant.
-
-| Step | Local Dev | Docker |
-|------|-----------|--------|
-| Model source | `~/.cache/huggingface/hub/` | `/app/.hf_models/all-MiniLM-L6-v2` (COPY'd) |
-| Embeddings created | `python scripts/ingest_knowledge.py` | Never — COPY'd from local |
-| Network needed | First model download only | Never |
-
-### Embedding Model — Docker vs Local
-
-The embedding model loading is environment-aware to avoid slow QEMU emulation during Docker builds:
-
-| Environment | Model Source | Latency |
-|-------------|-------------|---------|
-| **Docker (Cloud Run)** | Pre-copied files at `/app/.hf_models/all-MiniLM-L6-v2` | 0s (COPY'd at build) |
-| **Local dev** | HuggingFace cache (`~/.cache/huggingface/hub/`) | 0s (already cached) |
-| **Fresh clone** | Auto-download from HuggingFace Hub | ~10s (one-time) |
-
-**For Docker deployments:** The `.hf_models/` directory must exist locally (gitignored, 87MB). Set it up once:
-```bash
-mkdir -p .hf_models/sentence-transformers/all-MiniLM-L6-v2
-cp -RLp ~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/*/* \
-  .hf_models/sentence-transformers/all-MiniLM-L6-v2/
-```
-
-This avoids running Python/PyTorch under QEMU during `docker build` (which takes 10+ min on ARM Macs building linux/amd64 images).
+Details: [services/catalog/README.md](services/catalog/README.md).
 
 ---
 
@@ -663,13 +591,14 @@ This avoids running Python/PyTorch under QEMU during `docker build` (which takes
 Typical end-to-end flow:
 
 1. **Discovery** — collect business/location context
-2. **Serviceability** — verify address + infrastructure constraints
+2. **Serviceability** — verify address + infrastructure (automatic after discovery)
 3. **Product** — recommend technically compatible products
 4. **Offer Management** — compute quote JSON (pricing + discounts + totals)
 5. **Order** — cart/checkout and contract creation
-6. **Payment** — credit check + authorization
-7. **Fulfillment** — schedule installation and activation
-8. **Customer Comms** — confirmation and reminder notifications
+6. **Fulfillment** — schedule installation
+7. **Payment** — credit check + authorization (automatic after scheduling)
+8. **Activation** — install day, activation, `customer_master`
+9. **Customer Comms** — confirmations and reminders via the notification outbox
 
 ---
 
@@ -677,13 +606,16 @@ Typical end-to-end flow:
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19 + Vite + Tailwind CSS |
-| Backend | FastAPI + Python 3.12+ |
-| Agent Framework | Google ADK 1.20.0+ |
-| LLM | Gemini 3 Flash Preview (configured via `GEMINI_MODEL`) |
+| Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
+| Gateway / services | FastAPI / Starlette, Python 3.12 |
+| Agent Framework | Google ADK 2.10.0 (`google-adk[a2a,mcp,db]`): `Workflow`, `App`, `DatabaseSessionService`, `RemoteA2aAgent`, `to_a2a`, `McpToolset` |
+| Agent protocol | A2A (a2a-sdk 1.x) with agent cards and a PostgreSQL task store |
+| Tool protocol | MCP (`mcp` 2.x `MCPServer`, streamable HTTP) |
+| LLM | Gemini (configured via `GEMINI_MODEL`, e.g. `gemini-3-flash-preview`) |
 | Streaming | Server-Sent Events (SSE) |
-| Database | SQLite (unified `sales_agent.db` — 17 tables, WAL mode) |
-| Deployment | GCP Cloud Run |
+| Database | PostgreSQL 16 (psycopg 3, SQLAlchemy 2.1 + asyncpg), versioned SQL migrations |
+| RAG | ChromaDB + sentence-transformers (catalog service) |
+| Deployment | Docker Compose locally; Cloud Run + Cloud SQL + Secret Manager on GCP |
 
 ---
 
@@ -691,28 +623,36 @@ Typical end-to-end flow:
 
 ```
 ConversationalSalesAgent/
-├── AGENTS.md                        # Complete architecture and standards guide
-├── CLAUDE.md                        # Claude Code instructions
-├── Scenarios.md                     # Test cases and conversation flows
-├── GCP_DEPLOY.md                    # GCP Cloud Run deployment guide
-├── Dockerfile                       # Multi-stage container build
-├── entrypoint.sh                    # Container startup + GCS DB sync
-├── SuperAgent/
-│   ├── client/                      # React frontend
-│   ├── server/                      # FastAPI backend
-│   ├── super_agent/                 # ADK orchestrator + sub-agent wrappers
-│   ├── start_servers.sh             # Local dev startup script
-│   ├── start_cloud.sh               # Scale Cloud Run service up
-│   ├── shutdown_cloud.sh            # Scale Cloud Run service to zero
-│   └── deploy_cloud.sh              # Build, push, and redeploy to Cloud Run
-├── DiscoveryAgent/
-├── ServiceabilityAgent/
-├── ProductAgent/
+├── AGENTS.md / CLAUDE.md            # Architecture, standards, assistant instructions
+├── README.md / Scenarios.md         # Overview and test scenarios
+├── GCP_DEPLOY.md                    # Multi-service Cloud Run deployment guide
+├── .env.example                     # Shared environment template (copied to .env)
+├── docker-compose.yml               # Full local stack in containers
+├── docs/agent-service-guide.md      # How every agent service is built, served and tested
+├── openspec/changes/                # Design proposals and specs for the rewrite
+├── libs/sales_common/               # Shared runtime library (config, db, A2A, MCP, memory, outbox)
+├── db/                              # migrations/ + seed/ (PostgreSQL), README with table ownership
+├── scripts/                         # services.conf + setup/start/stop/db/deploy scripts, e2e_test.py
+├── services/
+│   ├── catalog/                     # Product catalog REST + MCP + RAG (port 8101)
+│   └── serviceability/              # Address + coverage REST + MCP (port 8102)
+├── SuperAgent/                      # Gateway (port 8000)
+│   ├── super_agent/                 #   sales_journey workflow, registry, router prompt, plugins
+│   ├── server/                      #   FastAPI app: session, chat (SSE), debug endpoints
+│   ├── client/                      #   React UI
+│   └── tests/
+├── DiscoveryAgent/                  # A2A agent services (ports 8201-8210), each with
+├── ServiceabilityAgent/             #   <pkg>/agent.py, prompts.py, tools/, server.py,
+├── ProductAgent/                    #   tests/, Dockerfile, AGENTS.md, README.md
 ├── OfferManagement/
 ├── OrderAgent/
 ├── PaymentAgent/
 ├── ServiceFulfillmentAgent/
-└── CustomerCommunicationAgent/
+├── CustomerCommunicationAgent/
+├── GreetingAgent/
+├── FAQAgent/
+├── BootStrapAgent/                  # ADK bootstrap template (reference only)
+└── tests/integration/               # Multi-process integration test (scripted fake model)
 ```
 
 ---
@@ -721,69 +661,90 @@ ConversationalSalesAgent/
 
 ### Prerequisites
 
-- Python 3.12+
-- Node.js 18+
-- Gemini API key
+- Python 3.12 (3.11+ works for development)
+- Node.js 20 (for the React UI)
+- PostgreSQL 16, either your own server or Docker (`docker compose`)
+- A Gemini API key
 
-### Using the Startup Script (Recommended)
-
-```bash
-# 1. Configure environment
-cd SuperAgent/server
-cp .env.example .env
-# Edit .env: set GOOGLE_API_KEY and GEMINI_MODEL
-
-# 2. Run both servers
-cd ..
-./start_servers.sh
-```
-
-The script auto-detects your `.venv`, cleans up stale processes on ports 8000 and 3000, starts the FastAPI backend and React frontend, and sets up per-agent log splitting.
-
-- Frontend: `http://localhost:3000`
-- Backend health: `http://localhost:8000/health`
-
-### View Logs
+### Option A: Native processes (recommended for development)
 
 ```bash
-tail -f SuperAgent/logs/backend.log
-tail -f SuperAgent/logs/agents/discovery_agent.log
-tail -f SuperAgent/logs/agents/serviceability_agent.log
+# 1. One-time setup: venv, editable installs of libs/sales_common and every service,
+#    client npm ci, and .env copied from .env.example (only if .env does not exist)
+scripts/setup_local.sh
+
+# 2. Edit .env: GOOGLE_API_KEY, GEMINI_MODEL, DATABASE_URL (default postgresql://csa:csa@localhost:5432/csa)
+#    and optionally SESSION_SECRET_KEY (an ephemeral one is generated if empty)
+
+# 3. A PostgreSQL 16 database matching DATABASE_URL, e.g. a throwaway container:
+docker run -d --name csa-pg -e POSTGRES_USER=csa -e POSTGRES_PASSWORD=csa -e POSTGRES_DB=csa \
+  -p 127.0.0.1:5432:5432 postgres:16
+
+# 4. Start everything: migrations + seed, 2 tool services, 10 agents, gateway, Vite UI
+scripts/start_local.sh
 ```
 
-### Stop Servers
+- UI: `http://localhost:3000` (Vite proxies `/api` to the gateway)
+- Gateway health: `http://localhost:8000/health`
+- Agent cards: `http://localhost:8201/.well-known/agent-card.json` … `:8210`
+- Tool services: `http://localhost:8101/docs`, `http://localhost:8102/docs`
+
+Useful flags: `scripts/start_local.sh --only catalog,product,gateway`, `--no-ui`, `--skip-migrate`.
+
+> The `postgres` service in `docker-compose.yml` is not published on the host, so native processes need their own PostgreSQL (as above).
+
+### Option B: Everything in containers
 
 ```bash
-pkill -9 -f 'uvicorn main:app'
-pkill -9 -f 'vite'
+cp .env.example .env      # set GOOGLE_API_KEY, GEMINI_MODEL, POSTGRES_PASSWORD
+docker compose up --build
 ```
 
-### Manual Startup
+Starts PostgreSQL 16, a one-shot `db-init` (migrations + seed), both tool services, all 10 agents and the gateway on a private network. Only the gateway is published: `http://localhost:8000` serves the built UI and the API.
+
+### Logs and Stopping
 
 ```bash
-# Backend
-cd SuperAgent/server
-pip install -e ..
-cp .env.example .env
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Frontend (separate terminal)
-cd SuperAgent/client
-npm install
-npm run dev
+tail -f logs/gateway.log logs/discovery.log logs/serviceability-agent.log   # native processes
+scripts/stop_local.sh                     # stops only the PIDs recorded in logs/pids/
+scripts/stop_local.sh --only order,ui     # stop selected services
+docker compose down                       # containers
 ```
+
+### Database Operations
+
+```bash
+scripts/db.sh migrate            # apply pending migrations
+scripts/db.sh seed               # migrations + seed files (each applied once)
+scripts/db.sh reset --yes        # drop and recreate the schema, then migrate + seed (local hosts only)
+```
+
+### Tests
+
+```bash
+pytest OrderAgent/tests -q                                   # any agent or service
+TEST_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_test pytest SuperAgent/tests -q
+TEST_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_test venv/bin/python -m pytest tests/integration -q -s
+python scripts/e2e_test.py --base-url http://127.0.0.1:8000  # against a running stack (real Gemini)
+```
+
+DB-backed tests are skipped when `TEST_DATABASE_URL` is unset; use a scratch database. Agent tests use a scripted model and need no API key.
 
 ---
 
 ## GCP Cloud Run Deployment
 
-See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for the full deployment guide including:
+The system deploys as **13 Cloud Run services** (public gateway; private agents and tool services called with Google-signed ID tokens), a **Cloud Run job** for migrations + seed, and **Cloud SQL for PostgreSQL 16**:
 
-- One-time GCP project setup (project, APIs, bucket, secrets, IAM)
-- Building and pushing the Docker image
-- Deploying to Cloud Run
-- Day-to-day operations (`start_cloud.sh`, `shutdown_cloud.sh`, `deploy_cloud.sh`)
-- Estimated cost (~$6–21/month with min-instances=0)
+```bash
+scripts/setup_gcp.sh                   # one time: APIs, Artifact Registry, Cloud SQL, secrets, service accounts
+scripts/deploy_cloud.sh                # build, migrate, deploy tools → agents → gateway
+scripts/deploy_cloud.sh --only order   # redeploy one service
+scripts/shutdown_cloud.sh              # pause: gateway private + Cloud SQL stopped
+scripts/start_cloud.sh                 # resume
+```
+
+See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment variables, costs, verification, troubleshooting and rollback.
 
 ---
 
@@ -791,8 +752,15 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for the full deployment guide including:
 
 | File | Purpose |
 |------|---------|
-| [AGENTS.md](./AGENTS.md) | Complete multi-agent system guide and ADK standards |
-| [SuperAgent/README.md](./SuperAgent/README.md) | Runtime, API reference, and orchestration details |
-| [GCP_DEPLOY.md](./GCP_DEPLOY.md) | GCP Cloud Run deployment guide |
+| [AGENTS.md](./AGENTS.md) | Architecture, ADK standards, workflow and handoffs, development workflow |
+| [docs/agent-service-guide.md](./docs/agent-service-guide.md) | Building, serving and testing an agent service |
+| [SuperAgent/README.md](./SuperAgent/README.md) | Gateway: workflow, API, environment variables, tests |
+| [services/catalog/README.md](./services/catalog/README.md) | Catalog REST + MCP + RAG service |
+| [services/serviceability/README.md](./services/serviceability/README.md) | Serviceability REST + MCP service |
+| [db/README.md](./db/README.md) | Migrations, seed files, table ownership |
+| [GCP_DEPLOY.md](./GCP_DEPLOY.md) | Multi-service Cloud Run deployment guide |
+| [tests/integration/README.md](./tests/integration/README.md) | Multi-process integration test |
 | [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
+| `openspec/changes/` | Design proposals, decisions and specs (`mcp-remaining-domains` is a planned follow-up) |
 | Each `<Agent>/AGENTS.md` | Individual agent documentation |
+

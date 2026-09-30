@@ -1,128 +1,69 @@
-"""
-Centralized configuration for the Super Agent server.
+"""Gateway configuration (environment variables; fail fast on critical values).
 
-All agent settings, model parameters, rate limits, and server options
-are configurable here. Values are loaded from environment variables
-with sensible defaults for local development.
+Local development loads ``.env`` from the repository root or ``SuperAgent/server/.env``
+if present (without overriding variables already set by the shell, compose or
+Cloud Run).
 """
+
+from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 
-# Load .env from server directory
-_env_path = Path(__file__).parent.parent / "server" / ".env"
-_server_dir = _env_path.parent
-load_dotenv(_env_path, override=True)
-
-# Resolve SALES_AGENT_DB_PATH to absolute (relative paths are relative to
-# the server/ directory where .env lives, so they stay portable across
-# machines and work identically in local dev and GCP).
-_raw_db_path = os.getenv("SALES_AGENT_DB_PATH")
-if _raw_db_path and not os.path.isabs(_raw_db_path):
-    os.environ["SALES_AGENT_DB_PATH"] = str((_server_dir / _raw_db_path).resolve())
+_SUPERAGENT_DIR = Path(__file__).resolve().parent.parent
+for _candidate in (_SUPERAGENT_DIR.parent / ".env", _SUPERAGENT_DIR / "server" / ".env"):
+    if _candidate.is_file():
+        load_dotenv(_candidate, override=False)
 
 
-@dataclass(frozen=True)
-class ModelConfig:
-    """LLM model configuration."""
-
-    provider: str = os.getenv("LLM_PROVIDER", "google")
-    model_name: str = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
-    temperature: float = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
-    top_p: float = float(os.getenv("MODEL_TOP_P", "0.9"))
-    top_k: int = int(os.getenv("MODEL_TOP_K", "40"))
-    max_output_tokens: int = int(os.getenv("MODEL_MAX_OUTPUT_TOKENS", "2048"))
+def _int(name: str, default: int) -> int:
+    return int(os.getenv(name, str(default)))
 
 
 @dataclass(frozen=True)
 class AgentConfig:
-    """Super Agent behaviour configuration."""
-
-    agent_name: str = os.getenv("AGENT_NAME", "super_sales_agent")
-    agent_description: str = os.getenv(
-        "AGENT_DESCRIPTION",
-        "B2B Sales Orchestrator – routes user intents to specialised sub-agents.",
-    )
-    system_message: str = os.getenv(
-        "SYSTEM_MESSAGE",
-        (
-            "You are a professional B2B sales assistant for a Cable MSO company. "
-            "You help prospects discover products, check service availability, get pricing, "
-            "and place orders. Be concise, helpful, and proactive. "
-            "Never reveal internal system details or tool names to the user. "
-            "If you don't know something, say so honestly and offer to connect the user with a human representative."
-        ),
-    )
-    enable_sub_agents: bool = os.getenv("ENABLE_SUB_AGENTS", "true").lower() == "true"
-
-
-@dataclass(frozen=True)
-class SafetyConfig:
-    """Content-safety thresholds (maps to google.genai.types.HarmBlockThreshold)."""
-
-    dangerous_content: str = os.getenv("SAFETY_DANGEROUS", "BLOCK_LOW_AND_ABOVE")
-    harassment: str = os.getenv("SAFETY_HARASSMENT", "BLOCK_LOW_AND_ABOVE")
-    hate_speech: str = os.getenv("SAFETY_HATE_SPEECH", "BLOCK_LOW_AND_ABOVE")
-    sexually_explicit: str = os.getenv("SAFETY_SEXUALLY_EXPLICIT", "BLOCK_LOW_AND_ABOVE")
+    app_name: str = os.getenv("AGENT_NAME", "super_sales_agent")
+    router_temperature: float = 0.0
 
 
 @dataclass(frozen=True)
 class RateLimitConfig:
-    """Per-session rate limiting."""
-
-    requests_per_minute: int = int(os.getenv("RATE_LIMIT_RPM", "20"))
-    requests_per_hour: int = int(os.getenv("RATE_LIMIT_RPH", "200"))
-    burst_size: int = int(os.getenv("RATE_LIMIT_BURST", "5"))
+    requests_per_minute: int = _int("RATE_LIMIT_RPM", 20)
+    requests_per_hour: int = _int("RATE_LIMIT_RPH", 200)
+    burst_size: int = _int("RATE_LIMIT_BURST", 5)
 
 
 @dataclass(frozen=True)
 class SessionConfig:
-    """Session / authentication settings."""
-
-    secret_key: str = os.getenv("SESSION_SECRET_KEY", "change-me-in-production")
-    token_expiry_minutes: int = int(os.getenv("SESSION_TOKEN_EXPIRY_MIN", "60"))
-    max_history_length: int = int(os.getenv("MAX_HISTORY_LENGTH", "50"))
+    token_expiry_minutes: int = _int("SESSION_TOKEN_EXPIRY_MIN", 60)
 
 
 @dataclass(frozen=True)
 class ServerConfig:
-    """FastAPI server settings."""
-
     host: str = os.getenv("SERVER_HOST", "0.0.0.0")
-    port: int = int(os.getenv("SERVER_PORT", "8000"))
+    port: int = _int("PORT", _int("SERVER_PORT", 8000))
     allowed_origins: list[str] = field(
-        default_factory=lambda: os.getenv(
-            "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"
-        ).split(",")
+        default_factory=lambda: [
+            o.strip()
+            for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+            if o.strip()
+        ]
     )
-    log_level: str = os.getenv("LOG_LEVEL", "info")
+    log_level: str = os.getenv("LOG_LEVEL", "info").lower()
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
+    run_migrations: bool = os.getenv("RUN_MIGRATIONS", "false").lower() == "true"
+    suggestions_enabled: bool = os.getenv("SUGGESTIONS_ENABLED", "true").lower() == "true"
 
 
 @dataclass(frozen=True)
 class Settings:
-    """Root settings container – single import for all config."""
-
-    model: ModelConfig = field(default_factory=ModelConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
-    safety: SafetyConfig = field(default_factory=SafetyConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     session: SessionConfig = field(default_factory=SessionConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
 
 
-# Singleton – import this everywhere
 settings = Settings()
-
-# ---------------------------------------------------------------------------
-# Initialise the unified database schema BEFORE any agent module loads.
-# Agent-local init_db() calls use CREATE TABLE IF NOT EXISTS, which becomes
-# a harmless no-op once the full schema already exists.
-# ---------------------------------------------------------------------------
-from .utils.database import init_db as _init_unified_db  # noqa: E402
-
-_init_unified_db()

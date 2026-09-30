@@ -1,144 +1,58 @@
-"""
-Payment Agent - Payment processing and billing management.
+"""Payment agent service - payment method setup, payment processing, credit checks, billing.
 
-This agent is a deterministic, tool-based agent that:
-1. Validates payment methods (credit cards, ACH, etc.)
-2. Processes payments securely
-3. Performs business credit checks
-4. Generates invoices and manages billing
-
-It is designed to be integrated into the Super Agent orchestration system
-as a sub-agent for the Payment cluster.
+The gateway workflow engages this agent after installation scheduling with an explicit
+message such as "Installation is scheduled for order <id>; total <amount>. Start payment."
+(this replaces the legacy SuperAgent ``after_agent_callback`` payment opener).
 """
 
-import os
-from dotenv import load_dotenv
+from typing import Optional
 
-# Try importing Google ADK dependencies (may not be available in test environments)
-try:
-    from google.adk.agents import Agent
-    from google.genai import types
-    HAS_GOOGLE_ADK = True
-except (ImportError, ModuleNotFoundError):
-    HAS_GOOGLE_ADK = False
-    print("WARNING: Google ADK not available. Using mock agent for testing.")
-    # Mock Agent class for testing
-    class Agent:
-        def __init__(self, **kwargs):
-            self.name = kwargs.get('name', 'mock_agent')
-            self.model = kwargs.get('model', 'mock_model')
-            self.instruction = kwargs.get('instruction', '')
-            self.description = kwargs.get('description', '')
-            self.tools = kwargs.get('tools', [])
-        
-        def run(self, message: str) -> str:
-            return f"Mock response for: {message}"
-    
-    class types:
-        class GenerateContentConfig:
-            def __init__(self, **kwargs):
-                pass
-        class SafetySetting:
-            def __init__(self, **kwargs):
-                pass
-        class HarmCategory:
-            HARM_CATEGORY_DANGEROUS_CONTENT = "dangerous"
-            HARM_CATEGORY_HARASSMENT = "harassment"
-            HARM_CATEGORY_HATE_SPEECH = "hate_speech"
-            HARM_CATEGORY_SEXUALLY_EXPLICIT = "sexually_explicit"
-        class HarmBlockThreshold:
-            BLOCK_LOW_AND_ABOVE = "block_low"
-            BLOCK_MEDIUM_AND_ABOVE = "block_medium"
+from google.adk import Agent
+from google.adk.models.base_llm import BaseLlm
+
+from sales_common.config import generate_config, model_name
+from sales_common.context import export_context_delta, import_forwarded_context
+from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
 
 from .prompts import PAYMENT_AGENT_INSTRUCTION, PAYMENT_SHORT_DESCRIPTION
+from .tools.billing_tools import generate_invoice, get_payment_history, setup_payment_plan
+from .tools.credit_tools import check_business_credit, get_credit_report
 from .tools.payment_tools import (
-    validate_payment_method,
-    process_payment,
-    get_payment_methods,
-    tokenize_payment_method,
     add_payment_method,
+    get_payment_methods,
+    process_payment,
+    tokenize_payment_method,
+    validate_payment_method,
 )
-from .tools.credit_tools import (
-    check_business_credit,
-    get_credit_report,
-)
-from .tools.billing_tools import (
-    generate_invoice,
-    get_payment_history,
-    setup_payment_plan,
-)
-from .utils.logger import get_logger
-
-# Load environment variables
-# Note: load_dotenv() removed - sub-agents should not load root .env to avoid conflicts
-# load_dotenv()
-
-logger = get_logger(__name__)
-
-# Agent configuration from environment
-GEMINI_MODEL = os.getenv("GEMINI_MODEL")
-# AGENT_NAME no longer needed - using hardcoded name for sub-agent consistency
-
-logger.info(f"Initializing Payment Agent with model: {GEMINI_MODEL}")
 
 
-# Create the payment agent following ADK pattern
-payment_agent = Agent(
-    name="payment_agent",  # Hardcoded to avoid .env conflicts when loaded as sub-agent
-    model=GEMINI_MODEL,
-    instruction=PAYMENT_AGENT_INSTRUCTION,
-    description=PAYMENT_SHORT_DESCRIPTION,
-    tools=[
-        # Payment processing tools
-        validate_payment_method,
-        process_payment,
-        get_payment_methods,
-        tokenize_payment_method,
-        add_payment_method,
-        # Credit check tools
-        check_business_credit,
-        get_credit_report,
-        # Billing tools
-        generate_invoice,
-        get_payment_history,
-        setup_payment_plan,
-    ],
-    generate_content_config=types.GenerateContentConfig(
-        temperature=0.0,  # Deterministic - critical for payment accuracy
-        max_output_tokens=2048,  # Sufficient for detailed responses
-        safety_settings=[
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-            ),
+def build_agent(model: Optional[str | BaseLlm] = None) -> Agent:
+    """Build the payment_agent."""
+    return Agent(
+        name="payment_agent",
+        model=model or model_name(),
+        description=PAYMENT_SHORT_DESCRIPTION,
+        static_instruction=PAYMENT_AGENT_INSTRUCTION,
+        instruction=JOURNEY_CONTEXT_INSTRUCTION,
+        tools=[
+            # Payment processing
+            validate_payment_method,
+            process_payment,
+            get_payment_methods,
+            tokenize_payment_method,
+            add_payment_method,
+            # Credit checks
+            check_business_credit,
+            get_credit_report,
+            # Billing
+            generate_invoice,
+            get_payment_history,
+            setup_payment_plan,
         ],
-    ),
-)
+        before_agent_callback=[import_forwarded_context],
+        after_tool_callback=[export_context_delta],
+        generate_content_config=generate_config(temperature=0.0, max_output_tokens=2048),
+    )
 
 
-def get_agent() -> Agent:
-    """
-    Public accessor for the payment agent.
-    
-    This function is used when integrating the agent as a sub-agent
-    in the Super Agent orchestration system.
-    
-    Returns:
-        Configured payment Agent instance
-    """
-    return payment_agent
-
-
-logger.info(f"Payment Agent initialized: {payment_agent.name}")
+root_agent = build_agent()

@@ -1,20 +1,37 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# Project context shown to AI when creating OpenSpec artifacts.
+context: |
+  Project: B2B Conversational Sales Agent (telecom/broadband B2B sales: discovery,
+  serviceability, product catalog, offers/pricing, orders, payment, fulfillment,
+  customer communications).
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack:
+    - Python 3.12, Google ADK (google-adk 2.x), Gemini models via GEMINI_MODEL env var
+    - Agent-to-agent communication: A2A protocol (each agent is its own container)
+    - Tool access for catalog and serviceability: REST APIs (FastAPI) + MCP servers
+      (streamable HTTP); agents consume them via ADK McpToolset
+    - Data: PostgreSQL (Cloud SQL in GCP, postgres container locally); ChromaDB for
+      product RAG embeddings
+    - Backend gateway: FastAPI with SSE streaming; Frontend: React 19 + Vite + Tailwind CSS
+    - Deployment: Docker, docker compose (local), Google Cloud Run (one service per container)
+
+  Conventions:
+    - Every agent follows the ADK Bootstrap Template layout (see AGENTS.md)
+    - Deterministic business data comes from tools/APIs only, never from LLM generation
+    - Tools return structured JSON with explicit field names
+    - No hardcoded secrets; config via environment variables; fail fast on missing
+      critical config (e.g. GEMINI_MODEL)
+    - React: Tailwind CSS only, no inline styles
+    - Documentation-first: AGENTS.md, component AGENTS.md, README.md stay in sync with code
+
+rules:
+  proposal:
+    - Include a "Non-goals" section
+    - Call out impact on agents, APIs/MCP servers, data, scripts, and documentation
+  design:
+    - Include a Mermaid diagram for any new or changed runtime topology
+    - Cite the ADK / A2A / MCP API names actually used (import paths)
+  tasks:
+    - Group tasks by component (agent, service, script, docs)
+    - Each task must be verifiable (test, command, or observable behavior)

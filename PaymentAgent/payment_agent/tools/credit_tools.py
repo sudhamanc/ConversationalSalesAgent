@@ -4,12 +4,12 @@ Credit check and assessment tools for the Payment Agent.
 These tools handle business credit checks and credit report retrieval.
 """
 
-import json
 from typing import Dict, Any
 from datetime import datetime
-from ..utils.logger import get_logger
+import logging
+from sales_common.ids import stable_number
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def check_business_credit(
@@ -194,7 +194,7 @@ def _calculate_mock_credit_score(years_in_business: int, business_name: str) -> 
     base_score = min(years_in_business * 10, 50)
     
     # Add variation based on business name (for testing variety)
-    name_hash = hash(business_name) % 30
+    name_hash = stable_number(business_name, 30)
     
     # Final score between 20-100
     score = max(20, min(100, base_score + name_hash))

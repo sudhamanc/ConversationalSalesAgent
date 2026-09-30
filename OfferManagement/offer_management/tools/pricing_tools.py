@@ -6,16 +6,19 @@ All prices are controlled here so OfferManagement is the single source of truth.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
-import sys
 from typing import Any, Dict, List, Optional
 
+import psycopg
 from google.adk.tools.tool_context import ToolContext
+
+from sales_common import db, notifications
 
 from ..utils.cache import cache_result, get_cached_result
 from ..utils.logger import get_logger
-from ..utils.quote_db import save_quote, load_quotes_for_customer, load_quote, mark_quote_ordered
+from ..utils.quote_db import save_quote, load_quotes_for_customer, load_quote
 
 logger = get_logger(__name__)
 
@@ -107,6 +110,31 @@ def _make_offer_id(payload: Dict[str, Any]) -> str:
     return f"OFF-{digest.upper()}"
 
 
+def _publish_offer_context(
+    tool_context: Optional[ToolContext],
+    quote: Dict[str, Any],
+    customer_id: Optional[str],
+    company_name: Optional[str],
+) -> None:
+    """Write ``offer_context`` to session state (exported to the gateway as ``_context_update``)."""
+    if tool_context is None:
+        return
+    tool_context.state["offer_context"] = {
+        "offer_id": quote["offer_id"],
+        "customer_id": customer_id,
+        "company_name": company_name,
+        "items": quote["items"],
+        "term_months": quote["term_months"],
+        "total_price": quote["total_price"],
+        "monthly_total": quote["monthly_total"],
+        "total_discount": quote["total_discount"],
+    }
+    logger.info(
+        f"[STATE WRITE] generate_offer_quote -> offer_context offer_id={quote['offer_id']} "
+        f"total_price={quote['total_price']}"
+    )
+
+
 def find_best_bundle_offer(items: str, term_months: int = 12, bant_score: float = 0.0) -> Dict[str, Any]:
     """
     Evaluate bundle, term, and BANT-score discount rates for selected products.
@@ -167,45 +195,8 @@ def find_best_bundle_offer(items: str, term_months: int = 12, bant_score: float 
     return result
 
 
-def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 0.0, customer_id: str = None, company_name: str = None, customer_email: str = None, tool_context: Optional[ToolContext] = None) -> Dict[str, Any]:
-    """
-    Generate an itemized quote with price points, discounts, and totals.
-
-    Args:
-        items: JSON string of list, e.g. '[{"product_id": "FIBER_1G", "quantity": 1}]'
-        term_months: Contract duration (12, 24, or 36)
-        bant_score: Prospect's BANT qualification score (0-100). Defaults to 0.
-        customer_id: Customer identifier from Discovery (e.g., CUST-20260415-001). Links quote to customer.
-        company_name: Company name from Discovery. Used for quote lookup.
-        customer_email: Customer email address for sending quote confirmation notification.
-
-    Returns required JSON payload for downstream order placement.
-    """
-    # Read customer_context from session state if customer_id / company_name
-    # weren't passed by the LLM. Falls through to existing behavior if state
-    # isn't populated yet.
-    if tool_context is not None:
-        cust_ctx = tool_context.state.get("customer_context") or {}
-        logger.info(f"[STATE READ] generate_offer_quote <- customer_context = {cust_ctx}")
-        state_cid = cust_ctx.get("customer_id")
-        state_company = cust_ctx.get("company_name")
-        if not customer_id and isinstance(state_cid, str):
-            customer_id = state_cid
-        if not company_name and isinstance(state_company, str):
-            company_name = state_company
-
-    if isinstance(items, str):
-        items = json.loads(items)
-    normalized_items = _normalize_items(items)
-    bundle_result = find_best_bundle_offer(normalized_items, term_months, bant_score)
-    if not bundle_result.get("found"):
-        return bundle_result
-
-    cache_key = f"quote:{json.dumps(normalized_items)}:{term_months}:{bant_score}"
-    cached = get_cached_result(cache_key)
-    if cached:
-        return cached
-
+def _price_quote(normalized_items: List[Dict[str, Any]], bundle_result: Dict[str, Any], term_months: int) -> Dict[str, Any]:
+    """Customer-independent line-item pricing, discounts and totals (cacheable)."""
     bundle_discount_rate = float(bundle_result["bundle_discount_rate"])
     term_discount_rate = float(bundle_result["term_discount_rate"])
     bant_discount_rate = float(bundle_result.get("bant_discount_rate", 0.0))
@@ -301,10 +292,7 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
             "amount": total_bant_discount,
         })
 
-    result = {
-        "offer_id": bundle_result["offer_id"],
-        "customer_id": customer_id,
-        "company_name": company_name,
+    return {
         "term_months": term_months if term_months in TERM_DISCOUNTS else 12,
         "items": priced_items,
         "subtotal": subtotal,
@@ -315,52 +303,123 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
         "yearly_total": yearly_total,
     }
 
-    cache_result(cache_key, result)
+
+def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 0.0, customer_id: str = None, company_name: str = None, customer_email: str = None, tool_context: Optional[ToolContext] = None) -> Dict[str, Any]:
+    """
+    Generate an itemized quote with price points, discounts, and totals.
+
+    Args:
+        items: JSON string of list, e.g. '[{"product_id": "FIBER_1G", "quantity": 1}]'
+        term_months: Contract duration (12, 24, or 36)
+        bant_score: Prospect's BANT qualification score (0-100). Defaults to 0.
+        customer_id: Customer identifier from Discovery (e.g., CUST-20260415-001). Links quote to customer.
+        company_name: Company name from Discovery. Used for quote lookup.
+        customer_email: Customer email address for sending quote confirmation notification.
+
+    Returns required JSON payload for downstream order placement.
+    """
+    # Read customer_context from session state if customer_id / company_name
+    # weren't passed by the LLM. Falls through to existing behavior if state
+    # isn't populated yet.
+    if tool_context is not None:
+        cust_ctx = tool_context.state.get("customer_context") or {}
+        logger.info(f"[STATE READ] generate_offer_quote <- customer_context = {cust_ctx}")
+        state_cid = cust_ctx.get("customer_id")
+        state_company = cust_ctx.get("company_name")
+        if not customer_id and isinstance(state_cid, str):
+            customer_id = state_cid
+        if not company_name and isinstance(state_company, str):
+            company_name = state_company
+
+    if isinstance(items, str):
+        items = json.loads(items)
+    normalized_items = _normalize_items(items)
+    bundle_result = find_best_bundle_offer(normalized_items, term_months, bant_score)
+    if not bundle_result.get("found"):
+        return bundle_result
+
+    # Cache only the customer-independent pricing. Customer identity, offer id,
+    # persistence and notifications are applied per call (a cached result used to
+    # be returned as-is, skipping persistence and leaking the previous caller's
+    # customer fields and notification recipient).
+    cache_key = f"pricing:{json.dumps(normalized_items)}:{term_months}:{bant_score}"
+    pricing = get_cached_result(cache_key)
+    if pricing is None:
+        pricing = _price_quote(normalized_items, bundle_result, term_months)
+        cache_result(cache_key, pricing)
+    pricing = copy.deepcopy(pricing)
+    priced_items = pricing["items"]
+    subtotal = pricing["subtotal"]
+    discount_breakdown = pricing["discount_breakdown"]
+    total_discount = pricing["total_discount"]
+    total_price = pricing["total_price"]
+    monthly_total = pricing["monthly_total"]
+    yearly_total = pricing["yearly_total"]
+
+    result = {
+        # Offer ids are per customer: the same bundle quoted to two customers must
+        # not share a quotes row (the upsert would overwrite the other customer).
+        "offer_id": _make_offer_id({"bundle": bundle_result["offer_id"], "customer": customer_id or company_name or ""}),
+        "customer_id": customer_id,
+        "company_name": company_name,
+        "term_months": pricing["term_months"],
+        "items": priced_items,
+        "subtotal": subtotal,
+        "discount_breakdown": discount_breakdown,
+        "total_discount": total_discount,
+        "total_price": total_price,
+        "monthly_total": monthly_total,
+        "yearly_total": yearly_total,
+    }
     logger.info("Generated offer quote %s for %d items (bant_score=%.1f)", result["offer_id"], len(priced_items), bant_score)
 
     # Publish offer to session state so OrderAgent can read offer_id directly
     # without the LLM having to extract it from conversation history.
-    if tool_context is not None:
-        tool_context.state["offer_context"] = {
-            "offer_id": result["offer_id"],
-            "customer_id": customer_id,
-            "company_name": company_name,
-            "items": priced_items,
-            "term_months": result["term_months"],
-            "total_price": total_price,
-            "monthly_total": monthly_total,
-            "total_discount": total_discount,
-        }
-        logger.info(f"[STATE WRITE] generate_offer_quote -> offer_context offer_id={result['offer_id']} total_price={total_price}")
+    _publish_offer_context(tool_context, result, customer_id, company_name)
 
-    # Persist quote to SQLite so returning customers can retrieve it later
+    # Persist the quote and enqueue the QUOTE_CONFIRMATION notification in one
+    # transaction (transactional outbox; the communication service delivers it).
     try:
-        save_quote(result, customer_id=customer_id, company_name=company_name)
-    except Exception as exc:
-        logger.warning("Failed to persist quote %s (non-fatal): %s", result["offer_id"], exc)
-
-    # Auto-send QUOTE_CONFIRMATION notification
-    try:
-        comms = sys.modules.get("customer_communication_agent.tools.notification_tools")
-        if comms and hasattr(comms, "send_quote_confirmation") and customer_email:
-            comms.send_quote_confirmation(
-                quote_id=result["offer_id"],
-                customer_name=company_name or "",
-                customer_email=customer_email,
-                customer_phone=None,
-                items_summary=", ".join(i["product_name"] for i in priced_items),
-                monthly_total=result["monthly_total"],
-                term_months=result.get("term_months", 12),
-                total_discount=result["total_discount"],
-            )
-            logger.info("Auto-sent QUOTE_CONFIRMATION for %s to %s", result["offer_id"], customer_email)
+        with db.transaction() as conn:
+            saved = save_quote(result, customer_id=customer_id, company_name=company_name, conn=conn)
+            notification_id = None
+            if customer_email:
+                notification_id = notifications.enqueue(
+                    "quote_confirmation",
+                    recipient_email=customer_email,
+                    customer_id=customer_id,
+                    args={
+                        "offer_id": result["offer_id"],
+                        "quote_id": result["offer_id"],
+                        "customer_id": customer_id,
+                        "company_name": company_name,
+                        "customer_name": company_name or "",
+                        "customer_email": customer_email,
+                        "items": priced_items,
+                        "items_summary": ", ".join(i["product_name"] for i in priced_items),
+                        "term_months": result["term_months"],
+                        "subtotal": subtotal,
+                        "discount_breakdown": discount_breakdown,
+                        "total_discount": total_discount,
+                        "total_price": total_price,
+                        "monthly_total": monthly_total,
+                        "yearly_total": yearly_total,
+                        "created_at": saved["created_at"],
+                        "expires_at": saved["expires_at"],
+                    },
+                    conn=conn,
+                )
+        if notification_id:
+            logger.info("Enqueued QUOTE_CONFIRMATION %s for %s", notification_id, result["offer_id"])
             result["notification_sent"] = {
                 "type": "QUOTE_CONFIRMATION",
                 "recipient": customer_email,
                 "quote_id": result["offer_id"],
+                "notification_id": notification_id,
+                "status": "pending",
             }
-    except Exception as exc:
-        logger.warning("QUOTE_CONFIRMATION notification failed (non-fatal): %s", exc)
+    except psycopg.Error as exc:
+        logger.warning("Failed to persist quote %s (non-fatal): %s", result["offer_id"], exc)
 
     return result
 
@@ -416,7 +475,7 @@ def get_existing_quotes(company_name: str = None, customer_id: str = None) -> Di
             "quotes": summaries,
             "message": f"Found {len(summaries)} active quote(s) for this customer."
         }
-    except Exception as exc:
+    except psycopg.Error as exc:
         logger.error("Error retrieving quotes: %s", exc)
         return {"success": False, "error": str(exc)}
 
@@ -445,6 +504,6 @@ def get_quote_details(offer_id: str) -> Dict[str, Any]:
             "created_at": quote["created_at"],
             "expires_at": quote["expires_at"],
         }
-    except Exception as exc:
+    except psycopg.Error as exc:
         logger.error("Error loading quote %s: %s", offer_id, exc)
         return {"success": False, "error": str(exc)}

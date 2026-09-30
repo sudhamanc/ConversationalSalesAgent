@@ -1,3 +1,5 @@
-from .agent import root_agent, get_agent
+"""SuperAgent gateway orchestration package (ADK 2.x ``sales_journey`` workflow)."""
 
-__all__ = ["root_agent", "get_agent"]
+from .agent import build_gateway_app
+
+__all__ = ["build_gateway_app"]

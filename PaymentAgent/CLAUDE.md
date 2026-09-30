@@ -25,10 +25,10 @@
 ## Key Rules
 
 1. **Deterministic** - Temperature = 0.0
-2. **Transactional** - Phase 3 (after order confirmation)
+2. **Transactional** - engaged by the gateway after installation scheduling
 3. **Security-critical** - PCI DSS awareness (production)
-4. **5 tools** - Credit check, validation, fraud, auth, processing
-5. **Status:** ⏳ Standalone (not yet integrated)
+4. **A2A service** - follow [docs/agent-service-guide.md](../docs/agent-service-guide.md); PostgreSQL via `sales_common.db`, notifications via the outbox
+5. **Status:** A2A service `payment_agent` (port 8206)
 
 ---
 

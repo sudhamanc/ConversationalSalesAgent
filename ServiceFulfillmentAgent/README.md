@@ -1,61 +1,50 @@
 # Service Fulfillment Agent
 
-Deterministic POST-SALE agent for installation/provisioning and service activation workflows.
+A2A service `service_fulfillment_agent`: installation scheduling for created orders, equipment
+provisioning, technician dispatch and service activation (prospect → customer). Details and
+the tool/table/journey-key matrix are in [AGENTS.md](AGENTS.md); the shared service contract is
+[docs/agent-service-guide.md](../docs/agent-service-guide.md).
 
-## Current Role
+## Scope
 
-ServiceFulfillmentAgent executes fulfillment after payment/order confirmation.
+Does: installation slots and booking, reschedule/cancel, provisioning and dispatch, installation
+completion, service activation, fulfillment status.
 
-This agent is **active in SuperAgent**.
+Does not: address/coverage checks (serviceability_agent), product recommendation
+(product_agent), pricing (offer_management_agent), order creation (order_agent), payment
+(payment_agent). After a successful booking the gateway continues with payment_agent.
 
-## Scope Boundaries
+## Environment
 
-### ServiceFulfillmentAgent does
-- Installation slot coordination/scheduling workflows
-- Provisioning and activation progression
-- Fulfillment status transitions and completion signaling
+| Variable | Required | Notes |
+|---|---|---|
+| `GEMINI_MODEL` | yes | no default |
+| `GOOGLE_API_KEY` | yes (or Vertex AI env) | |
+| `DATABASE_URL` | yes | `postgresql://user:pw@host:5432/db` |
+| `PUBLIC_URL` | yes | e.g. `http://localhost:8207` (agent card) |
+| `SERVICE_AUTH`, `LOG_LEVEL`, `COMPACTION_*`, `CONTEXT_CACHE_*` | no | see the guide |
 
-### ServiceFulfillmentAgent does not do
-- PRE-SALE address/coverage checks (ServiceabilityAgent)
-- Product recommendation (ProductAgent)
-- Pricing/discounting (OfferManagementAgent)
-- Payment authorization (PaymentAgent)
-
-## Package Layout
-
-```text
-ServiceFulfillmentAgent/
-├── service_fulfillment_agent/
-│   ├── agent.py
-│   ├── prompts.py
-│   ├── tools/
-│   └── models/
-├── main.py
-└── tests/
-```
-
-## SuperAgent Integration
-
-- Wrapper location: `SuperAgent/super_agent/sub_agents/service_fulfillment/agent.py`
-- Triggered after successful order + payment flow
-
-## Local Run
+## Local run
 
 ```bash
-cd ServiceFulfillmentAgent
-pip install -e .
-python main.py
+uv pip install -p venv/bin/python -e libs/sales_common -e ServiceFulfillmentAgent
+venv/bin/python -m sales_common.migrate --seed
+GEMINI_MODEL=gemini-3-flash-preview PUBLIC_URL=http://localhost:8207 \
+DATABASE_URL=postgresql://csa:<password>@127.0.0.1:5432/csa \
+  venv/bin/uvicorn service_fulfillment_agent.server:app --host 0.0.0.0 --port 8207
+```
+
+Agent card: `GET /.well-known/agent-card.json`; health: `GET /healthz`.
+
+## Docker
+
+```bash
+docker build -f ServiceFulfillmentAgent/Dockerfile -t service-fulfillment-agent .   # repo root context
 ```
 
 ## Tests
 
 ```bash
-cd /Users/sudhamanc/Desktop/Github/ConversationalSalesAgent
-./.venv/bin/python -m pytest ServiceFulfillmentAgent/tests -q
+TEST_DATABASE_URL=postgresql://csa:<password>@127.0.0.1:5432/csa_test_fulfillment \
+  venv/bin/python -m pytest ServiceFulfillmentAgent/tests -q
 ```
-
-## References
-
-- Root architecture: `AGENTS.md`
-- SuperAgent runtime: `SuperAgent/README.md`
-- Scenario validation: `Scenarios.md`

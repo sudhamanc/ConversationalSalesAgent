@@ -1,5 +1,7 @@
 # ADK Session State Implementation Plan
 
+> **Superseded (historical document).** This plan describes the ADK 1.x, single-process design (in-process sub-agents, `after_agent_callback` handoffs, SQLite). The journey-context keys it introduced are still used, but they now cross service boundaries through A2A metadata and `_context_update` (`sales_common.context`) and are stored in PostgreSQL-backed ADK sessions. For the current design see [AGENTS.md](AGENTS.md#state-sessions-memory-and-context-features), [SuperAgent/README.md](SuperAgent/README.md) and `openspec/changes/adk2-workflow-orchestration/design.md`.
+
 **Goal:** Use ADK's session-scoped state (accessed via `ToolContext`) to pass structured data between agents deterministically — eliminating LLM-mediated data transfer for critical values (IDs, addresses, amounts) while leaving all existing DB reads, writes, and lookups completely unchanged.
 
 ---

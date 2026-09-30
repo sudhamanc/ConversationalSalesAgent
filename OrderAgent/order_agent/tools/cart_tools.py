@@ -1,13 +1,17 @@
 """
 Shopping cart management tools for the Order Agent.
 
-Carts are persisted in SQLite (OrderAgent/data/orders.db) so they survive
+Carts are persisted in PostgreSQL (``carts`` / ``cart_items``) so they survive
 process restarts and returning customers can resume where they left off.
 """
 
-import json
-from typing import Dict, Any, List
-from datetime import datetime
+from typing import Any, Dict
+
+import psycopg
+
+from sales_common.db import now_iso
+from sales_common.ids import new_id
+
 from ..utils.logger import get_logger
 from ..utils.database import save_cart, load_cart, load_carts_for_customer, delete_cart
 
@@ -27,15 +31,15 @@ def create_cart(customer_id: str) -> Dict[str, Any]:
     logger.info(f"Creating cart for customer {customer_id}")
     
     try:
-        cart_id = f"CART-{datetime.now().strftime('%Y%m%d%H%M%S')}-{hash(customer_id) % 1000:03d}"
+        cart_id = new_id("CART", timestamp_format="%Y%m%d%H%M%S")
         
         cart = {
             "cart_id": cart_id,
             "customer_id": customer_id,
             "items": [],
             "total_amount": 0.0,
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat(),
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
             "expires_at": None,  # Set to 30 minutes from last update
         }
         
@@ -49,7 +53,7 @@ def create_cart(customer_id: str) -> Dict[str, Any]:
             "message": f"Cart {cart_id} created successfully"
         }
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error creating cart: {e}")
         return {
             "success": False,
@@ -103,7 +107,7 @@ def add_to_cart(
         
         # Update total
         cart["total_amount"] = sum(item["subtotal"] for item in cart["items"])
-        cart["updated_at"] = datetime.now().isoformat()
+        cart["updated_at"] = now_iso()
         
         save_cart(cart)
         
@@ -116,7 +120,7 @@ def add_to_cart(
             "message": f"Added {service_type} to cart"
         }
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error adding to cart: {e}")
         return {
             "success": False,
@@ -147,7 +151,7 @@ def remove_from_cart(cart_id: str, service_type: str) -> Dict[str, Any]:
         
         cart["items"] = [item for item in cart["items"] if item["service_type"] != service_type]
         cart["total_amount"] = sum(item["subtotal"] for item in cart["items"])
-        cart["updated_at"] = datetime.now().isoformat()
+        cart["updated_at"] = now_iso()
         
         save_cart(cart)
         
@@ -160,7 +164,7 @@ def remove_from_cart(cart_id: str, service_type: str) -> Dict[str, Any]:
             "message": f"Removed {service_type} from cart"
         }
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error removing from cart: {e}")
         return {
             "success": False,
@@ -193,7 +197,7 @@ def get_cart(cart_id: str) -> Dict[str, Any]:
             "cart": cart
         }
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error getting cart: {e}")
         return {
             "success": False,
@@ -223,7 +227,7 @@ def clear_cart(cart_id: str) -> Dict[str, Any]:
         
         cart["items"] = []
         cart["total_amount"] = 0.0
-        cart["updated_at"] = datetime.now().isoformat()
+        cart["updated_at"] = now_iso()
         
         save_cart(cart)
         
@@ -232,7 +236,7 @@ def clear_cart(cart_id: str) -> Dict[str, Any]:
             "message": f"Cart {cart_id} cleared successfully"
         }
     
-    except Exception as e:
+    except psycopg.Error as e:
         logger.error(f"Error clearing cart: {e}")
         return {
             "success": False,

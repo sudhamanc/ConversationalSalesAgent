@@ -1,11 +1,5 @@
-"""
-Product Agent package.
+"""Product agent: technical product specifications via the catalog MCP service."""
 
-A specialized AI agent for retrieving technical specifications,
-product features, and catalog-driven comparisons.
-"""
+from .agent import build_agent, root_agent
 
-from .agent import get_agent, product_agent
-
-__all__ = ["get_agent", "product_agent"]
-__version__ = "1.0.0"
+__all__ = ["build_agent", "root_agent"]

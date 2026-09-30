@@ -1,17 +1,47 @@
-.venv/
+# Build context = repository root for every service image (see */Dockerfile).
+# Also used as the Cloud Build upload filter (gcloud builds submit --ignore-file=.dockerignore),
+# so patterns are written to mean the same thing in .dockerignore and .gitignore syntax:
+# root-only patterns start with "/", everything else uses "**/".
+
+# VCS, local tooling, secrets
+/.git/
+**/.git/
+/.claude/
+/.cache/
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python / Node artifacts
+/venv/
+**/.venv/
+**/.venv312/
 **/__pycache__/
 **/*.pyc
 **/*.egg-info/
-.git/
-**/node_modules/
-SuperAgent/client/dist/
-**/logs/
-**/.env
-**/tests/
-Slidev/
 **/.pytest_cache/
-openspec/
-docs/
-*.pptx
-*.html
-*.png
+**/node_modules/
+/SuperAgent/client/dist/
+/.hf_models/
+
+# Runtime state
+/logs/
+**/logs/
+**/*.db-wal
+**/*.db-shm
+**/*.log
+
+# Catalog vector index: the catalog image builds its own at build time
+/services/catalog/data/embeddings/
+
+# Not needed in any image
+**/tests/
+/openspec/
+/docs/
+/Slidev/
+/*.pptx
+/*.docx
+/*.html
+/*.png
+/*.pdf
+**/*.pptx

@@ -1,11 +1,5 @@
-"""
-Serviceability Agent package.
+"""Serviceability Agent (A2A service) consuming the serviceability MCP server."""
 
-This package provides address validation and service availability checking
-for B2B telecommunications sales.
-"""
+from .agent import build_agent, root_agent
 
-from .agent import get_agent, serviceability_agent
-
-__version__ = "1.0.0"
-__all__ = ["get_agent", "serviceability_agent"]
+__all__ = ["build_agent", "root_agent"]

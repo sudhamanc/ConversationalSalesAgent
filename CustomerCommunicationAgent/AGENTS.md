@@ -1,121 +1,114 @@
 # Customer Communication Agent
 
-**Type:** Cross-Cutting Agent (Notification & Communication)
-**Framework:** Google ADK 1.20.0+
-**Package:** `customer_communication_agent`
-**Status:** ✅ Deployed in SuperAgent
+**Type:** A2A agent service + notification outbox dispatcher
+**Framework:** Google ADK 2.10 (`sales_common`), PostgreSQL
+**Package:** `customer_communication_agent` (distribution `customer-communication-agent`)
+**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
 
 ---
 
 ## Purpose
 
-The Customer Communication Agent handles **automated and manual notifications** across the entire sales lifecycle. It sends confirmations, reminders, and status updates via email (SMTP) and maintains a full notification history with deduplication.
+Delivers every customer notification in the system. Other services never call this agent: they
+insert a `pending` row into the shared `notifications` outbox with
+`sales_common.notifications.enqueue(...)` inside their business transaction. This service's
+dispatcher renders and delivers those rows (SMTP or simulated). The LLM agent handles explicit
+user requests (resend a confirmation, send an installation/activation notice, show history).
 
----
+## Layout
 
-## Architecture
-
-### Agent Configuration
-
-| Attribute | Value |
-|-----------|-------|
-| **Agent Name** | `customer_communication_agent` (hardcoded) |
-| **Model** | `os.getenv("GEMINI_MODEL")` — no default |
-| **Temperature** | 0.0 (deterministic) |
-| **Max Tokens** | 2048 |
-| **Database** | Unified `sales_agent.db` → `notifications`, `dedup_cache` tables |
-| **SMTP** | Real email when `SMTP_ENABLED=true` |
-
-### Component Structure
-
-```
+```text
 CustomerCommunicationAgent/
+├── pyproject.toml                 # customer-communication-agent; depends on sales-common
+├── Dockerfile                     # build context = repo root
 ├── customer_communication_agent/
-│   ├── __init__.py
-│   ├── agent.py                    # Agent definition
-│   ├── prompts.py                  # System instructions
-│   ├── models/
-│   │   └── __init__.py             # Notification, NotificationType, NotificationStatus
-│   ├── tools/
-│   │   └── notification_tools.py   # All notification functions
-│   └── utils/
-│       └── db.py                   # SQLite persistence helpers
-└── tests/
+│   ├── agent.py                   # build_agent(model=None) ; root_agent
+│   ├── prompts.py                 # static_instruction (not templated)
+│   ├── server.py                  # create_a2a_app(root_agent, extra_lifespan=dispatcher_lifespan)
+│   ├── dispatcher.py              # dispatch_pending(), background loop, dedup, retries
+│   ├── templates.py               # subject/body per notification type (TEMPLATES, TEMPLATE_ARGS)
+│   ├── delivery.py                # SMTP settings + send_email (never logs passwords)
+│   ├── models/__init__.py         # NotificationStatus, legacy type aliases
+│   ├── tools/notification_tools.py# send_* tools + get_notification_history
+│   └── utils/db.py                # read queries (history, single row)
+├── data/                          # legacy SQLite files (unused at runtime; kept for reference)
+└── tests/                         # pytest; PostgreSQL tests need TEST_DATABASE_URL
 ```
 
-### Database Tables (2 tables — Communication Domain)
+## Outbox flow
 
-| Table | Purpose | Key Fields |
-|-------|---------|------------|
-| `notifications` | Notification history | notification_id (PK), notification_type, recipient_email, subject, message, customer_id, order_id, status, sent_at |
-| `dedup_cache` | Prevent duplicate sends | dedup_key (PK), sent_at |
+1. Producer: `notifications.enqueue(type, recipient_email=..., args={...}, order_id=..., conn=conn)`
+   → `notifications(status='pending', metadata_json={"template": type, "args": {...}})`.
+2. `dispatch_pending(limit=50)` (one transaction):
+   `SELECT * FROM notifications WHERE status='pending' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT n`.
+3. Render with `templates.render(template, args)`; unknown templates use `generic`.
+4. Dedup: key `<template>:<recipient>[:<quote_id|cart_id|order_id>][:<new_status|payment_status>]`
+   in `dedup_cache`, 5-minute window, guarded by `pg_advisory_xact_lock` → `status='deduped'`.
+5. Deliver: email via SMTP when `SMTP_ENABLED=true` → `sent`; otherwise `simulated`.
+   SMS is always simulated. `abandoned_cart` is email-only.
+6. Every processed row: `attempts += 1`, `updated_at`, `subject`, `message`; success sets `sent_at`
+   and `dedup_cache`. An SMTP error leaves the row `pending` with `error`; after 3 attempts it is
+   `failed`. A row with no deliverable channel fails immediately.
+7. `dispatcher_lifespan` runs `dispatch_pending` every `NOTIFY_POLL_SECONDS` via
+   `asyncio.to_thread`; on shutdown it lets an in-flight batch finish (max 30 s), then stops.
 
----
+Statuses: `pending`, `sent`, `simulated`, `deduped`, `failed`.
 
-## Tools (10 Functions)
+## Template args (producers must supply these in `args`)
 
-### Notification Senders
+`customer_name` falls back to `company_name`, then "Valued Customer". `order_id` falls back to the
+row's `order_id` column. Missing values render as `N/A` / `TBD`.
 
-| Tool | Trigger Event | Notification Type |
-|------|--------------|-------------------|
-| `send_order_confirmation` | OrderAgent creates order | `ORDER_CONFIRMATION` |
-| `send_quote_confirmation` | OfferManagement generates quote | `QUOTE_CONFIRMATION` |
-| `send_payment_notification` | PaymentAgent processes payment | `PAYMENT_SUCCESS` / `PAYMENT_FAILED` |
-| `send_installation_reminder` | Before scheduled install date | `INSTALL_REMINDER` |
-| `send_service_activated_notification` | Activation completes | `SERVICE_ACTIVATED` |
-| `send_abandoned_cart_reminder` | Cart expires (TTL cleanup) | `ABANDONED_CART` |
-| `send_order_status_update` | Any order status change | `ORDER_STATUS_UPDATE` |
-| `send_install_scheduled_notification` | Install scheduled | `INSTALL_SCHEDULED` |
-| `send_install_dispatched_notification` | Technician dispatched | `INSTALL_DISPATCHED` |
+| Type | Args |
+|---|---|
+| `quote_confirmation` | `quote_id`, `customer_name`, `items_summary`, `monthly_total`, `term_months`, `total_discount` |
+| `order_confirmation` | `order_id`, `customer_name`, `service_type`, `total_amount` |
+| `payment_confirmation` | `order_id`, `customer_name`, `payment_status` (`success`/`failed`), `amount`, `currency`, `payment_method`, `transaction_id`, `failure_reason` (shown when failed) |
+| `installation_scheduled` | `order_id`, `customer_name`, `appointment_date`, `window`, `service_address` |
+| `installation_reminder` | `order_id`, `customer_name`, `installation_date`, `installation_time`, `service_address` |
+| `installation_complete` | `order_id`, `customer_name`, `equipment_installed` (list) |
+| `service_activated` | `order_id`, `customer_name`, `service_type`, `account_number` (or `account_id`), `circuit_id` |
+| `abandoned_cart` | `cart_id`, `customer_name`, `cart_items`, `total_amount` |
+| `order_status_update` | `order_id`, `customer_name`, `old_status`, `new_status`, `status_message` |
+| `quote_expired` | `quote_id`, `customer_name`, `expired_at` |
+| `order_cancelled` | `order_id`, `customer_name`, `reason` |
+| `escalation` | `order_id`, `customer_name`, `reason`, `status` |
+| `install_dispatched`* | `order_id`, `customer_name`, `technician_name`, `technician_phone` |
+| any other (`generic`) | `subject`, `message`, `customer_name` (else lists the args) |
 
-### Query Tools
+\* Template exists but the type is not yet in `sales_common.notifications.NOTIFICATION_TYPES`.
 
-| Tool | Signature | Purpose |
-|------|-----------|---------|
-| `get_notification_history` | `(customer_id, order_id, notification_type, limit)` | Query past notifications |
+## Tools (LLM-facing)
 
-### Features
+`send_order_confirmation`, `send_quote_confirmation`, `send_payment_notification`,
+`send_installation_reminder`, `send_service_activated_notification`,
+`send_abandoned_cart_reminder`, `send_order_status_update`, `get_notification_history`.
 
-- **Deduplication** — 5-minute window prevents duplicate sends for same event
-- **Dual storage** — In-memory cache + SQLite persistence
-- **Real SMTP** — When `SMTP_ENABLED=true`, sends actual emails
-- **Cross-agent triggers** — Other agents call notification tools via `sys.modules`
+Each `send_*` tool enqueues one row and immediately calls
+`dispatch_pending(limit=1, notification_id=...)`, then returns the real status
+(`sent` / `simulated` / `deduped` / `queued` / failure with `error`). Missing email/phone fall back
+to `order_context.contact_email` / `contact_phone`; `customer_id` comes from `customer_context`.
 
----
+## Environment
 
-## Cross-Agent Integration Pattern
+Standard agent variables (`GEMINI_MODEL`, `GOOGLE_API_KEY`, `DATABASE_URL`, `PUBLIC_URL`, ...) from
+the guide, plus:
 
-Other agents trigger notifications using `sys.modules`:
+| Variable | Default | Notes |
+|---|---|---|
+| `SMTP_ENABLED` | `false` | `true` sends real email; startup fails without `SMTP_USER`/`SMTP_PASSWORD` |
+| `SMTP_HOST` | `smtp.gmail.com` | |
+| `SMTP_PORT` | `587` | STARTTLS |
+| `SMTP_USER` | — | login and From address |
+| `SMTP_PASSWORD` | — | secret (Gmail App Password); never logged |
+| `SMTP_FROM_NAME` | `B2B Sales Notifications` | |
+| `NOTIFY_POLL_SECONDS` | `10` | dispatcher poll interval (> 0) |
 
-```python
-comms = sys.modules.get("customer_communication_agent.tools.notification_tools")
-if comms:
-    comms.send_order_confirmation(order_id=..., customer_name=..., ...)
+## Tests
+
+```bash
+TEST_DATABASE_URL=postgresql://... venv/bin/python -m pytest CustomerCommunicationAgent/tests -q
 ```
 
-### Notification Timeline
-
-| Stage | Triggered By | Notification |
-|-------|-------------|--------------|
-| Quote generated | OfferManagementAgent | `QUOTE_CONFIRMATION` |
-| Order placed | OrderAgent | `ORDER_CONFIRMATION` |
-| Payment processed | PaymentAgent | `PAYMENT_SUCCESS` |
-| Install scheduled | ServiceFulfillmentAgent | `INSTALL_SCHEDULED` |
-| Technician dispatched | ServiceFulfillmentAgent | `INSTALL_DISPATCHED` |
-| Install complete | ServiceFulfillmentAgent | `INSTALL_COMPLETE` |
-| Service activated | ServiceFulfillmentAgent | `SERVICE_ACTIVATED` |
-| Cart abandoned | DB lifecycle cleanup | `ABANDONED_CART` |
-| Order cancelled | DB lifecycle cleanup | `ORDER_CANCELLED` |
-
----
-
-## Conversation Behavior
-
-### When Invoked
-SuperAgent routes to CustomerCommunicationAgent for: "Send confirmation", "Resend reminder", "Show notification history"
-
----
-
-## Integration with SuperAgent
-
-Loaded via **importlib isolation** in `SuperAgent/super_agent/sub_agents/customer_communication/agent.py`. Agent name `customer_communication_agent` is hardcoded.
+Tests never send email: `SMTP_ENABLED` is removed from the environment, and SMTP paths
+monkeypatch `customer_communication_agent.dispatcher.send_email`.

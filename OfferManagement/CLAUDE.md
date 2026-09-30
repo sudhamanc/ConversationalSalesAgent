@@ -16,7 +16,7 @@ All Offer Management Agent documentation (price book, discount tiers, quote sche
    - [Root AGENTS.md](/AGENTS.md)
 
 2. **Common tasks → Required reading:**
-   - Configuration changes → [SuperAgent/README.md](/SuperAgent/README.md) (`.env` variables)
+   - Configuration / service contract → [docs/agent-service-guide.md](/docs/agent-service-guide.md)
    - Price book changes → [AGENTS.md - Product Price Book](AGENTS.md#product-price-book)
    - Discount changes → [AGENTS.md - Discount System](AGENTS.md#discount-system)
    - Quote schema → [AGENTS.md - Quote Output Schema](AGENTS.md#quote-output-schema)
@@ -37,14 +37,14 @@ When working on Offer Management Agent:
 5. **BANT score** comes from conversation context (set by DiscoveryAgent), passed to tools as `bant_score` parameter
 6. **Quote JSON** must include `discount_breakdown` array for customer-visible savings
 7. **Frontend** renders discounts via `QuoteCard.jsx` — update it if quote schema changes
-8. **Test changes** with `pytest tests/ -v`
+8. **Test changes** with `TEST_DATABASE_URL=... pytest OfferManagement/tests -q` (see README.md)
 
 ---
 
 ## Quick Reference
 
 ```
-Tools: 2 (find_best_bundle_offer, generate_offer_quote)
+Tools: 4 (find_best_bundle_offer, generate_offer_quote, get_existing_quotes, get_quote_details)
 Temperature: 0.0 (fully deterministic)
 Invocation: When customer requests pricing, quote, or discounts
 Price Book: offer_management/tools/pricing_tools.py

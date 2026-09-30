@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "service-fulfillment-agent"
+version = "2.0.0"
+description = "Service fulfillment agent A2A service (installation scheduling, provisioning, activation)"
+requires-python = ">=3.11"
+dependencies = ["sales-common"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[tool.setuptools.packages.find]
+include = ["service_fulfillment_agent*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

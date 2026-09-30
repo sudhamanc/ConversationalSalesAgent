@@ -1,728 +1,165 @@
-"""
-POST /api/chat – SSE streaming chat endpoint.
+"""POST /api/chat – SSE streaming chat endpoint.
 
 Flow:
-1. Authenticate the user session via Bearer token.
-2. Apply rate limits.
-3. Inject the system message (baked into the ADK agent instruction).
-4. Forward the request through the ADK Runner (sub-agents + tools active).
-5. Stream response tokens back as Server-Sent Events.
+1. Verify the signed Bearer session token (any gateway instance can verify it).
+2. Apply the per-instance rate limit.
+3. Run one turn of the ``sales_journey`` workflow (router -> remote A2A agent ->
+   deterministic handoffs) with durable PostgreSQL sessions.
+4. Map workflow events to SSE payloads (``api/sse.py``).
+5. After the stream completes, add the session to long-term memory.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
-import logging
-import re
+from typing import AsyncIterator
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 from google.genai import types
 
-from super_agent.config import settings
-from middleware.auth import authenticator
+from api.sse import EventMapper
+from api.suggestions import generate_suggestions
+from middleware.auth import Session, get_authenticator
 from middleware.rate_limiter import rate_limiter
+from runtime import app_name, ensure_adk_session, get_runner
+from super_agent.config import settings
+from super_agent.registry import display_name
 from utils.logger import get_logger, session_id_var
 
 logger = get_logger(__name__)
-logger.setLevel(logging.DEBUG)  # Enable debug logging for chat endpoint
 router = APIRouter()
 
-# Pure greeting words/phrases that should always route to greeting_agent
-# regardless of session history or prior conversation context.
-_GREETING_PATTERNS = frozenset([
-    "hi", "hello", "hey", "howdy", "greetings", "hiya", "yo",
-    "good morning", "good afternoon", "good evening", "good day",
-    "hi there", "hello there", "hey there",
-])
-
-
-def _is_pure_greeting(message: str) -> bool:
-    """Return True if the message is only a greeting with no other content."""
-    cleaned = re.sub(r'[!.,?\s]+$', '', message.lower().strip())
-    return cleaned in _GREETING_PATTERNS
-
-# These are set at startup by main.py — avoids circular imports.
-_runner = None
-_session_service = None
-_app_name = None
-_greeting_runner = None  # Isolated runner for pure greetings — no session history bias
-
-
-def _parse_suggestion_payload(raw_text: str) -> list[str]:
-    """Parse JSON suggestions payload into a cleaned list."""
-    if not raw_text:
-        return []
-
-    try:
-        parsed = json.loads(raw_text)
-    except json.JSONDecodeError:
-        return []
-
-    candidates = []
-    if isinstance(parsed, list):
-        candidates = parsed
-    elif isinstance(parsed, dict):
-        suggestions = parsed.get("suggestions")
-        if isinstance(suggestions, list):
-            candidates = suggestions
-
-    cleaned: list[str] = []
-    for item in candidates:
-        text = str(item).strip()
-        if not text:
-            continue
-        # Keep suggestions editable and generic; avoid over-specific hard values.
-        text = text.replace("\n", " ").strip()
-        if text not in cleaned:
-            cleaned.append(text)
-        if len(cleaned) >= 3:
-            break
-
-    return cleaned
-
-
-def _generate_dynamic_suggestions(user_message: str, assistant_message: str, author: str | None) -> list[str]:
-    """Generate sales-flow-aware next-step suggestions using LLM; return empty list on failure."""
-    if not assistant_message.strip():
-        return []
-
-    # Sales flow context per agent — guides LLM toward domain-appropriate suggestions
-    _AGENT_FLOW_HINTS = {
-        "greeting_agent": "User just started. Suggest: introducing their company/location, asking about products, checking serviceability.",
-        "discovery_agent": "Company info was gathered. Suggest: check serviceability for address, ask about product needs, provide budget/timeline.",
-        "serviceability_agent": "Address was validated. Suggest: view available products, get technical specs, request a pricing quote.",
-        "product_agent": "Products were shown. Suggest: generate a pricing quote, compare products, ask about term discounts (12/24/36 month).",
-        "offer_management_agent": "A pricing quote was generated. Suggest: proceed with this quote, show different term length (e.g. 24 or 36 month), add/remove products and requote.",
-        "order_agent": "Order was created. Suggest: schedule installation, review order details, proceed to payment.",
-        "payment_agent": "Payment was processed. Suggest: schedule installation, send payment confirmation, show order status.",
-        "service_fulfillment_agent": "Installation/fulfillment in progress. Suggest: simulate install day, activate service, show fulfillment status.",
-        "customer_communication_agent": "Notification was sent. Suggest: show notification history, resend confirmation, send status update.",
-        "faq_agent": "FAQ was answered. Suggest: ask about products, check serviceability, get a pricing quote.",
-    }
-
-    flow_hint = _AGENT_FLOW_HINTS.get(author or "", "Suggest logical next steps in a B2B telecom sales conversation.")
-
-    try:
-        from google import genai
-        from google.genai import types as genai_types
-        import os as _os
-
-        client = genai.Client(api_key=_os.environ.get("GOOGLE_API_KEY"))
-        prompt = (
-            "You are a JSON API. Output ONLY a JSON object, nothing else.\n"
-            "Generate 3 short next-step suggestions for a B2B telecom sales chat.\n"
-            "Output: {\"suggestions\": [\"action1\", \"action2\", \"action3\"]}\n"
-            "Rules:\n"
-            "- Each suggestion under 60 chars\n"
-            "- Suggestions must be specific to the current sales stage\n"
-            "- No customer names, addresses, or IDs\n"
-            "- Actionable and directly useful as clickable buttons\n"
-            f"Sales context: {flow_hint}\n"
-            f"Agent: {author or 'agent'}\n"
-            f"User said: {user_message[:200]}\n"
-            f"Agent response (excerpt): {assistant_message[:400]}\n"
-        )
-
-        # Use configured model for suggestions; disable thinking to avoid
-        # budget consumption, and bump token limit for reliable JSON output.
-        response = client.models.generate_content(
-            model=_os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                temperature=0.2,
-                max_output_tokens=1024,
-                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
-
-        response_text = getattr(response, "text", "") or ""
-        # Try direct parse; fall back to extracting JSON from markdown/preamble
-        result = _parse_suggestion_payload(response_text)
-        if not result:
-            import re as _re
-            match = _re.search(r'\{[^{}]*"suggestions"\s*:\s*\[.*?\]\s*\}', response_text, _re.DOTALL)
-            if match:
-                result = _parse_suggestion_payload(match.group())
-        if result:
-            logger.info("Dynamic suggestions generated: %s", result)
-        else:
-            logger.warning("Dynamic suggestions: LLM returned unparseable response: %s", response_text[:200])
-        return result
-    except Exception as error:
-        logger.warning("Dynamic suggestion generation failed: %s", error)
-        return []
-
-
-def init_runner(runner, session_service, app_name: str):
-    """Called once from main.py at startup to inject the ADK runner."""
-    global _runner, _session_service, _app_name, _greeting_runner
-    _runner = runner
-    _session_service = session_service
-    _app_name = app_name
-
-    # Build a dedicated greeting runner backed by greeting_agent only.
-    # Its own InMemorySessionService means it never sees the main conversation history,
-    # so the orchestrator cannot re-route a pure greeting based on session context.
-    try:
-        from google.adk.runners import Runner
-        from google.adk.sessions import InMemorySessionService as _GS
-        from super_agent.sub_agents.greeting.greeting_agent import greeting_agent as _ga
-        _greeting_runner = Runner(
-            agent=_ga,
-            app_name="greeting_app",
-            session_service=_GS(),
-        )
-        logger.info("Dedicated greeting runner initialized")
-    except Exception as exc:
-        logger.warning("Could not build greeting runner, falling back to main runner: %s", exc)
-        _greeting_runner = None
-
-
-async def _ensure_adk_session(user_id: str, session_id: str):
-    """Get or create an ADK session for this user."""
-    existing = await _session_service.get_session(
-        app_name=_app_name, user_id=user_id, session_id=session_id,
-    )
-    if existing:
-        return existing
-
-    return await _session_service.create_session(
-        app_name=_app_name, user_id=user_id, session_id=session_id,
-    )
-
-
 _MAX_RETRIES = 3
-_RETRY_DELAYS = [2, 5, 10]  # seconds between retries
+_RETRY_DELAYS = [2, 5, 10]
+_FALLBACK_TEXT = "I'm ready to assist you! How can I help with your business telecommunications needs today?"
+_ACTIVATION_SUGGESTIONS = ["Simulate install day", "Show order details", "Send installation confirmation"]
+_background_tasks: set[asyncio.Task] = set()
 
 
-def _is_retryable(error_str: str) -> bool:
-    """Return True for transient errors that are safe to retry."""
-    retryable_codes = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED")
-    return any(code in error_str for code in retryable_codes)
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, default=str)}\n\n"
 
 
-async def _stream_agent(user_id: str, session_id: str, user_message: str):
-    """
-    Stream ADK agent responses via SSE.
+def _is_retryable(error: str) -> bool:
+    return any(code in error for code in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"))
 
-    For pure greetings (e.g. "Hi", "Hello"), uses a dedicated greeting runner
-    with no session history so routing is deterministic regardless of context.
-    Retries on transient 503/429 errors ONLY if no content has been sent yet.
-    Once tokens are streaming to the client, errors are passed through as-is.
-    """
-    # --- Dedicated greeting path: bypass orchestrator + session history entirely ---
-    if _greeting_runner and _is_pure_greeting(user_message):
-        logger.info("Pure greeting detected — using dedicated greeting runner")
-        async for chunk in _stream_from_runner(
-            runner=_greeting_runner,
-            user_id=user_id,
-            session_id=f"greet_{session_id}",  # isolated namespace
-            user_message=user_message,
-            author_override="greeting_agent",
-        ):
-            yield chunk
+
+def _unavailable_message(target: str | None) -> str:
+    service = display_name(target) if target else "assistant"
+    return f"The {service} service is temporarily unavailable. Please try again in a moment."
+
+
+async def _save_to_memory(user_id: str, session_id: str) -> None:
+    runner = get_runner()
+    if runner.memory_service is None:
         return
-
-    # --- Normal path ---
-    async for chunk in _stream_from_runner(
-        runner=_runner,
-        user_id=user_id,
-        session_id=session_id,
-        user_message=user_message,
-    ):
-        yield chunk
-
-
-async def _stream_payment_followup(runner, user_id: str, session_id: str):
-    """
-    Auto-inject a synthetic message to trigger payment_agent after scheduling confirmation.
-
-    This runs a second ADK invocation within the same SSE response, so the user
-    sees the payment prompt without needing to click anything.
-    """
-    synthetic_msg = "Proceed to payment for this order"
-    logger.info(f"[AUTO-HANDOFF] Sending synthetic message: {synthetic_msg}")
-    new_message = types.Content(
-        role="user",
-        parts=[types.Part(text=synthetic_msg)],
-    )
     try:
-        async for event in runner.run_async(
-            user_id=user_id,
-            session_id=session_id,
-            new_message=new_message,
-        ):
-            if event.content and hasattr(event.content, "parts") and event.content.parts:
-                for part in event.content.parts:
-                    text = getattr(part, "text", None)
-                    if text and text.strip():
-                        payload = json.dumps({
-                            "type": "token",
-                            "content": text,
-                            "author": event.author or "payment_agent",
-                        })
-                        yield f"data: {payload}\n\n"
-            if event.is_final_response() or getattr(event, "turn_complete", False):
-                logger.info(f"[AUTO-HANDOFF] Payment follow-up complete from {event.author}")
-                # Generate suggestions for payment
-                suggestion_payload = json.dumps({
-                    "type": "suggestions",
-                    "author": event.author or "payment_agent",
-                    "data": ["Pay via ACH", "Pay via Credit Card", "Review order before payment"],
-                })
-                yield f"data: {suggestion_payload}\n\n"
-                return
-    except Exception as exc:
-        logger.warning(f"[AUTO-HANDOFF] Payment follow-up failed (non-fatal): {exc}")
-        # Fallback: just suggest payment manually
-        suggestion_payload = json.dumps({
-            "type": "suggestions",
-            "author": "payment_agent",
-            "data": ["Proceed to Payment", "Review Order Details"],
-        })
-        yield f"data: {suggestion_payload}\n\n"
+        session = await runner.session_service.get_session(
+            app_name=app_name(), user_id=user_id, session_id=session_id
+        )
+        if session:
+            await runner.memory_service.add_session_to_memory(session)
+    except Exception as exc:  # memory is best effort and must not affect the chat
+        logger.warning("Saving session to memory failed: %s", type(exc).__name__)
 
 
-async def _stream_from_runner(
-    runner,
-    user_id: str,
-    session_id: str,
-    user_message: str,
-    author_override: str | None = None,
-):
-    """Core SSE streaming logic for a given ADK runner."""
-    # Ensure session exists in the runner's own session service
-    svc = runner.session_service
-    app = runner.app_name
-    existing = await svc.get_session(app_name=app, user_id=user_id, session_id=session_id)
-    if not existing:
-        await svc.create_session(app_name=app, user_id=user_id, session_id=session_id)
+def _schedule_memory_save(user_id: str, session_id: str) -> None:
+    task = asyncio.create_task(_save_to_memory(user_id, session_id))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def stream_turn(session: Session, user_message: str) -> AsyncIterator[str]:
+    """Run one workflow turn and yield SSE lines."""
+    runner = get_runner()
+    await ensure_adk_session(session.user_id, session.session_id)
+    new_message = types.Content(role="user", parts=[types.Part(text=user_message)])
+
     for attempt in range(_MAX_RETRIES):
-        sent_content = False
-        response_parts: list[str] = []
-        last_text_author: str | None = None
-        _retry = False
-        _provisioning_done = False
-
+        mapper = EventMapper()
         try:
-            new_message = types.Content(
-                role="user",
-                parts=[types.Part(text=user_message)],
-            )
-
-            logger.info(f"Processing user message: {user_message[:80]}")
-            logger.debug(f"Full user message: {user_message}")
-            logger.debug(f"Session ID: {session_id}, User ID: {user_id}")
-            logger.debug(f"Model: {runner.agent.model}")
-
             async for event in runner.run_async(
-                user_id=user_id,
-                session_id=session_id,
-                new_message=new_message,
+                user_id=session.user_id, session_id=session.session_id, new_message=new_message
             ):
-                # Debug: log every event for diagnosing empty response issues
-                logger.debug(
-                    f"ADK event: author={event.author}, "
-                    f"has_content={bool(event.content)}, "
-                    f"is_final={event.is_final_response() if hasattr(event, 'is_final_response') else '?'}, "
-                    f"turn_complete={getattr(event, 'turn_complete', '?')}, "
-                    f"error={event.error_message or None}, "
-                    f"parts_types={[type(p).__name__ for p in (event.content.parts if event.content and hasattr(event.content, 'parts') and event.content.parts else [])]}"
-                )
                 if event.error_message:
-                    # Suppress "Unknown error" when we already sent content — Gemini
-                    # sometimes fires this after a mixed text+function_call turn.
-                    if sent_content and "Unknown error" in (event.error_message or ""):
-                        logger.warning(
-                            "Suppressing '%s' — text was already streamed (%d chars). "
-                            "Completing turn normally.",
-                            event.error_message,
-                            sum(len(p) for p in response_parts),
-                        )
+                    if mapper.sent_text and "Unknown error" in event.error_message:
                         continue
-                    # Retryable error AND nothing sent yet — retry the whole call.
-                    if not sent_content and _is_retryable(event.error_message) and attempt < _MAX_RETRIES - 1:
-                        delay = _RETRY_DELAYS[attempt]
-                        logger.warning(
-                            "Retryable error (attempt %d/%d), retrying in %ds: %s",
-                            attempt + 1, _MAX_RETRIES, delay, event.error_message[:120],
-                        )
-                        await asyncio.sleep(delay)
-                        _retry = True
-                        break
-                    logger.error(f"Agent error: {event.error_message}")
-                    yield f"data: {json.dumps({'type': 'error', 'content': event.error_message})}\n\n"
+                    if not mapper.domain_events_seen and _is_retryable(event.error_message) and attempt < _MAX_RETRIES - 1:
+                        raise _Retry(event.error_message)
+                    logger.error("Agent error from %s: %s", event.author, event.error_message)
+                    yield _sse({"type": "error", "content": _unavailable_message(mapper.current_target)})
+                    yield _sse({"type": "done"})
                     return
-
-                if event.content and hasattr(event.content, 'parts') and event.content.parts:
-                    for part in event.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            effective_author = author_override or event.author or "agent"
-                            logger.debug(f"Streaming token from {effective_author}: {part.text[:50]}...")
-                            response_parts.append(part.text)
-                            last_text_author = effective_author
-                            payload = json.dumps({
-                                "type": "token",
-                                "content": part.text,
-                                "author": effective_author,
-                            })
-                            yield f"data: {payload}\n\n"
-                            sent_content = True
-
-                        # Log function calls for debugging
-                        if hasattr(part, 'function_call') and part.function_call:
-                            fc = part.function_call
-                            logger.info(f"Tool call by {event.author}: {fc.name}({dict(fc.args) if fc.args else {}})")
-
-                        # Emit cart_update events for cart/order tool responses
-                        if hasattr(part, 'function_response') and part.function_response:
-                            fn_name = getattr(part.function_response, 'name', '')
-                            fn_response = getattr(part.function_response, 'response', None)
-                            logger.info(f"Tool response for {fn_name}: success={fn_response.get('success') if isinstance(fn_response, dict) else '?'}")
-                            cart_tools = {'create_cart', 'add_to_cart', 'remove_from_cart', 'get_cart', 'clear_cart'}
-                            order_tools = {'create_order', 'modify_order', 'get_order', 'update_order_status'}
-                            quote_tools = {'generate_offer', 'calculate_pricing', 'build_quote', 'generate_offer_quote'}
-                            scheduling_tools = {'schedule_installation', 'check_availability'}
-                            fulfillment_tools = {'provision_equipment', 'dispatch_technician', 'activate_service', 'run_service_tests'}
-                            payment_tools = {'process_payment', 'run_credit_check', 'authorize_payment'}
-                            notification_tools = {'send_order_confirmation', 'send_payment_notification', 'send_quote_confirmation', 'send_installation_reminder', 'send_service_activated_notification', 'send_order_status_update'}
-
-                            cart_data = None
-
-                            if isinstance(fn_response, dict) and fn_response.get('success'):
-                                # --- Customer identity event ---
-                                if fn_response.get('customer_id') and fn_response.get('company_name'):
-                                    customer_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "customer",
-                                        "tool": fn_name,
-                                        "data": {"customer_id": fn_response["customer_id"], "company_name": fn_response["company_name"]},
-                                    })
-                                    yield f"data: {customer_payload}\n\n"
-
-                                # --- Activity panel events ---
-                                # Order
-                                if fn_name in order_tools:
-                                    activity_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "order",
-                                        "tool": fn_name,
-                                        "data": fn_response,
-                                    })
-                                    yield f"data: {activity_payload}\n\n"
-
-                                # Scheduling
-                                if fn_name in scheduling_tools:
-                                    activity_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "scheduling",
-                                        "tool": fn_name,
-                                        "data": fn_response,
-                                    })
-                                    yield f"data: {activity_payload}\n\n"
-
-                                # Fulfillment (provisioning + activation)
-                                if fn_name in fulfillment_tools:
-                                    try:
-                                        activity_payload = json.dumps({
-                                            "type": "activity_update",
-                                            "category": "fulfillment",
-                                            "tool": fn_name,
-                                            "data": fn_response,
-                                        })
-                                        yield f"data: {activity_payload}\n\n"
-                                        logger.info(f"[session:{session_id}] Emitted fulfillment activity_update for {fn_name}")
-                                    except (TypeError, ValueError) as ser_err:
-                                        logger.error(f"[session:{session_id}] Failed to serialize fulfillment activity for {fn_name}: {ser_err}")
-
-                                    # Track that provisioning Phase 1 completed (for activation suggestion)
-                                    if fn_name == "dispatch_technician":
-                                        _provisioning_done = True
-
-                                # Payment
-                                if fn_name in payment_tools:
-                                    activity_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "payment",
-                                        "tool": fn_name,
-                                        "data": fn_response,
-                                    })
-                                    yield f"data: {activity_payload}\n\n"
-                                    # Also update order status to reflect payment success
-                                    if fn_name == "process_payment" and fn_response.get("status") == "approved":
-                                        order_status_payload = json.dumps({
-                                            "type": "activity_update",
-                                            "category": "order",
-                                            "tool": "payment_update",
-                                            "data": {"payment_status": "paid", "status": "confirmed"},
-                                        })
-                                        yield f"data: {order_status_payload}\n\n"
-
-                                # Notifications (explicit tool calls)
-                                if fn_name in notification_tools:
-                                    activity_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "notification",
-                                        "tool": fn_name,
-                                        "data": fn_response,
-                                    })
-                                    yield f"data: {activity_payload}\n\n"
-
-                                # Auto-notifications embedded in other tools (create_order, process_payment)
-                                if fn_response.get('email_notification_id') or fn_response.get('notification_id'):
-                                    # Map source tool to proper notification label
-                                    _notif_tool_map = {
-                                        "create_order": "send_order_confirmation",
-                                        "process_payment": "send_payment_notification",
-                                    }
-                                    notif_data = {
-                                        "notification_id": fn_response.get('email_notification_id') or fn_response.get('notification_id'),
-                                        "triggered_by": fn_name,
-                                        "status": "sent",
-                                    }
-                                    activity_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "notification",
-                                        "tool": _notif_tool_map.get(fn_name, fn_name),
-                                        "data": notif_data,
-                                    })
-                                    yield f"data: {activity_payload}\n\n"
-
-                            # Quote tools don't wrap in {success: true} — check for offer_id instead
-                            if isinstance(fn_response, dict) and fn_name in quote_tools and fn_response.get('offer_id'):
-                                activity_payload = json.dumps({
-                                    "type": "activity_update",
-                                    "category": "quote",
-                                    "tool": fn_name,
-                                    "data": fn_response,
-                                })
-                                yield f"data: {activity_payload}\n\n"
-                                # Also emit structured_card so the chat bubble renders a QuoteCard
-                                card_payload = json.dumps({
-                                    "type": "structured_card",
-                                    "card_type": "quote",
-                                    "data": fn_response,
-                                })
-                                yield f"data: {card_payload}\n\n"
-                                # Emit notification activity if quote auto-sent one
-                                if fn_response.get('notification_sent'):
-                                    ns = fn_response["notification_sent"]
-                                    notif_payload = json.dumps({
-                                        "type": "activity_update",
-                                        "category": "notification",
-                                        "tool": "send_quote_confirmation",
-                                        "data": {
-                                            "type": ns.get("type", "QUOTE_CONFIRMATION"),
-                                            "status": "sent",
-                                        },
-                                    })
-                                    yield f"data: {notif_payload}\n\n"
-                            if fn_name in cart_tools:
-                                cart_data = fn_response.get('cart', fn_response)
-                            elif fn_name in order_tools:
-                                order_payload = fn_response.get('order') if isinstance(fn_response.get('order'), dict) else None
-                                items = []
-                                total_amount = fn_response.get('total_amount', 0)
-                                cart_id = fn_response.get('order_id', '')
-
-                                if order_payload:
-                                    if isinstance(order_payload.get('items'), list):
-                                        items = order_payload.get('items', [])
-                                    total_amount = order_payload.get('total_amount', total_amount)
-                                    cart_id = order_payload.get('order_id', cart_id)
-                                elif isinstance(fn_response.get('items'), list):
-                                    items = fn_response.get('items', [])
-
-                                if items:
-                                    cart_data = {
-                                        'cart_id': cart_id,
-                                        'items': items,
-                                        'total_amount': total_amount,
-                                    }
-                                else:
-                                    logger.debug("Skipping cart_update for %s: no structured items in response", fn_name)
-                            if cart_data:
-                                cart_payload = json.dumps({
-                                    "type": "cart_update",
-                                    "tool": fn_name,
-                                    "data": cart_data,
-                                    "author": event.author or "order_agent",
-                                })
-                                logger.debug(f"Emitting cart_update from {fn_name}")
-                                yield f"data: {cart_payload}\n\n"
-
-                if event.is_final_response() or event.turn_complete:
-                    logger.info(f"Turn complete from {event.author}, sent_content={sent_content}, parts_count={len(response_parts)}")
-                    if not sent_content:
-                        logger.warning(f"Empty response from agent, sending fallback")
-                        fallback_payload = json.dumps({
-                            "type": "token",
-                            "content": "I'm ready to assist you! How can I help with your business telecommunications needs today?",
-                            "author": "agent",
-                        })
-                        yield f"data: {fallback_payload}\n\n"
-                    else:
-                        full_response = "".join(response_parts).strip()
-
-                        # --- Auto-handoff: scheduling confirmed → payment ---
-                        # If scheduling was just confirmed by service_fulfillment_agent
-                        # (or order_agent relaying it), automatically inject a follow-up
-                        # to trigger payment_agent instead of requiring user to click.
-                        _full_lower = full_response.lower()
-                        _scheduling_just_confirmed = (
-                            last_text_author in ("service_fulfillment_agent", "order_agent")
-                            and any(
-                                phrase in _full_lower
-                                for phrase in (
-                                    "installation scheduled",
-                                    "installation is confirmed",
-                                    "appointment confirmed",
-                                    "your installation is confirmed",
-                                    "appointment details",
-                                )
-                            )
-                            and "payment processed" not in _full_lower
-                            and "payment complete" not in _full_lower
-                        )
-                        if _scheduling_just_confirmed:
-                            logger.info("[AUTO-HANDOFF] Scheduling confirmed — auto-triggering payment flow")
-                            # Stream a brief separator so the user sees the transition
-                            separator_payload = json.dumps({
-                                "type": "token",
-                                "content": "\n\n---\n\n",
-                                "author": "payment_agent",
-                            })
-                            yield f"data: {separator_payload}\n\n"
-                            # Run a second ADK invocation to trigger payment_agent
-                            async for follow_chunk in _stream_payment_followup(runner, user_id, session_id):
-                                yield follow_chunk
-                            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                            return
-
-                        # If provisioning Phase 1 completed, use activation-focused suggestions
-                        if _provisioning_done:
-                            suggestion_items = ["Simulate install day", "Show order details", "Send installation confirmation"]
-                        else:
-                            suggestion_items = _generate_dynamic_suggestions(
-                                user_message=user_message,
-                                assistant_message=full_response,
-                                author=last_text_author or event.author,
-                            )
-                        if suggestion_items:
-                            suggestion_payload = json.dumps({
-                                "type": "suggestions",
-                                "author": last_text_author or event.author or "agent",
-                                "data": suggestion_items,
-                            })
-                            yield f"data: {suggestion_payload}\n\n"
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    return
-
-        except Exception as e:
-            error_str = str(e)
-            # Suppress "Unknown error" when text was already streamed.
-            if sent_content and "Unknown error" in error_str:
-                logger.warning(
-                    "Suppressing exception '%s' — text was already streamed (%d chars). "
-                    "Completing turn with already-sent content.",
-                    error_str,
-                    sum(len(p) for p in response_parts),
-                )
-                full_response = "".join(response_parts).strip()
-                suggestion_items = _generate_dynamic_suggestions(
-                    user_message=user_message,
-                    assistant_message=full_response,
-                    author=last_text_author or "agent",
-                )
-                if suggestion_items:
-                    suggestion_payload = json.dumps({
-                        "type": "suggestions",
-                        "author": last_text_author or "agent",
-                        "data": suggestion_items,
-                    })
-                    yield f"data: {suggestion_payload}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
-            # Retryable exception AND nothing sent yet — retry.
-            if not sent_content and _is_retryable(error_str) and attempt < _MAX_RETRIES - 1:
-                delay = _RETRY_DELAYS[attempt]
-                logger.warning(
-                    "Retryable exception (attempt %d/%d), retrying in %ds: %s",
-                    attempt + 1, _MAX_RETRIES, delay, error_str[:120],
-                )
-                await asyncio.sleep(delay)
-                continue  # outer for-loop will retry
-            logger.error(f"Exception in _stream_agent: {type(e).__name__}: {error_str}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'content': f'Agent error: {error_str}'})}\n\n"
+                for payload in mapper.consume(event):
+                    yield _sse(payload)
+        except _Retry as retry:
+            delay = _RETRY_DELAYS[attempt]
+            logger.warning("Retryable error (attempt %d/%d), retrying in %ds: %s", attempt + 1, _MAX_RETRIES, delay, str(retry)[:120])
+            await asyncio.sleep(delay)
+            continue
+        except Exception as exc:
+            error = str(exc)
+            if not mapper.domain_events_seen and _is_retryable(error) and attempt < _MAX_RETRIES - 1:
+                await asyncio.sleep(_RETRY_DELAYS[attempt])
+                continue
+            logger.error("Turn failed (target=%s): %s: %s", mapper.current_target, type(exc).__name__, error[:300])
+            if not mapper.sent_text:
+                yield _sse({"type": "error", "content": _unavailable_message(mapper.current_target)})
+            yield _sse({"type": "done"})
             return
 
-        if not _retry:
-            return  # turn_complete already returned above; this is a safety catch
+        # --- turn completed ---
+        if not mapper.sent_text:
+            logger.warning("Empty response from workflow; sending fallback text")
+            yield _sse({"type": "token", "content": _FALLBACK_TEXT, "author": "agent"})
+        elif settings.server.suggestions_enabled:
+            if mapper.provisioning_done:
+                suggestions = _ACTIVATION_SUGGESTIONS
+            else:
+                suggestions = await asyncio.to_thread(
+                    generate_suggestions, user_message, "".join(mapper.response_parts), mapper.last_text_author
+                )
+            if suggestions:
+                yield _sse({"type": "suggestions", "author": mapper.last_text_author or "agent", "data": suggestions})
+        yield _sse({"type": "done"})
+        _schedule_memory_save(session.user_id, session.session_id)
+        return
+
+
+class _Retry(Exception):
+    pass
+
+
+def _error_response(message: str, status: int) -> StreamingResponse:
+    return StreamingResponse(iter([_sse({"type": "error", "content": message})]), media_type="text/event-stream", status_code=status)
 
 
 @router.post("/api/chat")
 async def chat(request: Request, authorization: str = Header(default="")):
-    """
-    SSE streaming chat endpoint.
-
-    Request body:
-        {
-            "message": "user message text",
-            "history": []  (history is managed by ADK sessions, not the client)
-        }
-
-    Headers:
-        Authorization: Bearer <session_token>
-
-    Response: text/event-stream with JSON payloads.
-    """
-    # --- 1. Authenticate ---
-    token = authorization.removeprefix("Bearer ").strip()
-    session = authenticator.validate_token(token)
+    """SSE chat. Body ``{"message": "..."}``; header ``Authorization: Bearer <token>``."""
+    session = get_authenticator().validate_token(authorization.removeprefix("Bearer ").strip())
     if not session:
-        return StreamingResponse(
-            iter([f"data: {json.dumps({'type': 'error', 'content': 'Invalid or expired session. Please refresh.'})}\n\n"]),
-            media_type="text/event-stream",
-            status_code=401,
-        )
-
+        return _error_response("Invalid or expired session. Please refresh.", 401)
     session_id_var.set(session.session_id)
-    logger.info("Chat request received")
 
-    # --- 2. Rate limit ---
     if not rate_limiter.allow(session.session_id):
-        return StreamingResponse(
-            iter([f"data: {json.dumps({'type': 'error', 'content': 'Rate limit exceeded. Please wait a moment.'})}\n\n"]),
-            media_type="text/event-stream",
-            status_code=429,
-        )
+        return _error_response("Rate limit exceeded. Please wait a moment.", 429)
 
-    # --- 3. Parse request body ---
-    body = await request.json()
-    user_message = body.get("message", "").strip()
-
+    try:
+        body = await request.json()
+    except ValueError:
+        return _error_response("Invalid JSON body.", 400)
+    user_message = str(body.get("message", "") if isinstance(body, dict) else "").strip()
     if not user_message:
-        return StreamingResponse(
-            iter([f"data: {json.dumps({'type': 'error', 'content': 'Message cannot be empty.'})}\n\n"]),
-            media_type="text/event-stream",
-            status_code=400,
-        )
+        return _error_response("Message cannot be empty.", 400)
+    if len(user_message) > 4000:
+        return _error_response("Message is too long (max 4000 characters).", 400)
 
-    # --- 4 & 5. Run ADK agent and stream SSE ---
-    # Use the auth session_id as both ADK user_id and session_id.
-    # ADK sessions handle conversation history internally.
-    logger.info(f"Streaming ADK agent response for: {user_message[:80]}...")
-
+    logger.info("Chat turn received (%d chars)", len(user_message))
     return StreamingResponse(
-        _stream_agent(
-            user_id=session.session_id,
-            session_id=session.session_id,
-            user_message=user_message,
-        ),
+        stream_turn(session, user_message),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Session-Id": session.session_id,
-        },
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Session-Id": session.session_id},
     )

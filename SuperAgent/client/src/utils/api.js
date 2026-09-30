@@ -11,11 +11,35 @@ const API_BASE = "/api";
 let _token = null;
 let _sessionId = null;
 
+const CLIENT_ID_KEY = "csa_uid";
+
+/**
+ * Stable anonymous browser id (UUID v4). Lets the server keep user-scoped
+ * state and long-term memory across sessions. Falls back to a per-page id
+ * when storage is unavailable (private mode, blocked site data).
+ */
+function getClientId() {
+  try {
+    let id = window.localStorage.getItem(CLIENT_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      window.localStorage.setItem(CLIENT_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
 /**
  * Create a new session and store the token.
  */
 export async function createSession() {
-  const res = await fetch(`${API_BASE}/session`, { method: "POST" });
+  const res = await fetch(`${API_BASE}/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: getClientId() }),
+  });
   if (!res.ok) throw new Error("Failed to create session");
   const data = await res.json();
   _token = data.token;

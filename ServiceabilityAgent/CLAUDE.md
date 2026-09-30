@@ -2,7 +2,7 @@
 
 **📖 READ FIRST:** [AGENTS.md](AGENTS.md)
 
-All Serviceability Agent documentation (tools, GIS integration, coverage maps) is in AGENTS.md.
+All Serviceability Agent documentation is in AGENTS.md. Tools and coverage data live in the serviceability service: [services/serviceability/README.md](/services/serviceability/README.md).
 
 ---
 
@@ -17,8 +17,8 @@ All Serviceability Agent documentation (tools, GIS integration, coverage maps) i
 
 2. **Common tasks → Required reading:**
    - Configuration changes → [SuperAgent/README.md](/SuperAgent/README.md) (`.env` variables)
-   - GIS/Coverage tools → [AGENTS.md - Tools](AGENTS.md#tools)
-   - Mock data updates → [AGENTS.md - GIS Coverage Map](AGENTS.md#gis-coverage-map)
+   - Tool contracts → [AGENTS.md](AGENTS.md) and [services/serviceability/README.md](/services/serviceability/README.md)
+   - Coverage data updates → `coverage_zones` table (`db/seed/003_coverage.sql`)
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
 
@@ -31,18 +31,18 @@ When working on Serviceability Agent:
 1. **Read AGENTS.md** for complete documentation
 2. **Deterministic only** - Temperature = 0.0, no LLM creativity
 3. **PRE-SALE agent** - Returns infrastructure, NOT products/pricing
-4. **GIS data** in `tools/gis_tools.py` (update mock coverage there)
-5. **24-hour cache** for address lookups
-6. **Test changes** with `pytest tests/`
+4. **No local tools** - tools come from the serviceability MCP server (`SERVICEABILITY_MCP_URL`)
+5. **Keep the UI-parsed output format** in `prompts.py`
+6. **Test changes** with `pytest ServiceabilityAgent/tests services/serviceability/tests`
 
 ---
 
 ## Quick Reference
 
-**Tools:** 6 functions (3 address, 3 GIS)
+**Tools:** 6 MCP tools (3 address, 3 coverage) from services/serviceability
 **Temperature:** 0.0 (fully deterministic)
 **Invocation:** After address extraction, before product recommendations
-**Data Source:** GIS/Coverage Map API (mocked in `gis_tools.py`)
+**Data Source:** PostgreSQL `coverage_zones` via the serviceability service (or upstream GIS API)
 
 ---
 
@@ -57,4 +57,4 @@ DO NOT confuse the two.
 
 **Primary Reference:** [AGENTS.md](AGENTS.md)
 **Root Architecture:** [/AGENTS.md](/AGENTS.md)
-**SuperAgent Integration:** [/SuperAgent/super_agent/sub_agents/serviceability/agent.py](/SuperAgent/super_agent/sub_agents/serviceability/agent.py)
+**Service guide:** [/docs/agent-service-guide.md](/docs/agent-service-guide.md)

@@ -3,8 +3,9 @@ Data models for the Order Agent.
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
 from enum import Enum
+
+from sales_common.db import now_iso
 
 
 class OrderStatus(str, Enum):
@@ -40,8 +41,8 @@ class Order:
         self.offer_id = offer_id
         self.status = status
         self.items: List[Dict[str, Any]] = []
-        self.created_at = datetime.now().isoformat()
-        self.updated_at = datetime.now().isoformat()
+        self.created_at = now_iso()
+        self.updated_at = now_iso()
         self.total_amount = 0.0
     
     def add_item(self, service_type: str, price: float, quantity: int = 1):
@@ -53,7 +54,7 @@ class Order:
             "subtotal": price * quantity
         })
         self.total_amount = sum(item["subtotal"] for item in self.items)
-        self.updated_at = datetime.now().isoformat()
+        self.updated_at = now_iso()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert order to dictionary."""

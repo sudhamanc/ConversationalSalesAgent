@@ -1,23 +1,36 @@
 # Multi-Agent System Architecture
 
-**B2B Conversational Sales Agent - ADK-Powered Multi-Agent Orchestration**
+**B2B Conversational Sales Agent: ADK 2.x Workflow Orchestration over A2A Agent Services**
 
 ## 🔴 MANDATORY: Documentation-First Approach
 
 **BEFORE making ANY changes (config, code, structure), you MUST:**
 
 1. **Read the documentation first** - in this order:
-   - This file (CLAUDE.md)
-   - [AGENTS.md](AGENTS.md)
-   - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`)
+   - [CLAUDE.md](CLAUDE.md)
+   - This file (AGENTS.md)
+   - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`, `services/catalog/README.md`)
    - [README.md](README.md)
 
 2. **Common tasks → Required reading:**
-   - Configuration changes → [SuperAgent/README.md](SuperAgent/README.md) (`.env` variables)
-   - Agent development → Component's AGENTS.md
-   - Sub-agent work → [super_agent/sub_agents/CLAUDE.md](SuperAgent/super_agent/sub_agents/CLAUDE.md)
+   - Configuration changes → [.env.example](.env.example) and [SuperAgent/README.md](SuperAgent/README.md)
+   - Agent development → [docs/agent-service-guide.md](docs/agent-service-guide.md) + the component's AGENTS.md
+   - Orchestration, routing, handoffs → [SuperAgent/README.md](SuperAgent/README.md)
+   - Tool services → `services/<name>/README.md`
+   - Database → [db/README.md](db/README.md)
+   - Deployment → [GCP_DEPLOY.md](GCP_DEPLOY.md)
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
+
+Design history and rationale for the current architecture live in `openspec/changes/`:
+
+| Change | Status | Scope |
+|---|---|---|
+| `adk2-workflow-orchestration` | Implemented | ADK 2.10 `Workflow` root, deterministic handoffs, App compaction/caching, DB sessions, memory |
+| `a2a-agent-services` | Implemented | One A2A service per agent, PostgreSQL, notification outbox, no importlib/`sys.modules` |
+| `catalog-serviceability-mcp` | Implemented | Catalog and serviceability as REST + MCP services |
+| `multi-service-scripts` | Implemented | `scripts/`, `docker-compose.yml`, per-service Dockerfiles, Cloud Run deployment |
+| `mcp-remaining-domains` | **Planned (not implemented)** | REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications |
 
 ---
 
@@ -25,124 +38,96 @@
 
 ### Multi-Agent System (MAS) Pattern
 
-This system implements a **Super Agent/Sub-Agent** orchestration pattern using Google ADK (Agent Development Kit). The architecture enforces strict separation between autonomous reasoning (LLM-driven) and deterministic execution (API/DB-driven) to ensure zero-hallucination compliance for critical business operations.
+The system is a **gateway + independently deployed agent services** architecture on Google ADK 2.10:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     PRESENTATION LAYER                       │
-│  React 19 Client (SSE Streaming) ↔ FastAPI Server           │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                  ORCHESTRATION LAYER                         │
-│  SuperAgent (Root Orchestrator)                              │
-│  • Intent Analysis & Routing                                 │
-│  • Context Management                                        │
-│  • Session State                                             │
-│  • Guardrails & Safety                                       │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-         ┌─────────────┼─────────────┐
-         │             │             │
-┌────────▼──────┐ ┌───▼────────┐ ┌──▼──────────┐
-│   DISCOVERY   │ │   CONFIG   │ │ TRANSACTION │
-│               │ │            │ │             │
-│ • Discovery   │ │ • Service- │ │ • Payment   │
-│   Agent       │ │   ability  │ │   Agent     │
-│               │ │   Agent    │ │             │
-│ • Greeting    │ │            │ │ • Service   │
-│   Agent       │ │ • Product  │ │   Fulfill.  │
-│               │ │   Agent    │ │   Agent     │
-│ • FAQ Agent   │ │            │ │             │
-│               │ │ • Offer    │ │ • Order     │
-│               │ │   Mgmt     │ │   Agent     │
-└───────────────┘ └────────────┘ └─────────────┘
-         │             │             │
-         └─────────────┼─────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                 INFRASTRUCTURE LAYER                         │
-│  • SQLite (Prospect/Order DB)                                │
-│  • In-Repo Product Catalog (ProductAgent)                    │
-│  • GIS/Coverage Map API (Serviceability)                     │
-│  • Pricing Engine API (Offers)                               │
-│  • Payment Gateway (Credit/Auth)                             │
-│  • Scheduler API (Installation)                              │
-└──────────────────────────────────────────────────────────────┘
+- The **gateway** (`SuperAgent/`) hosts the React UI, the SSE chat API and the root ADK 2.x **`Workflow`** named `sales_journey`. The workflow classifies each user turn with a small router LLM, calls exactly one domain agent, and applies **deterministic handoff rules** in Python.
+- Each of the **10 domain agents** is its own **A2A service** (its own process or container), called by the gateway through `RemoteA2aAgent`.
+- **Deterministic tools** are either served by **REST + MCP tool services** (catalog, serviceability) or run in-process as plain function tools against **PostgreSQL**.
+
+The architecture keeps a strict separation between autonomous reasoning (LLM-driven: intent classification and conversation) and deterministic execution (tools, SQL, workflow rules), so critical business data is never hallucinated.
+
+```mermaid
+graph TD
+    UI["React 19 UI<br/>Vite dev server or built into the gateway image"] -->|HTTPS SSE /api/chat| GW
+    subgraph GWBOX["Gateway :8000 - SuperAgent"]
+        GW["FastAPI<br/>session tokens, rate limit, SSE mapping"] --> WF["sales_journey Workflow<br/>ADK App: compaction + context cache<br/>ContextBridgePlugin"]
+    end
+    WF -->|A2A JSON-RPC + journey metadata| AGENTS
+    subgraph AGENTS["A2A agent services :8201-8210"]
+        DISC["discovery_agent"]
+        SVCA["serviceability_agent"]
+        PROD["product_agent"]
+        OFFER["offer_management_agent"]
+        ORDER["order_agent"]
+        PAY["payment_agent"]
+        FUL["service_fulfillment_agent"]
+        COMM["customer_communication_agent"]
+        GREET["greeting_agent"]
+        FAQ["faq_agent"]
+    end
+    SVCA -->|MCP streamable HTTP| SVCS["serviceability service :8102<br/>REST /api/v1 + MCP /mcp/"]
+    PROD -->|MCP streamable HTTP| CAT["catalog service :8101<br/>REST /api/v1 + MCP /mcp/ + RAG"]
+    GW -->|asyncpg + psycopg| PG[("PostgreSQL 16<br/>ADK sessions, memory, A2A tasks,<br/>business tables")]
+    AGENTS -->|asyncpg sessions + psycopg tools| PG
+    SVCS --> PG
+    CAT --> PG
+    WF -->|router LLM| GEM(("Gemini API"))
+    AGENTS -->|agent LLM| GEM
 ```
 
-### Agent Communication: ADK Sub-Agent Delegation
+Ports and names come from [`scripts/services.conf`](scripts/services.conf), the single service manifest used by every operations script.
 
-Agents communicate via **ADK's native sub-agent delegation pattern**. The SuperAgent declares all sub-agents in its `sub_agents=[]` list, and ADK handles routing based on the orchestrator's LLM instructions:
+### Agent Communication: A2A + Workflow
 
-```python
-# SuperAgent/super_agent/agent.py
-root_agent = Agent(
-    name="super_sales_agent",
-    model=settings.model.model_name,
-    instruction=ORCHESTRATOR_INSTRUCTION,  # Contains routing rules
-    sub_agents=[
-        discovery_agent,
-        serviceability_agent,
-        product_agent,
-        offer_management_agent,
-        order_agent,
-        payment_agent,
-        service_fulfillment_agent,
-        customer_communication_agent,
-        greeting_agent,
-        faq_agent,
-    ],
-)
-```
+Agents never import or call each other. All communication goes through the gateway workflow:
 
-**Key Principles:**
-
-- ADK manages agent-to-agent delegation natively (no custom protocol needed)
-- SuperAgent's instruction prompt defines routing rules for each sub-agent
-- Sub-agents share session context via ADK's built-in state management
-- Sub-agents execute autonomously once delegated to by the orchestrator
+1. **Gateway → agent (A2A).** Each domain node in `sales_journey` is a `RemoteA2aAgent` built by `sales_common.a2a_client.remote_agent()`. It fetches the agent card from `<AGENT_URL_*>/.well-known/agent-card.json` and sends A2A JSON-RPC requests.
+   - **Message:** only a directed message is sent, not the gateway's whole history. The workflow writes it to the state key `a2a_outbound_message` (the user's text, or a synthetic handoff message) and the `context_builder` (`outbound_message_builder`) sends just that text.
+   - **Context id:** the gateway session id is forwarded as the A2A context id, so each gateway session maps to one stable session per remote agent.
+   - **Metadata:** the journey context (5 keys), a recent transcript and the user profile travel as A2A request metadata (`build_forwarded_metadata`).
+2. **Agent side.** The shared `before_agent_callback` `sales_common.context.import_forwarded_context` copies the metadata into the agent's own session state, so tools keep reading `tool_context.state["order_context"]` and the templated `JOURNEY_CONTEXT_INSTRUCTION` shows the context to the model.
+3. **Agent → gateway.** A2A carries message parts only; a remote `state_delta` is not returned. The shared `after_tool_callback` `export_context_delta` therefore appends `"_context_update": {key: value}` to a tool's response whenever the tool changed a journey key. `function_response` parts do cross A2A, and the gateway's `ContextBridgePlugin.on_event_callback` merges `_context_update` into the event's `state_delta` before the event is persisted.
+4. **Deterministic handoffs.** `HandoffPolicyNode` reads the merged state and, when a rule matches, routes to the next agent within the same turn.
 
 ### Model Context Protocol (MCP)
 
-MCP is used to connect agents to **local tools and data sources**:
+MCP is used for **real network tool services**, not as a label for in-process functions:
 
-- Database connections (SQLite for prospect/order data)
-- File system access (product manuals, coverage maps)
-- External API wrappers (GIS, payment gateway stubs)
+| Tool service | Directory | MCP endpoint | REST | Consumer |
+|---|---|---|---|---|
+| Catalog | `services/catalog/` | `http://localhost:8101/mcp/` | `/api/v1/products...`, `/api/v1/knowledge/search` | `product_agent` (8 tools, incl. RAG `search_product_knowledge`) |
+| Serviceability | `services/serviceability/` | `http://localhost:8102/mcp/` | `/api/v1/addresses/*`, `/api/v1/serviceability/check` | `serviceability_agent` (6 tools) |
 
-**MCP Usage Pattern:**
-
-```python
-# Agent declares tools via MCP
-from google.adk.tools import FunctionTool
-
-@FunctionTool
-def check_address_serviceability(address: str) -> dict:
-    """Queries GIS API to determine if address is serviceable"""
-    # Deterministic lookup - no LLM hallucination
-    return gis_api.query(address)
-```
+- Servers use `mcp` 2.x `MCPServer`, mounted as stateless streamable HTTP with JSON responses. REST and MCP share one `core.py` per service.
+- Agents connect with `sales_common.mcp_client.mcp_toolset(url)` (ADK `McpToolset` + `StreamableHTTPConnectionParams`, service-auth headers). URLs come from `CATALOG_MCP_URL` / `SERVICEABILITY_MCP_URL` and must end in `/mcp/`.
+- The other six domain agents still run their tools in-process against PostgreSQL. Moving them behind REST + MCP is the planned change `mcp-remaining-domains`.
 
 ---
 
 ## Sub-Agent Registry
 
-### Currently Deployed (SuperAgent Integration)
+Every agent is an A2A service. The gateway's registry is `SuperAgent/super_agent/registry.py` (name, routing description, `AGENT_URL_<NAME>` with a localhost default).
 
-| Agent | Status | Location | Description |
-|-------|--------|----------|-------------|
-| **SuperAgent** | ✅ Active | `SuperAgent/super_agent/agent.py` | Root orchestrator. Routes intents, manages session state, delegates to sub-agents |
-| **DiscoveryAgent** | ✅ Active | `DiscoveryAgent/bootstrap_agent/` | Prospect identification, company lookup, BANT qualification, intelligent slot-filling |
-| **ServiceabilityAgent** | ✅ Active | `ServiceabilityAgent/serviceability_agent/` | PRE-SALE address validation, coverage verification, infrastructure assessment |
-| **ProductAgent** | ✅ Active | `ProductAgent/product_agent/` | Deterministic product catalog lookup, technical specs, and product comparison |
-| **OfferManagementAgent** | ✅ Active | `OfferManagement/offer_management/` | Deterministic pricing calculation, bundle/term discounts, quote JSON generation |
-| **OrderAgent** | ✅ Active | `OrderAgent/order_agent/` | Cart management, contract generation, order finalization |
-| **GreetingAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/greeting/` | Handles greetings, phone script generation for human agents |
-| **FAQAgent** | ✅ Active | `SuperAgent/super_agent/sub_agents/faq/` | Answers product questions, policies, SLAs, support topics |
-| **PaymentAgent** | ✅ Active | `PaymentAgent/payment_agent/` | Credit checks, payment validation, fraud assessment, authorization |
-| **ServiceFulfillmentAgent** | ✅ Active | `ServiceFulfillmentAgent/service_fulfillment_agent/` | POST-SALE installation scheduling, provisioning, service activation |
-| **CustomerCommsAgent** | ✅ Active | `CustomerCommunicationAgent/customer_communication_agent/` | Automated/manual notifications and communication history |
+| Agent (A2A name) | Location | Local port | `services.conf` name | Cloud Run service | Description |
+|---|---|---|---|---|---|
+| **Gateway** (`sales_journey`) | `SuperAgent/` | 8000 | `gateway` | `csa-gateway` | UI, SSE API, workflow router, handoffs, sessions, memory |
+| `discovery_agent` | `DiscoveryAgent/discovery_agent/` | 8201 | `discovery` | `csa-agent-discovery` | Company lookup/registration, contacts, BANT qualification |
+| `serviceability_agent` | `ServiceabilityAgent/serviceability_agent/` | 8202 | `serviceability-agent` | `csa-agent-serviceability` | Pre-sale address validation and coverage (MCP → serviceability service) |
+| `product_agent` | `ProductAgent/product_agent/` | 8203 | `product` | `csa-agent-product` | Catalog, specs, comparisons, knowledge search; no pricing (MCP → catalog service) |
+| `offer_management_agent` | `OfferManagement/offer_management/` | 8204 | `offer` | `csa-agent-offer` | Pricing, discounts, quotes (the only pricing source) |
+| `order_agent` | `OrderAgent/order_agent/` | 8205 | `order` | `csa-agent-order` | Cart, orders, contracts, cancellations |
+| `payment_agent` | `PaymentAgent/payment_agent/` | 8206 | `payment` | `csa-agent-payment` | Credit checks, payment methods, payment processing |
+| `service_fulfillment_agent` | `ServiceFulfillmentAgent/service_fulfillment_agent/` | 8207 | `fulfillment` | `csa-agent-fulfillment` | Installation scheduling, provisioning, activation |
+| `customer_communication_agent` | `CustomerCommunicationAgent/customer_communication_agent/` | 8208 | `communication` | `csa-agent-communication` | Notification history/sends; runs the outbox dispatcher |
+| `greeting_agent` | `GreetingAgent/greeting_agent/` | 8209 | `greeting` | `csa-agent-greeting` | Greetings and phone script listing all products |
+| `faq_agent` | `FAQAgent/faq_agent/` | 8210 | `faq` | `csa-agent-faq` | Policies, SLAs, contracts, general questions; router fallback |
+
+| Tool service | Location | Local port | `services.conf` name | Cloud Run service |
+|---|---|---|---|---|
+| Catalog | `services/catalog/catalog_service/` | 8101 | `catalog` | `csa-catalog` |
+| Serviceability | `services/serviceability/serviceability_service/` | 8102 | `serviceability` | `csa-serviceability` |
+
+Shared runtime code lives in `libs/sales_common/sales_common/` (`config`, `db`, `migrate`, `context`, `adk_app`, `a2a_server`, `a2a_client`, `mcp_client`, `auth`, `memory`, `notifications`, `repositories`, `maintenance`, `testing`).
 
 ---
 
@@ -152,661 +137,353 @@ def check_address_serviceability(address: str) -> dict:
 
 | Layer | Technology | Version | Purpose |
 |-------|-----------|---------|---------|
-| **LLM** | Google Gemini | 2.5 Flash | Autonomous reasoning, intent analysis, conversation |
-| **Agent Framework** | Google ADK | 1.20.0+ | Multi-agent orchestration, tool integration, sub-agent delegation |
-| **Backend** | Python | 3.12+ | Agent logic, API integration |
-| **Server** | FastAPI | Latest | REST + SSE streaming for real-time chat |
-| **Frontend** | React + Vite | 19 | Client UI with streaming message display |
-| **State Mgmt** | React Context | - | Chat history, session state |
-| **Styling** | Tailwind CSS | - | Rapid, clean UI components |
-| **Transactional DB** | SQLite | - | Prospect data (DiscoveryAgent), Orders |
-| **Agent Routing** | ADK Sub-Agent Delegation | Native | Inter-agent communication via orchestrator |
+| **LLM** | Google Gemini | `GEMINI_MODEL` (e.g. `gemini-3-flash-preview`) | Intent routing, conversation |
+| **Agent Framework** | Google ADK | `google-adk[a2a,mcp,db]==2.10.0` | `Workflow` graph, `App` (compaction, context cache), `DatabaseSessionService`, `to_a2a`, `RemoteA2aAgent`, `McpToolset` |
+| **Agent protocol** | A2A (`a2a-sdk`) | 1.x | Agent cards, JSON-RPC, `DatabaseTaskStore` |
+| **Tool protocol** | MCP (`mcp`) | `>=2.2,<3` (`MCPServer`) | Catalog and serviceability tool servers |
+| **Backend** | Python + FastAPI / Starlette | 3.12 (images), FastAPI ≥ 0.115 | Gateway API, tool services, A2A apps |
+| **Database** | PostgreSQL | 16 (Cloud SQL in GCP) | Business tables, ADK sessions, memory, A2A tasks |
+| **DB drivers** | psycopg 3 (pool), SQLAlchemy 2.1 + asyncpg + greenlet | - | Sync tools; async ADK sessions and task store |
+| **Session tokens** | itsdangerous | ≥ 2.2 | Signed, expiring chat tokens + revocation table |
+| **RAG** | ChromaDB + sentence-transformers (`all-MiniLM-L6-v2`) | chromadb ≥ 1.0 | Product knowledge search (catalog service only) |
+| **Frontend** | React + Vite + Tailwind CSS | React 19, Vite 6, Tailwind 3 | Chat UI with SSE streaming |
+| **Deployment** | Docker Compose (local), Cloud Run + Cloud SQL (GCP) | - | One container per service |
 
 ### Model Configuration
 
-**Production Model:** `gemini-3-flash-preview` (via `GEMINI_MODEL` env var)
-
-- Temperature: 0.7 (SuperAgent/greeting/FAQ), 0.0 (deterministic agents)
-- Max tokens: 2048-8192 (agent-specific)
-- Safety settings: Configurable per-agent
-
-**Alternative Models Supported:**
-
-- `gemini-3-flash-preview` (stable release)
-- `gemini-3-flash-preview` (future)
-- `gemini-3-flash-preview` (high-reasoning tasks)
+- `GEMINI_MODEL` is **required** and has no default (`sales_common.config.model_name()` raises when unset).
+- Temperatures: router 0.0 (≤ 256 output tokens); greeting and FAQ 0.7; service fulfillment 0.3; transactional agents 0.0.
+- Safety thresholds from `SAFETY_*` env vars (`sales_common.config.safety_settings`).
+- Long, stable prompts go in `static_instruction` (cache-friendly prefix); the short templated `instruction` carries journey context.
 
 ---
 
 ## The Golden Rule
 
-**All agents MUST strictly follow ADK standards:**
+**All agents MUST strictly follow ADK standards.** The full, authoritative rules and templates are in **[docs/agent-service-guide.md](docs/agent-service-guide.md)**. Summary:
 
-### 1. ADK Bootstrap Template Structure
+### 1. ADK Bootstrap Template Structure + A2A server
 
-Every agent project follows this canonical pattern:
-
+```text
+OrderAgent/
+├── pyproject.toml          # depends on sales-common (installed first)
+├── Dockerfile              # build context = repo root
+├── README.md / AGENTS.md
+├── order_agent/
+│   ├── __init__.py         # from .agent import root_agent, build_agent
+│   ├── agent.py            # build_agent(model=None) -> Agent ; root_agent = build_agent()
+│   ├── prompts.py          # static_instruction + short description
+│   ├── tools/              # deterministic tools
+│   └── server.py           # app = create_a2a_app(root_agent)
+└── tests/
 ```
-AgentName/
-├── pyproject.toml              # Python package definition
-├── agent_name/                 # Top-level package
-│   ├── __init__.py             # Exports root agent
-│   ├── agent.py                # Agent instance + logic
-│   ├── prompts.py              # Instruction templates
-│   ├── config.py               # Settings (pydantic)
-│   ├── sub_agents/             # Directory per sub-agent
-│   │   ├── sub_agent_1/
-│   │   │   ├── __init__.py
-│   │   │   └── agent.py
-│   └── tools/                  # Function tools
-│       └── tools.py
-├── tests/                      # Pytest test suite
-└── README.md                   # Agent documentation
-```
-
-**Why This Matters:**
-
-- Consistent navigation across all agent projects
-- Clean import resolution (`from agent_name import get_agent`)
-- Proper package isolation (critical for ADK parent-binding)
 
 ### 2. ADK Agent Initialization Pattern
 
 ```python
-from google.adk.agents import Agent
-from google.genai import types
-
-agent = Agent(
-    name="agent_name",
-    model=os.getenv("GEMINI_MODEL"),  # No default - fail fast if not configured
-    instruction="System prompt defining agent behavior...",
-    description="Brief agent purpose for orchestrator routing",
-    sub_agents=[],                  # If this is an orchestrator
-    tools=[tool1, tool2],           # FunctionTools for deterministic ops
-    generate_content_config=types.GenerateContentConfig(
-        temperature=0.7,
-        max_output_tokens=2048,
-    ),
-)
+def build_agent(model: Optional[str | BaseLlm] = None) -> Agent:
+    return Agent(
+        name="order_agent",                          # hardcoded; the gateway routes by it
+        model=model or model_name(),                 # GEMINI_MODEL, fail fast
+        description=ORDER_SHORT_DESCRIPTION,
+        static_instruction=ORDER_AGENT_INSTRUCTION,  # long, cacheable
+        instruction=JOURNEY_CONTEXT_INSTRUCTION,     # templated from forwarded state
+        tools=[add_to_cart, ...],
+        before_agent_callback=[import_forwarded_context],
+        after_tool_callback=[export_context_delta],
+        generate_content_config=generate_config(temperature=0.0, max_output_tokens=2048),
+    )
 ```
 
-**Note:** Avoid default values for critical config like `GEMINI_MODEL`. Use `os.getenv("VARIABLE")` without fallback to fail fast if environment is not properly configured.
+`build_agent(model=...)` lets tests inject `sales_common.testing.ScriptLlm`.
 
-### 3. Tool Definition Pattern (MCP Integration)
+### 3. Tool Definition Pattern
 
-```python
-from google.adk.tools import FunctionTool
+- **Shared, reusable, read-mostly tools** → a REST + MCP tool service under `services/<domain>/` (see the catalog and serviceability READMEs), consumed with `McpToolset`.
+- **Agent-local tools** → plain Python functions (or `FunctionTool`) in `<agent>/tools/`, using `sales_common.db` for PostgreSQL.
+- Either way: a clear docstring (it becomes the tool description), **JSON-serializable dict results with explicit field names**, deterministic logic only, no LLM calls inside tools.
 
-@FunctionTool
-def tool_function(param: str) -> dict:
-    """
-    Clear docstring - becomes tool description for LLM.
+### 4. A2A Service per Agent (replaces "Importlib Isolation")
 
-    Args:
-        param: Parameter description
+- Every agent is served by `server.py` → `sales_common.a2a_server.create_a2a_app(root_agent)`, which provides an ADK `App` (compaction + context cache), `DatabaseSessionService` sessions, an a2a-sdk `DatabaseTaskStore`, the agent card at `/.well-known/agent-card.json` (advertising `PUBLIC_URL`) and `GET /healthz`.
+- **No `importlib` isolation, no `sys.modules[...]` lookups, no imports of another agent's package.** Cross-domain effects go through the workflow (A2A), the notification outbox (`sales_common.notifications.enqueue`) or shared SQL helpers (`sales_common.repositories`).
+- Agents do not call `transfer_to_agent` and prompts must not tell them to hand off to a named peer; the gateway workflow owns routing and handoffs.
 
-    Returns:
-        dict: Result schema
-    """
-    # Deterministic logic only - no LLM calls inside tools
-    return {"result": "data"}
-```
+### 5. Agent Naming
 
-### 4. Importlib Isolation for Sub-Agents
-
-**Critical for ADK:** When a sub-agent exists as a separate project, it must be loaded via `importlib` to avoid parent-binding conflicts:
-
-```python
-# SuperAgent/super_agent/sub_agents/discovery/agent.py
-
-import importlib.util
-import sys
-import types as pytypes
-
-# Stub parent package to prevent __init__.py execution
-if "bootstrap_agent" not in sys.modules:
-    _stub = pytypes.ModuleType("bootstrap_agent")
-    _stub.__path__ = [_DISCOVERY_PKG]
-    sys.modules["bootstrap_agent"] = _stub
-
-# Load agent module in isolation
-_agent_spec = importlib.util.spec_from_file_location(
-    "bootstrap_agent.agent",
-    os.path.join(_DISCOVERY_PKG, "agent.py")
-)
-_agent_mod = importlib.util.module_from_spec(_agent_spec)
-sys.modules[_agent_spec.name] = _agent_mod
-_agent_spec.loader.exec_module(_agent_mod)
-
-# Export fresh Agent instance
-discovery_agent = _agent_mod.discovery_agent
-```
-
-**Why:** ADK enforces one parent per agent. If `DiscoveryAgent/__init__.py` runs, it binds `discovery_agent` to its own root. Importlib loads a fresh instance for SuperAgent's orchestration.
-
-### 5. Sub-Agent Naming Best Practices
-
-**CRITICAL:** Sub-agents loaded via importlib must use **hardcoded names** to avoid environment variable conflicts.
-
-**❌ WRONG (causes name conflicts):**
-
-```python
-# ServiceabilityAgent/serviceability_agent/agent.py
-from dotenv import load_dotenv
-
-load_dotenv()  # ← Loads root .env which may have AGENT_NAME=super_sales_agent
-
-AGENT_NAME = os.getenv("AGENT_NAME", "serviceability_agent")  # ← Gets overridden!
-
-serviceability_agent = Agent(
-    name=AGENT_NAME,  # ← Results in wrong name, ADK can't find agent
-    ...
-)
-```
-
-**✅ CORRECT (hardcoded name, no conflicts):**
-
-```python
-# ServiceabilityAgent/serviceability_agent/agent.py
-# No load_dotenv() call - sub-agents inherit config from parent
-
-GEMINI_MODEL = os.getenv("GEMINI_MODEL")  # Read from parent's environment
-
-serviceability_agent = Agent(
-    name="serviceability_agent",  # ← Hardcoded, always correct
-    model=GEMINI_MODEL,
-    ...
-)
-```
-
-**Key Rules:**
-
-1. **Never call `load_dotenv()` in sub-agent code** - environment already loaded by SuperAgent
-2. **Hardcode agent names** - don't read from `AGENT_NAME` environment variable
-3. **No default model values** - use `os.getenv("GEMINI_MODEL")` without fallback to fail fast if not configured
-4. **Root agent (SuperAgent) sets environment** - sub-agents inherit it
-
-**Why This Matters:**
-
-- When `load_dotenv()` runs in ServiceabilityAgent, it reads root `.env` containing `AGENT_NAME=super_sales_agent`
-- This overrides the sub-agent's intended name, causing ADK to fail with "Agent not found in agent tree"
-- Hardcoded names ensure consistent agent identity regardless of environment state
+- A2A names are hardcoded snake_case ending in `_agent` (e.g. `offer_management_agent`). The same name appears in `registry.py`, the `a2a_name` column of `scripts/services.conf`, the router prompt and the UI.
+- The gateway env var for an agent is `AGENT_URL_<A2A_NAME_UPPER>` (e.g. `AGENT_URL_ORDER_AGENT`).
 
 ### 6. Configuration Management
 
-**Centralized Config (Pydantic):**
-
-```python
-# super_agent/config.py
-from pydantic import Field
-from pydantic_settings import BaseSettings
-
-class AgentSettings(BaseSettings):
-    agent_name: str = "SuperAgent"
-    enable_sub_agents: bool = True
-    system_message: str = "You are a B2B sales assistant..."
-
-    class Config:
-        env_file = "../server/.env"
-
-settings = AgentSettings()
-```
+- Configuration comes from environment variables only. Agent code never calls `load_dotenv()`; `scripts/start_local.sh`, Docker Compose (`env_file: .env`) or Cloud Run provide the environment. The gateway loads the root `.env` for local convenience without overriding set variables.
+- Use `sales_common.config` helpers (`require_env`, `env_int`, `model_name`, `ContextSettings.from_env`). Critical values fail fast; there are no silent fallbacks (e.g. `sales_common.db` raises when `DATABASE_URL` is unset).
+- The shared variable reference is [.env.example](.env.example); gateway variables are in [SuperAgent/README.md](SuperAgent/README.md).
 
 ### 7. Logging Standards
 
 ```python
 import logging
+logger = logging.getLogger("order_agent.tools")
 
-logger = logging.getLogger("superagent.module_name")
-logger.setLevel(logging.INFO)
-
-# Log agent lifecycle events
-logger.info(f"Agent {agent.name} loaded with {len(agent.tools)} tools")
-logger.debug(f"Processing request: {request_data}")
-logger.error(f"Tool execution failed: {error}")
+logger.info("Order %s created for %s", order_id, customer_id)
+logger.warning("Memory search failed: %s", type(exc).__name__)   # no secrets, no raw payloads
 ```
+
+- Services call `sales_common.logging.setup_logging(name)`; `LOG_LEVEL` controls verbosity. Database URLs are logged via `mask_url()`.
+- Local logs: `logs/<service>.log` (written by `scripts/start_local.sh`). Cloud: Cloud Logging per Cloud Run service.
 
 ### 8. Error Handling Pattern
 
 ```python
 try:
-    result = tool_function(params)
-except ValidationError as e:
-    logger.error(f"Validation failed: {e}")
-    return {"error": "Invalid input", "details": str(e)}
-except ExternalAPIError as e:
-    logger.error(f"API failure: {e}")
-    return {"error": "Service unavailable", "fallback": True}
+    with db.transaction() as conn:
+        ...
+except psycopg.Error as exc:
+    logger.error("create_order failed: %s", type(exc).__name__)
+    return {"success": False, "error": "Order could not be saved. Please try again."}
 ```
+
+- Catch **specific** exceptions and return `{"success": false, "error": ...}`. **Never swallow `BaseException`**: ADK 2.x uses exceptions for retries and interrupts.
+- The gateway retries retryable model errors (503/429) before any domain event is seen and otherwise streams a user-friendly `error` SSE event naming the unavailable service.
 
 ### 9. Testing Requirements
 
-Every agent MUST include:
+Every service MUST include:
 
-- Unit tests for individual tools (`pytest`)
-- Integration tests for agent delegation and routing
-- E2E scenario tests (matches [Scenarios.md](Scenarios.md))
+- **Tool tests** against a scratch PostgreSQL database (`TEST_DATABASE_URL`, after `sales_common.migrate.run(seed=True)`), skipped when unset.
+- **Agent tests** with `sales_common.testing.ScriptLlm` (scripted function calls and text) and an in-memory ADK `Runner`; no API key needed.
+- **Gateway tests** (`SuperAgent/tests/`): handoff rules, workflow runs with in-process fake agents, SSE mapping, auth, API.
+- **Integration tests** (`tests/integration/test_local_stack.py`): real processes for all 13 services, real A2A, real MCP, real PostgreSQL, and a scripted `fake-sales` model.
+- **E2E** against a running stack: `python scripts/e2e_test.py --base-url http://127.0.0.1:8000` (real Gemini).
+- Scenario coverage per [Scenarios.md](Scenarios.md).
 
-```python
-# tests/test_agent.py
-def test_agent_initialization():
-    assert agent.name == "expected_name"
-    assert len(agent.tools) > 0
-
-def test_tool_execution():
-    result = tool_function("test_input")
-    assert result["status"] == "success"
+```bash
+pytest OrderAgent/tests -q
+TEST_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_test pytest SuperAgent/tests libs/sales_common/tests -q
+TEST_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_test venv/bin/python -m pytest tests/integration -q -s
 ```
 
 ---
 
 ## Agent Interaction Flow
 
-### Current Implementation: Hybrid Handoff Architecture
+### Current Implementation: Workflow Graph + Deterministic Handoffs
 
-**Design Decision (May 2026):** The system uses a **hybrid approach** combining:
-1. **Programmatic `after_agent_callback` handoffs** — deterministic, same-turn transfers that require NO extra user message
-2. **LLM instruction-based routing** — the SuperAgent's prompt rules for intent classification on new user messages
+The root of the gateway is the ADK 2.x `Workflow` `sales_journey` (`SuperAgent/super_agent/workflow.py`), wrapped in an `App` (`SuperAgent/super_agent/agent.py`):
 
-**Programmatic Handoffs (zero user input needed):**
-
-| Source Agent | Target Agent | Trigger | Mechanism |
-|-------------|-------------|---------|-----------|
-| DiscoveryAgent | ServiceabilityAgent | Agent registers company with address + promises serviceability check | `after_agent_callback` sets `transfer_to_agent` |
-| ServiceFulfillmentAgent | PaymentAgent | Agent confirms installation scheduling | `after_agent_callback` sets `transfer_to_agent` |
-| PaymentAgent | (self-inject) | PaymentAgent receives empty turn after scheduling handoff | `after_agent_callback` injects payment opener text |
-
-These use ADK's `after_agent_callback` mechanism: after the agent's LLM turn completes, a Python callback inspects session events/state and can set `callback_context.actions.transfer_to_agent` to force the next routing without waiting for a user message.
-
-**LLM Instruction-Based Routing (requires user message):**
-
-All other transitions rely on SuperAgent's prompt rules detecting intent patterns in the user's next message. The SuperAgent always routes — it never generates user-facing text itself.
-
-**Example Flow (zero-click handoffs):**
-
-```
-User: "We're Crane.io at 123 Main St, Philadelphia PA"
-→ DiscoveryAgent registers company, promises serviceability check
-→ after_agent_callback fires: transfer_to_agent = "serviceability_agent"
-→ ServiceabilityAgent: "✅ This location is serviceable with Fiber (FTTP)..."
-   (No user message needed between Discovery and Serviceability)
-
-User: "Schedule installation for tomorrow morning"
-→ ServiceFulfillmentAgent: "Installation confirmed! APT-20260505-482"
-→ after_agent_callback fires: transfer_to_agent = "payment_agent"
-→ PaymentAgent: "Let's take care of payment. Please provide payment method..."
-   (No user message needed between Scheduling and Payment)
+```mermaid
+graph TD
+    START(["START"]) --> PREP["prepare_turn<br/>record turn, search memory,<br/>build router input"]
+    PREP -->|fast: pure greeting| DISPATCH
+    PREP -->|llm| ROUTER["route_intent<br/>LlmAgent single_turn<br/>output_schema RouteDecision"]
+    ROUTER --> DISPATCH["dispatch<br/>validate target, fallback faq_agent,<br/>write a2a_outbound_message"]
+    DISPATCH -->|route by agent name| AGENTS["10 RemoteA2aAgent nodes"]
+    AGENTS --> HANDOFF["HandoffPolicyNode<br/>custom Node, max 2 hops"]
+    HANDOFF -->|serviceability_agent| AGENTS
+    HANDOFF -->|payment_agent| AGENTS
+    HANDOFF -->|end| FINISH["finish_turn<br/>persist user: profile keys"]
 ```
 
-**Why `after_agent_callback` instead of server-side pattern matching:**
+| Node | Kind | Responsibility |
+|---|---|---|
+| `prepare_turn` | function node | Stores `turn_user_message`, resets `handoff_hops`, appends to `transcript`. Pure greetings take the **fast path** to `greeting_agent` (no LLM). Otherwise searches memory and builds a compact router input: message, `last_agent`, last reply excerpt (≤ 400 chars), journey flags, company name, memories. |
+| `route_intent` | `LlmAgent` (`mode="single_turn"`, `include_contents="none"`, temperature 0) | Returns `RouteDecision{target, reason}`. Routing rules are in `SuperAgent/super_agent/prompts.py` (`ROUTER_INSTRUCTION`). |
+| `dispatch` | function node | Validates the target against the registry (unknown → `faq_agent`), writes `last_agent` and `a2a_outbound_message`, routes to that agent node. |
+| agent nodes | `RemoteA2aAgent` × 10 | Run the domain agent as a remote A2A call. |
+| `handoff_policy` | `HandoffPolicyNode(Node)` | Applies `evaluate_handoff()` rules; appends the reply to the transcript; routes to the next agent or `end`. |
+| `finish_turn` | function node | Writes `user:customer_id` / `user:company_name` for returning visitors. |
 
-- ✅ **ADK-native:** Uses ADK's own callback system, not fighting the framework
-- ✅ **Same turn:** Transfer happens within the same ADK invocation — no extra round-trip
-- ✅ **Deterministic:** Python code checks session state/events — no LLM variability
-- ✅ **Graceful fallback:** If callback fails (logged as warning), the existing prompt-based routing still works on the user's next message
+**Deterministic handoffs (same turn, no extra user message):**
 
----
+| From | To | Condition | Message sent to the target |
+|---|---|---|---|
+| `discovery_agent` | `serviceability_agent` | `customer_context` has a `customer_id` and an address `zip_code`, and serviceability was not yet checked for that ZIP | `Check service availability for this address: {street, city, state, zip_code}` (JSON) |
+| `service_fulfillment_agent` | `payment_agent` | `ContextBridgePlugin` saw a successful `schedule_installation` (`appointment_confirmed_order`), payment is not completed/approved/captured, and the order status is `pending_payment`, `draft` or empty | `Installation is scheduled for order <id>; total <amount>. Start payment: ...` |
 
-## Overcoming Multi-Turn Conversation Challenges
+At most **2 handoff hops** per turn (`MAX_HANDOFF_HOPS`). Rules are pure functions and unit-tested without an LLM (`SuperAgent/tests/test_handoff_rules.py`).
 
-Multi-agent systems face unique challenges when coordinating across conversation turns. We've implemented two complementary strategies to ensure reliable agent-to-agent communication:
+This replaces the ADK 1.x design (LLM coordinator with `sub_agents`, three `after_agent_callback` handoff hacks and a synthetic server-side "Proceed to payment" re-run).
 
-### Strategy 1: LLM Instruction-Based Agent Chaining
+### State, Sessions, Memory and Context Features
 
-**Approach:** Use explicit instructions in agent prompts to guide multi-turn handoffs without requiring deterministic workflow engines.
+| ADK feature | How it is used |
+|---|---|
+| **Sessions** | `DatabaseSessionService` on PostgreSQL (`postgresql+asyncpg://`, derived from `DATABASE_URL` or `SESSION_DB_URL`) in the gateway and in every agent service. Sessions survive restarts and work across instances. |
+| **State** | Session scope: `customer_context`, `serviceability_context`, `offer_context`, `order_context`, `payment_context`, plus `last_agent`, `last_reply`, `transcript`, `turn_user_message`, `handoff_hops`, `a2a_outbound_message`, `appointment_confirmed_order`. User scope: `user:customer_id`, `user:company_name`. |
+| **Events** | The SSE API maps workflow events to UI events (`token`, `activity_update`, `structured_card`, `cart_update`, `suggestions`, `done`, `error`). Only domain-agent events produce text; repeated final texts are de-duplicated. |
+| **Memory** | `sales_common.memory.PostgresMemoryService` (table `adk_memories`, PostgreSQL full-text search, always scoped by app and user). The session is added to memory after each turn; `prepare_turn` searches it for routing context. |
+| **Context compression** | `EventsCompactionConfig`: every 8 invocations with overlap 2, or above 60k tokens keeping 10 events (`COMPACTION_*`). |
+| **Model context caching** | `ContextCacheConfig`: TTL 1800 s, refresh every 10 invocations, min 4096 tokens (`CONTEXT_CACHE_*`). |
+| **Conversational context** | `static_instruction` prompts, `{customer_context?}`-style templating from forwarded state, and a forwarded recent transcript for agents that do not see other agents' turns. |
 
-**How It Works:**
+### Structured JSON Tool Outputs (zero-hallucination strategy)
 
-Each sub-agent's instruction set includes explicit guidance on when and how to signal completion and transfer control:
-
-```python
-# DiscoveryAgent Instructions (excerpt)
-"""
-After successfully adding a NEW company with a complete address:
-Confirm the registration and inform the user that you will check service availability:
-
-"Welcome! I've registered **[Company Name]** at **[Full Address including Zip Code]**. 
-
-Let me check if this address is serviceable and what network infrastructure is available..."
-
-Then IMMEDIATELY signal to transfer control to the serviceability_agent by ending your response.
-The SuperAgent orchestrator will automatically route the next step to check service availability.
-"""
-
-# SuperAgent Routing Instructions (excerpt)
-"""
-Transfer to **serviceability_agent** whenever:
-- **AUTOMATICALLY after discovery_agent completes company registration with an address**
-  If the conversation history shows discovery_agent just registered a company with a full
-  address, transfer to serviceability_agent on the user's next message (even if it's
-  just "ok", "yes", or any acknowledgment)
-"""
-```
-
-**Benefits:**
-
-- ✅ **Natural conversation flow** - User doesn't experience jarring handoffs
-- ✅ **LLM-driven flexibility** - Handles variations in user responses ("ok", "yes", "sure")
-- ✅ **No rigid state machines** - Works within ADK's conversational model
-- ✅ **Context-aware routing** - SuperAgent reads conversation history to detect completion signals
-
-**Key Pattern:** Agents use **conversational cues** ("Let me check...") followed by response termination to signal handoffs. The orchestrator detects these patterns in history and routes accordingly.
-
----
-
-### Strategy 2: Structured JSON Tool Outputs
-
-**Problem Identified (Feb 2026):** When agents transferred data across multi-turn conversations using unstructured text, Gemini would occasionally **hallucinate or modify critical data** during agent-to-agent handoffs.
-
-**Example Hallucination:**
+**Problem identified (Feb 2026):** when data moved between agents as formatted text, Gemini occasionally rephrased it and changed critical values:
 
 ```
 DiscoveryAgent tool returns: "123 Main Street, Philadelphia, PA 19103"
-→ LLM transfers to ServiceabilityAgent as: "123 Main Street, Philadelphia, PA 19106"
-   (zip code changed from 19103 to 19106)
+→ passed on as: "123 Main Street, Philadelphia, PA 19106"   (zip code changed)
 ```
 
-**Root Cause:** When tools returned formatted text strings like `"Address: 123 Main St, City: Philadelphia, PA, Zip: 19103"`, the LLM would **rephrase** the output in its next turn, which allowed for digit substitution, field omission, or paraphrasing errors.
-
-## Solution: Structured JSON Tool Outputs
-
-All DiscoveryAgent tools now return **JSON with explicit field names** instead of formatted text:
+**Solution:** every tool returns **JSON with explicit field names**, and exact values travel as structured state rather than prose:
 
 ```python
-# ❌ BEFORE (Formatted Text - Prone to Hallucination)
-def get_company_profile(company_name: str) -> str:
-    return f"""
-    Company: {company['Company Name']}
-    Address: {company['Street']}, {company['City']}, {company['State']} {company['zip_code']}
-    """
+# ❌ BEFORE (formatted text, prone to rephrasing)
+return f"Company: {name}\nAddress: {street}, {city}, {state} {zip_code}"
 
-# ✅ AFTER (Structured JSON - Hallucination-Resistant)
-def get_company_profile(company_name: str) -> str:
-    profile = {
-        "company_name": company['Company Name'],
-        "address": {
-            "street": company['Street'],
-            "city": company['City'],
-            "state": company['State'],
-            "zip_code": company['zip_code']  # ← Explicit field prevents modification
-        }
-    }
-    return json.dumps(profile, indent=2)
+# ✅ AFTER (structured dict)
+return {
+    "company_name": name,
+    "address": {"street": street, "city": city, "state": state, "zip_code": zip_code},
+}
 ```
 
-**Agent Instructions Updated:**
+In the current architecture this is enforced end to end:
 
-```python
-"""
-When responding:
-- All tools return JSON responses - parse them to extract the data you need
-- Parse the JSON response to extract company details (especially the full address with zip code)
-- Parse the JSON responses from tools and extract success status and messages
-"""
-```
+- Tools write authoritative facts to journey keys (`tool_context.state["customer_context"] = {...}`); `export_context_delta` ships them to the gateway as `_context_update`.
+- Handoff messages are built by `HandoffPolicyNode` from state (e.g. the address JSON for serviceability), never from the previous agent's prose.
+- MCP tool results are JSON objects (`structuredContent`).
 
-**Why JSON Works:**
+**Key learnings (still valid):**
 
-1. **Explicit field names** - LLM cannot "forget" which field is which
-2. **Type safety** - Numbers stay numbers, strings stay strings
-3. **No rephrasing ambiguity** - LLM passes structured data directly without text generation
-4. **Gemini's native JSON parsing** - ADK automatically parses JSON from tools, no custom handling needed
-
-**Implementation Results:**
-
-- ✅ All 11 DiscoveryAgent tools converted to JSON (read + write operations)
-- ✅ Zero hallucination incidents in testing after conversion
-- ✅ Agent instructions updated to explain JSON parsing requirements
-- ✅ Database schema enforces mandatory zip codes (NOT NULL constraint)
-
-**Key Learnings:**
-
-- LLM-to-LLM data transfer is unreliable for exact values (addresses, numbers, codes)
-- Structured data formats (JSON, XML) prevent hallucination in multi-agent systems
-- Tools should return machine-readable formats, even when consumed by LLMs
-- Mixing JSON and text tool outputs is safe - Gemini handles both natively
-
----
-
-### Combined Strategy: Instruction Chaining + JSON Data Integrity
-
-The two strategies work together to create robust multi-turn agent coordination:
+- LLM-to-LLM transfer is unreliable for exact values (addresses, numbers, codes).
+- Tools should return machine-readable formats even when consumed by an LLM.
+- Deterministic code, not prompts, should decide when a mandatory next step happens.
 
 | Challenge | Solution | Mechanism |
-|-----------|----------|-----------|
-| **Agent handoff timing** | Instruction-based chaining | Agents signal completion via conversational cues; orchestrator detects from history |
-| **Data corruption across turns** | Structured JSON outputs | Tools return JSON with explicit fields; LLM parses without rephrasing |
-| **User flexibility** | LLM-driven routing | SuperAgent handles variations in user responses based on context |
-| **Zero-hallucination compliance** | Deterministic tools + JSON | Critical data (addresses, numbers) protected by structure |
-
-**Example End-to-End Flow:**
-
-```
-1. User: "I need internet for DonutCoffeeRecord Inc"
-   → DiscoveryAgent searches database (tool returns JSON)
-   → Found company with address
-
-2. DiscoveryAgent: "I found DonutCoffeeRecord Inc at 123 Main Street, Philadelphia, PA 19103.
-                     Are you calling about service for this location?"
-   (Instruction: Ask confirmation before proceeding)
-
-3. User: "yes"
-   → SuperAgent detects: (1) DiscoveryAgent completed registration, (2) User confirmed
-   → Routes to ServiceabilityAgent automatically
-
-4. ServiceabilityAgent receives JSON address from context:
-   {"street": "123 Main Street", "city": "Philadelphia", "state": "PA", "zip_code": "19103"}
-   → No hallucination - exact zip code preserved
-   → Validates address and returns infrastructure details
-```
-
-This hybrid approach leverages **LLM flexibility for routing** while maintaining **deterministic accuracy for critical data**.
-
----
+|---|---|---|
+| Agent handoff timing | Deterministic handoff rules | `HandoffPolicyNode` evaluates merged journey state |
+| Data corruption across turns and agents | Structured JSON + journey state | Tools write state; `_context_update` + A2A metadata carry it |
+| User flexibility | LLM intent routing | `route_intent` with last agent, last reply, journey flags and memories |
+| Zero-hallucination compliance | Deterministic tools | Pricing only from `offer_management_agent`; catalog never discloses prices |
 
 ### Typical Sales Conversation Flow
 
 ```mermaid
 sequenceDiagram
     participant Customer
-    participant SuperAgent
+    participant Gateway as Gateway sales_journey
     participant Greeting
     participant Discovery
     participant Serviceability
     participant Product
-    participant OfferManagement
+    participant Offer as OfferManagement
     participant Order
+    participant Fulfillment as ServiceFulfillment
     participant Payment
-    participant ServiceFulfillment
 
-    Customer->>SuperAgent: "Hi, I need internet for my office"
-    SuperAgent->>Greeting: Route greeting
-    Greeting-->>SuperAgent: Phone script response
-    SuperAgent-->>Customer: "Hello! I can help with Internet, Ethernet, TV, SD-WAN, Security Products..."
+    Customer->>Gateway: Hi
+    Gateway->>Greeting: fast path, no router call
+    Greeting-->>Customer: Phone script listing products
 
-    Customer->>SuperAgent: "We're VoiceStream Networks at 123 Main St, Boston"
-    SuperAgent->>Discovery: Extract & lookup company
-    Discovery-->>SuperAgent: Company registered + "Would you like serviceability check?"
+    Customer->>Gateway: We are VoiceStream Networks at 123 Main St, Boston
+    Gateway->>Discovery: router selects discovery_agent
+    Discovery-->>Gateway: company registered, customer_context via _context_update
+    Gateway->>Serviceability: HandoffPolicyNode, same turn
+    Serviceability-->>Customer: Serviceable, Fiber 1G 5G 10G
 
-    Customer->>SuperAgent: "Yes"
-    SuperAgent->>Serviceability: Validate address
-    Serviceability-->>SuperAgent: Serviceable ✓ | Fiber 1G, 5G, 10G available
+    Customer->>Gateway: Compare Fiber 1G and 5G
+    Gateway->>Product: MCP tools on catalog service
+    Product-->>Customer: Specs, no pricing
 
-    SuperAgent->>Product: Get Fiber 5G specs
-    Product-->>SuperAgent: Speed, SLA, features
+    Customer->>Gateway: Quote Fiber 5G plus SD-WAN
+    Gateway->>Offer: router selects offer_management_agent
+    Offer-->>Customer: Quote card with offer_id and totals
 
-    Customer->>SuperAgent: "Give me pricing for Fiber 5G + SD-WAN"
-    SuperAgent->>OfferManagement: Build quote
-    OfferManagement-->>SuperAgent: offer_id + item prices + discounts + total
+    Customer->>Gateway: Proceed with this quote
+    Gateway->>Order: cart and order, status pending_payment
+    Order-->>Customer: Order created
 
-    Customer->>SuperAgent: "Proceed with this quote"
-    SuperAgent->>Order: Create order from quote
-    Order-->>SuperAgent: Order confirmed (pending_payment)
-
-    SuperAgent->>Payment: Credit check and payment
-    Payment-->>SuperAgent: Approved (Score: 720)
-
-    SuperAgent->>ServiceFulfillment: Schedule installation
-    ServiceFulfillment-->>SuperAgent: Feb 20, 9 AM confirmed
-
-    SuperAgent-->>Customer: "Order confirmed! Install: Feb 20, 9 AM"
+    Customer->>Gateway: Schedule installation tomorrow morning
+    Gateway->>Fulfillment: schedule_installation
+    Fulfillment-->>Gateway: success, appointment_confirmed_order set by ContextBridgePlugin
+    Gateway->>Payment: HandoffPolicyNode, same turn
+    Payment-->>Customer: Asks for payment method
 ```
 
-Note: Each arrow from Customer represents a separate user message/turn.
+Each `Customer->>Gateway` arrow is a separate user turn. Notifications (order confirmation, payment receipt, installation reminders) are written to the outbox by the producing agent and delivered by the communication service.
 
 ### Routing Decision Tree
 
-**SuperAgent Routing Logic (Priority Order):**
+The router prompt (`ROUTER_INSTRUCTION`) classifies intent in this priority order; the workflow then calls exactly one agent:
 
-1. **Company/Business Identification** → DiscoveryAgent (first time only)
-   - Trigger: "We're [CompanyName]", "I work at [Business]"
-   - Action: Lookup or create prospect, BANT scoring
-   - Response: Confirms registration, asks if user wants serviceability check
-
-2. **Address Validation/Coverage** → ServiceabilityAgent (PRE-SALE)
-   - Trigger: "Is service available at [address]?", "Check coverage", "Yes" (after discovery asks)
-   - Action: GIS lookup, return available infrastructure and speeds
-   - Note: User must explicitly request or confirm serviceability check
-
-3. **Product Catalog & Technical Fit** → ProductAgent
-    - Trigger: "Show me internet products", "compare Fiber 1G vs 5G", "SLA details"
-    - Action: Return technical specs/features/SLA only (no pricing)
-
-4. **Offer Management (Pricing/Discounts/Quote)** → OfferManagementAgent
-    - Trigger: "Give me a quote", "show total price", "any discounts?"
-    - Action: Return deterministic JSON with offer_id, item price points, discounts, subtotal, total_discount, total_price
-
-5. **Order Creation and Cart Management** → OrderAgent
-    - Trigger: "Place order", "add to cart", "checkout"
-    - Action: Cart-first ordering and contract generation
-
-6. **Payment Processing** → PaymentAgent
-    - Trigger: "Process payment", "credit check", or post-order payment flow
-    - Action: Credit validation and payment authorization
-
-7. **Installation Scheduling and Activation** → ServiceFulfillmentAgent
-    - Trigger: "Schedule installation", "activate service"
-    - Action: Post-order fulfillment and activation
-
-8. **Customer Notifications** → CustomerCommunicationAgent
-    - Trigger: "Send confirmation", "resend reminder", "show notification history"
-    - Action: Notification dispatch/history
-
-9. **Greetings** → GreetingAgent
-   - Trigger: "Hi", "Hello", "Good morning"
-   - Action: Generate phone script listing all products
-
-10. **FAQ/Support** → FAQAgent
-   - Trigger: "What's your policy?", "How long is install?", "Tell me about [product]"
-   - Action: Answer from knowledge base
+1. **Company/business identification** → `discovery_agent`
+2. **Address validation / coverage** → `serviceability_agent` (also reached automatically after discovery)
+3. **Product catalog and technical fit** (no pricing) → `product_agent`
+4. **Pricing, discounts, quotes** → `offer_management_agent`
+5. **Cart, order, contract, cancellation** → `order_agent`
+6. **Payment, credit check** → `payment_agent` (also reached automatically after scheduling)
+7. **Installation scheduling and activation** → `service_fulfillment_agent`
+8. **Notifications and notification history** → `customer_communication_agent`
+9. **Greetings** → `greeting_agent` (pure greetings bypass the router)
+10. **Policies, SLAs, support, anything else** → `faq_agent` (also the fallback for invalid router output)
 
 ---
 
 ## Deployment Architecture
 
-### Current Deployment (Development)
+### Local Development
 
-```
-SuperAgent/
-├── server/                     # FastAPI backend
-│   ├── main.py                 # Server entry, SSE streaming
-│   ├── api/
-│   │   └── chat.py             # Chat endpoint
-│   ├── middleware/
-│   │   ├── auth.py             # Basic auth
-│   │   └── rate_limiter.py     # Rate limiting
-│   └── .env                    # Config (GEMINI_MODEL, API keys)
-├── client/                     # React frontend
-│   └── src/
-│       └── components/
-│           └── Chat.tsx        # SSE streaming UI
-└── super_agent/                # Agent package (installed via pip -e .)
-    ├── agent.py                # Root orchestrator
-    ├── prompts.py              # System instructions
-    ├── config.py               # Settings
-    └── sub_agents/             # Sub-agent wrappers
-```
+| Option | Command | Notes |
+|---|---|---|
+| Native processes | `scripts/setup_local.sh` then `scripts/start_local.sh` | Needs a PostgreSQL 16 at `DATABASE_URL`. Runs migrations + seed, starts tools, agents, gateway (`:8000`) and the Vite UI (`:3000`). Logs in `logs/<name>.log`; stop with `scripts/stop_local.sh`. |
+| Containers | `docker compose up --build` | PostgreSQL 16, one-shot `db-init`, 2 tool services, 10 agents, gateway on a private network; only the gateway is published (`http://localhost:8000` serves UI + API). |
+| Database ops | `scripts/db.sh migrate`, `seed`, `reset --yes` | `reset` refuses non-local hosts unless `--allow-remote`. |
 
-**Startup:**
+### Google Cloud
 
-```bash
-# Terminal 1 - Backend
-cd SuperAgent/server
-pip install -e ..              # Install super_agent package
-uvicorn main:app --reload
-
-# Terminal 2 - Frontend
-cd SuperAgent/client
-npm run dev
-```
+13 Cloud Run services (gateway public; agents and tool services private, called with Google-signed ID tokens), one Cloud Run job (`csa-db-init`) for migrations + seed, Cloud SQL for PostgreSQL 16, Secret Manager and Artifact Registry. Managed by `scripts/setup_gcp.sh`, `scripts/deploy_cloud.sh`, `scripts/start_cloud.sh` and `scripts/shutdown_cloud.sh`. See [GCP_DEPLOY.md](GCP_DEPLOY.md).
 
 ### Production Considerations (Future)
 
-- **Containerization:** Docker for each agent + SuperAgent server
-- **Orchestration:** Kubernetes for scaling sub-agents independently
-- **Message Queue:** RabbitMQ/Kafka for async agent communication (replace in-memory)
-- **Observability:** OpenTelemetry + Cloud Logging for agent decision trails
-- **Secret Management:** Google Secret Manager for API keys
-- **Database:** PostgreSQL (replace SQLite for multi-tenancy)
+- Per-domain REST + MCP services and single-writer table ownership (`mcp-remaining-domains`), then per-service databases.
+- Shared rate limiting (currently an in-memory token bucket per gateway instance).
+- OpenTelemetry tracing across gateway → A2A → MCP hops.
+- Terraform / CI/CD pipelines (scripts use `gcloud` today).
 
 ---
 
 ## Key Architectural Decisions
 
-### Why Super Agent/Sub-Agent Pattern?
+### Why a Workflow Graph Instead of an LLM Coordinator?
 
-**Alternatives Considered:**
+- An ADK coordinator `LlmAgent` with `sub_agents` is **sticky**: after `transfer_to_agent`, later user turns go straight to the sub-agent until it transfers back. A **remote A2A agent cannot transfer back** to the gateway, so a coordinator over `RemoteA2aAgent` sub-agents would get stuck on the first remote agent.
+- The workflow routes **every turn** afresh, so the conversation can move freely between agents.
+- Business-mandatory steps (Discovery → Serviceability, Scheduling → Payment) are **deterministic Python rules**, not prompt instructions or callback hacks. LLM judgment is used only for intent classification.
+- The same graph runs with in-process fake agents (tests) and `RemoteA2aAgent` nodes (deployment).
+- `HandoffPolicyNode` subclasses `google.adk.workflow.Node`, the supported 2.x extension point (1.x `BaseAgent._run_async_impl` custom agents are bypassed by the graph engine; `SequentialAgent`/`LoopAgent` are deprecated).
 
-1. ❌ Monolithic LLM with all tools → Prompt bloat, poor intent separation
-2. ❌ Sequential pipeline → Rigid, can't handle dynamic conversation flow
-3. ✅ **Hierarchical orchestration** → Flexible routing, isolated concerns, sub-agent autonomy
+### Why the Context Bridge?
 
-**Benefits:**
+- A2A carries **message parts only**: local `session.state` is not sent and the remote `state_delta` is not returned.
+- Forwarding the journey context as request metadata (in) and `_context_update` inside tool responses (out) keeps every agent's tools and prompts working on the same structured state, without coupling agents to a gateway-owned table.
+- `ContextBridgePlugin.on_event_callback` merges updates **before the event is persisted**, so `HandoffPolicyNode` sees them in the same turn.
 
-- Clear separation of concerns (discovery ≠ pricing ≠ fulfillment)
-- Independent development/testing of sub-agents
-- ADK delegation enables multi-turn autonomous conversations
-- Sub-agents can be owned by different teams
+### Why A2A Services Instead of Importlib Isolation?
+
+- The old design loaded ten agents into one process via `importlib` wrappers and `sys.modules` cross-calls: one monolithic image, one Cloud Run instance, silent failures when a module was missing.
+- Each agent is now deployable and scalable on its own, owns its sessions, and is discoverable through its agent card. Cross-domain side effects use the notification outbox and shared SQL repositories instead of in-process calls.
+
+### Why REST + MCP Tool Services?
+
+- One source of truth for the 16 SKUs and coverage data (previously duplicated dicts in three agents).
+- The same `core.py` serves agents (MCP) and other systems (REST); changing data no longer means redeploying an LLM agent.
+- The product agent image no longer bundles PyTorch or the embedding model; only the catalog service does.
+
+### Why PostgreSQL?
+
+- Durable ADK sessions, memory and A2A tasks shared by many instances; business tables with versioned migrations (`db/migrations`) and idempotent seed files (`db/seed`).
+- Cloud SQL in GCP and a `postgres:16` container locally keep environments symmetric. SQLite and the GCS database sync were retired.
 
 ### Why ADK Over LangChain/LlamaIndex?
 
 | Feature | ADK | LangChain | Decision |
-| --------- | ----- | ----------- | ---------- |
-| Multi-agent orchestration | ✅ Native | ⚠️ Via LangGraph | ADK built for multi-agent |
-| Google Gemini integration | ✅ First-class | ➖ Generic | Optimized for Gemini |
-| Tool definition | ✅ `@FunctionTool` | ✅ Similar | Parity |
-| Observability | ✅ Built-in | ➖ Manual | ADK advantage |
+|---|---|---|---|
+| Multi-agent orchestration | ✅ Native graph workflows + A2A | ⚠️ Via LangGraph | ADK built for multi-agent |
+| Google Gemini integration | ✅ First-class (context caching) | ➖ Generic | Optimized for Gemini |
+| Protocols | ✅ A2A + MCP built in | ➖ Adapters | ADK advantage |
 | Learning curve | ⚠️ Newer docs | ✅ Mature | Acceptable trade-off |
-
-**Verdict:** ADK's native multi-agent support + Gemini optimization outweigh LangChain's maturity.
-
-### Why Importlib Isolation?
-
-**Problem:** ADK enforces `one parent per agent`. If `DiscoveryAgent/__init__.py` runs:
-
-```python
-# DiscoveryAgent/bootstrap_agent/__init__.py
-from .agent import discovery_agent  # <-- Binds to DiscoveryAgent's root
-```
-
-Then importing in SuperAgent fails:
-
-```python
-# SuperAgent/super_agent/agent.py
-from discovery_agent import discovery_agent  # ERROR: Already has parent
-```
-
-**Solution:** `importlib.util.spec_from_file_location` loads modules **without executing `__init__.py`**, creating a fresh Agent instance for SuperAgent's hierarchy.
-
-### Why SQLite for Development?
-
-**Rationale:**
-
-- Zero setup (no DB server)
-- Sufficient for single-user academic demo
-- Easy to inspect/reset (`sqlite3 data.db`)
-
-**Migration Path:** Schema compatible with PostgreSQL (production uses same ORM/SQL)
 
 ---
 
@@ -815,164 +492,90 @@ from discovery_agent import discovery_agent  # ERROR: Already has parent
 ### Data Privacy (Academic Demo)
 
 - ✅ Mock customer data only (no real PII)
-- ✅ API keys in `.env` (not committed)
-- ⚠️ Production requires: Encryption at rest/transit, PII anonymization
+- ✅ Secrets in `.env` locally (never committed) and Secret Manager in GCP
+- ⚠️ Production requires: encryption at rest/transit review, PII anonymization
+
+### Service and Session Security
+
+- Chat session tokens are signed with `SESSION_SECRET_KEY` (itsdangerous, expiring); revocation is stored in `revoked_sessions`.
+- Service-to-service calls on Cloud Run use Google-signed ID tokens (`SERVICE_AUTH=gcp_id_token`); only `csa-gateway` may invoke agents and only `csa-agents` may invoke tool services.
 
 ### Payment Security
 
-- ⚠️ **NOT PCI-DSS compliant** (demo only)
-- Production requires: Tokenization, secure vault, audit logging
+- ⚠️ **NOT PCI-DSS compliant** (demo only). The payment agent includes idempotency keys, a payment state machine, an append-only `payment_events` audit trail and per-customer rate limiting.
 
 ### LLM Safety
 
-**Guardrails in SuperAgent:**
-
-- Blocked topics: Competitors, pricing (unless via deterministic tool), sensitive data
-- Safety settings: `BLOCK_MEDIUM_AND_ABOVE` for harassment/hate speech
-- Output filtering: No PII leakage in LLM responses
+- Pricing only from deterministic offer tools; the catalog service never returns prices.
+- Safety thresholds via `SAFETY_*` env vars.
 
 ---
 
 ## Observability & Debugging
 
-### Logging Levels
-
-```bash
-# Enable debug logging
-export LOG_LEVEL=DEBUG
-```
-
-```python
-# Agent-specific logs
-logger.info(f"[{agent.name}] Tool execution: {tool_name}")
-logger.debug(f"Agent delegation: {message}")
-```
-
-### Agent Delegation Audit Trail
-
-All agent delegation events logged with:
-
-- Session ID (trace request across agents)
-- Timestamp
-- Delegating agent / Target agent
-- Tool calls and responses
-
-**Example Log:**
-
-```json
-{
-  "timestamp": "2026-02-15T10:30:15Z",
-  "level": "INFO",
-  "session_id": "uuid-1234",
-  "delegator": "super_sales_agent",
-  "target": "discovery_agent",
-  "action": "lookup_company",
-  "parameters": {"company_name": "VoiceStream Networks"},
-  "duration_ms": 245
-}
-```
-
-### Testing Agent Behavior
-
-```bash
-# Run all agent tests
-pytest tests/
-
-# Test specific agent
-pytest tests/test_discovery_agent.py -v
-
-# E2E scenario test
-pytest tests/test_scenarios.py::test_serviceability_flow
-```
+- `LOG_LEVEL=DEBUG` for verbose logs. Per-service local logs: `tail -f logs/gateway.log logs/order.log`.
+- **Delegation audit trail:** `ContextBridgePlugin` logs one `delegation author=<agent> tool=<tool> success=<bool> session=<id>` line per remote tool call and a `context_update keys=[...]` line per merge; the workflow logs `Routing turn to <agent>` and `Handoff <from> -> <to> (hop n)`.
+- `DEBUG=true` enables `GET /api/debug/session` on the gateway (your own session's ADK state).
+- Health: gateway `GET /health` and `/healthz`; every agent and tool service `GET /healthz`; agent cards at `/.well-known/agent-card.json`.
 
 ---
 
 ## Development Workflow
 
-### Adding a New Sub-Agent
+### Adding a New Agent
 
-1. **Create agent project:**
+1. **Create the service** following [docs/agent-service-guide.md](docs/agent-service-guide.md): `NewAgent/pyproject.toml`, `new_agent/{__init__,agent,prompts,server}.py`, `tools/`, `tests/`, `Dockerfile` (build context = repo root).
+2. **Register it in the gateway:** add an `AgentSpec("new_agent", "<routing description>", "http://localhost:82NN")` to `SuperAgent/super_agent/registry.py`. `build_workflow` adds the node and its edges from the registry.
+3. **Add a row to `scripts/services.conf`** (`name|dir|module|port|agent|csa-agent-<name>|new_agent|<mcp deps>`) so `setup_local.sh`, `start_local.sh`, `stop_local.sh` and `deploy_cloud.sh` pick it up (the gateway gets `AGENT_URL_NEW_AGENT` automatically), and add a matching block to `docker-compose.yml`.
+4. **Update the router prompt** (`ROUTER_INSTRUCTION` in `SuperAgent/super_agent/prompts.py`) with when to choose `new_agent`.
+5. **Handoffs (optional):** add a rule to `evaluate_handoff()` and an edge from `handoff_policy` in `build_workflow`, with tests in `SuperAgent/tests/test_handoff_rules.py`.
+6. **Tests + docs:** agent tests, gateway tests, the agent's `AGENTS.md`/`README.md`, and this file's registry.
 
-   ```bash
-   mkdir NewAgent
-   cd NewAgent
-   # Copy structure from BootStrapAgent/
-   ```
+### Adding a Tool Service
 
-2. **Follow ADK Bootstrap Template:**
-   - `pyproject.toml` with package definition
-   - `new_agent/agent.py` with Agent instance
-   - Tools in `new_agent/tools/`
-
-3. **Create wrapper in SuperAgent:**
-
-   ```bash
-   mkdir SuperAgent/super_agent/sub_agents/new_agent
-   # Create __init__.py and agent.py with importlib loader
-   ```
-
-4. **Register in SuperAgent:**
-
-   ```python
-   # super_agent/agent.py
-   from .sub_agents.new_agent import new_agent
-
-   sub_agents=[discovery_agent, serviceability_agent, greeting_agent, faq_agent, new_agent]
-   ```
-
-5. **Update routing in prompts.py:**
-
-   ```python
-   # super_agent/prompts.py
-   """
-   N. **New Agent Use Case**
-      Transfer to **new_agent** for [description]
-      Examples: [user inputs]
-   """
-   ```
+Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by FastAPI routers (`/api/v1`) and an `MCPServer` mounted at `/mcp/` (stateless HTTP, `host="0.0.0.0"`), a `tool` row in `scripts/services.conf`, and an `ENV_VAR=<service>` entry in the consuming agent's `mcp_deps` column.
 
 ### Modifying Agent Instructions
 
-**Location:** `agent_name/prompts.py` (centralized) or `agent.py` (inline)
-
-**Best Practice:** Keep prompts in `prompts.py` for version control, A/B testing
-
-**After change:**
-
-```bash
-# Restart server to reload agent
-pkill -f uvicorn
-cd SuperAgent/server && uvicorn main:app --reload
-```
+- Domain prompts: `<agent>/prompts.py` (`static_instruction`). Routing rules: `SuperAgent/super_agent/prompts.py`.
+- Keep output formats the UI parses (order/payment JSON blocks, serviceability key:value lines).
+- Restart just that service: `scripts/stop_local.sh --only order && scripts/start_local.sh --only order --skip-migrate --no-ui`.
 
 ---
 
 ## Project TODOs
 
-1. **Create persistent SQLite databases for quote, order, and pending cart state**
-    - Add `QuoteDB` (SQLite), `OrdersDB` (SQLite), and `PendingCartDB` (SQLite).
-    - `PendingCartDB` must be updated on every cart add/remove/change operation.
-    - `PendingCartDB` must be emptied for a cart when the related order is successfully submitted.
-    - Replace in-memory-only cart/order storage where applicable so state survives process restarts.
+**Done in the ADK 2.x / A2A rewrite:**
 
-2. **Move frontend rendering from heuristic prose parsing to structured contracts**
-    - Current `responseFormatters.js` parsing is heuristic and text-shape dependent; this is brittle with LLM output variability.
-    - Backend (`chat.py`) should emit typed SSE events from tool responses, e.g. `offer_update`, `serviceability_update`, `product_update`.
-    - UI (`ChatContext.jsx`, `MessageBubble.jsx`) should render cards from typed structured payloads rather than prose parsing.
-    - Keep `responseFormatters.js` as a legacy fallback path only.
-    - Goal: deterministic rendering and removal of prompt-coupled hardcoding from the frontend.
+- ✅ Persistent quotes, carts, orders and pending carts (PostgreSQL tables `quotes`, `carts`, `cart_items`, `orders`, `order_items`).
+- ✅ `customer_master` written after successful activation.
+- ✅ Typed SSE events from tool responses (`activity_update`, `cart_update`, `structured_card` for quotes) instead of relying only on prose parsing.
+- ✅ Durable sessions, long-term memory, compaction and context caching.
+- ✅ Deterministic handoffs; removal of `after_agent_callback` hacks, the synthetic payment re-run, importlib wrappers and `sys.modules` cross-calls.
+- ✅ Catalog and serviceability as REST + MCP services; multi-service scripts and Cloud Run deployment.
 
-3. **Persist fulfilled customer records in a CustomerMaster database**
-    - Once an order is fully fulfilled, capture complete customer details and store them in `CustomerMasterDB` (SQLite).
-    - Include key identifiers and lifecycle details (e.g., customer_id, company/contact info, service address, ordered products/services, order/fulfillment references).
-    - Ensure writes happen only after successful completion of the full fulfillment workflow.
+**Remaining:**
+
+1. **`mcp-remaining-domains`** (planned): REST + MCP services for CRM, pricing, orders, payments, fulfillment and notifications, with single-writer table ownership; OfferManagement reads prices from the catalog service instead of its own price book.
+2. **Known domain bugs:** fixed (duplicate Payment tool definitions, Offer quote cache/offer-id customer isolation, Discovery empty tool descriptions, `hash()`-based IDs in Order and Payment). Remaining minor issues are listed in each agent's `AGENTS.md` under "Known issues".
+3. **Structured UI contracts:** extend `structured_card` to serviceability, product and order results so `responseFormatters.js` becomes a fallback only.
+4. **Rate limiting** is per gateway instance (in-memory token bucket); move to a shared store for multi-instance deployments.
+5. **Known environment limitations:** the RAG embedding model download is blocked in the build sandbox (the catalog service then reports `available: false` for knowledge search); Docker images were not built in the sandbox (run `docker compose build` / `scripts/deploy_cloud.sh` yourself).
+6. Per-service databases and IaC (Terraform) once table ownership is single-writer.
 
 ---
 
 ## References
 
-- **Project README:** [README.md](README.md) - Full project overview
-- **Test Scenarios:** [Scenarios.md](Scenarios.md) - Positive/negative test cases
-- **Milestone Plan:** [MilestonePlan.md](MilestonePlan.md) - Development timeline
-- **Google ADK Docs:** <https://cloud.google.com/products/agent-development-kit>
+- **Project README:** [README.md](README.md)
+- **Agent Service Guide:** [docs/agent-service-guide.md](docs/agent-service-guide.md)
+- **Gateway:** [SuperAgent/README.md](SuperAgent/README.md)
+- **Database:** [db/README.md](db/README.md)
+- **Tool services:** [services/catalog/README.md](services/catalog/README.md), [services/serviceability/README.md](services/serviceability/README.md)
+- **Deployment:** [GCP_DEPLOY.md](GCP_DEPLOY.md)
+- **Design changes:** `openspec/changes/`
+- **Test Scenarios:** [Scenarios.md](Scenarios.md)
+- **Google ADK Docs:** <https://google.github.io/adk-docs/>
+- **A2A Protocol:** <https://a2a-protocol.org/>
+- **Model Context Protocol:** <https://modelcontextprotocol.io/>
 - **Gemini API:** <https://ai.google.dev/gemini-api/docs>
