@@ -66,16 +66,29 @@ DiscoveryAgent/
 | `get_customer_intent` | `insights`, `opportunities`, `actions` | no |
 | `search_by_intent_signals` | `accounts` JOIN `insights` | no |
 | `get_high_priority_opportunities` | `opportunities` | no |
-| `add_new_company` | `accounts` INSERT (generates `CUST-YYYYMMDD-NNN`) | yes, on success |
+| `add_new_company` | `accounts` INSERT (generates `CUST-YYYYMMDD-NNN`: today's UTC date, counter = max for today's prefix + 1 from 001, widens past 999; allocated under `pg_advisory_xact_lock`) | yes, on success |
 | `update_company_info` | `accounts` UPDATE | no |
-| `add_new_contact` / `update_contact_info` | `contacts` | no |
+| `add_new_contact` / `update_contact_info` | `contacts` (`add_new_contact` requires an existing account, matched case-insensitively; else `{success: false, error}`) | no |
 | `add_or_update_insights` | `insights` (update, else insert) | no |
-| `create_opportunity_from_bant` | `opportunities` INSERT with BANT scores | no |
+| `create_opportunity_from_bant` | `opportunities` INSERT with BANT scores; an existing opportunity with the same company + name (case-insensitive) is not re-inserted (`success: false, duplicate: true`) | no |
 | `check_customer_state` | cross-table, via `sales_common.repositories.customer_state` | no |
 
 `customer_context` shape: `{customer_id, company_name, address: {street, address_line2, city, state, zip_code}}`. It is written to `tool_context.state`; `export_context_delta` adds it to the tool response as `_context_update` so the gateway merges it into the journey state.
 
 Database errors (`psycopg.Error`) are returned as `{"success": false, "error": ...}`.
+
+NULL or blank columns are rendered with the tool's default (`N/A`, `Unknown`, ...) through the
+`_val(row, column, default)` helper; `dict.get(col, default)` would return `None` for a NULL
+column. `customer_context.address` uses `""` for missing parts, never `N/A`.
+
+## Known issues
+
+- `opportunities` and `contacts` have no unique keys in the shared schema (the seed data
+  already contains duplicate opportunities, so a unique index cannot be added without
+  cleaning demo data). Duplicates are prevented in code: check + insert under a per-company
+  advisory lock (contacts match on name or email, case-insensitive).
+- `accounts."Company Name"` is the primary key (case-sensitive); lookups for contacts and
+  opportunities match it case-insensitively.
 
 ## Hand-off
 

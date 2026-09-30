@@ -40,7 +40,8 @@ CustomerCommunicationAgent/
 1. Producer: `notifications.enqueue(type, recipient_email=..., args={...}, order_id=..., conn=conn)`
    → `notifications(status='pending', metadata_json={"template": type, "args": {...}})`.
 2. `dispatch_pending(limit=50)` (one transaction):
-   `SELECT * FROM notifications WHERE status='pending' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT n`.
+   `SELECT * FROM notifications WHERE status='pending' AND <retry backoff elapsed>
+   ORDER BY created_at, notification_id FOR UPDATE SKIP LOCKED LIMIT n`.
 3. Render with `templates.render(template, args)`; unknown templates use `generic`.
 4. Dedup: key `<template>:<recipient>[:<quote_id|cart_id|order_id>][:<new_status|payment_status>]`
    in `dedup_cache`, 5-minute window, guarded by `pg_advisory_xact_lock` → `status='deduped'`.
@@ -49,6 +50,8 @@ CustomerCommunicationAgent/
 6. Every processed row: `attempts += 1`, `updated_at`, `subject`, `message`; success sets `sent_at`
    and `dedup_cache`. An SMTP error leaves the row `pending` with `error`; after 3 attempts it is
    `failed`. A row with no deliverable channel fails immediately.
+   Retry backoff: a row with `attempts > 0` is not picked again until `updated_at` is at least
+   `NOTIFY_RETRY_SECONDS * attempts` seconds old (60 s, then 120 s with the default).
 7. `dispatcher_lifespan` runs `dispatch_pending` every `NOTIFY_POLL_SECONDS` via
    `asyncio.to_thread`; on shutdown it lets an in-flight batch finish (max 30 s), then stops.
 
@@ -73,10 +76,10 @@ row's `order_id` column. Missing values render as `N/A` / `TBD`.
 | `quote_expired` | `quote_id`, `customer_name`, `expired_at` |
 | `order_cancelled` | `order_id`, `customer_name`, `reason` |
 | `escalation` | `order_id`, `customer_name`, `reason`, `status` |
-| `install_dispatched`* | `order_id`, `customer_name`, `technician_name`, `technician_phone` |
+| `install_dispatched` | `order_id`, `customer_name`, `technician_name`, `technician_phone` |
 | any other (`generic`) | `subject`, `message`, `customer_name` (else lists the args) |
 
-\* Template exists but the type is not yet in `sales_common.notifications.NOTIFICATION_TYPES`.
+`install_dispatched` is enqueued by ServiceFulfillment `dispatch_technician`.
 
 ## Tools (LLM-facing)
 
@@ -103,6 +106,12 @@ the guide, plus:
 | `SMTP_PASSWORD` | — | secret (Gmail App Password); never logged |
 | `SMTP_FROM_NAME` | `B2B Sales Notifications` | |
 | `NOTIFY_POLL_SECONDS` | `10` | dispatcher poll interval (> 0) |
+| `NOTIFY_RETRY_SECONDS` | `60` | retry backoff base (>= 0); a failed row waits `value * attempts` seconds |
+
+## Known issues
+
+- Fixed: pending rows are dispatched in insertion order (`notifications.seq`, migration
+  `005_notifications_seq.sql`), including rows created within the same second.
 
 ## Tests
 

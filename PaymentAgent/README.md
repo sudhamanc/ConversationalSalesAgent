@@ -6,8 +6,10 @@ Service contract: [docs/agent-service-guide.md](../docs/agent-service-guide.md).
 
 ## Scope
 
-- **Does:** credit checks, payment method validation, payment processing, marking the order `paid`,
-  queueing the `payment_confirmation` notification, and exporting `payment_context`.
+- **Does:** credit checks, payment method validation, opaque tokenization and saved (masked)
+  payment methods in `customer_payment_methods`, payment processing for orders in `pending_payment`
+  or `draft` (other statuses are refused without charging), marking the order `paid`, queueing the
+  `payment_confirmation` notification, and exporting `payment_context`.
 - **Does not:** quote pricing (offer management), cart/order creation (order agent), or
   installation scheduling (service fulfillment).
 

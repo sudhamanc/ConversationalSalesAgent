@@ -56,6 +56,14 @@ export async function getToken() {
 }
 
 /**
+ * Current session token without creating a session (null when none exists).
+ * Used by the remote-logging shim, which must never create sessions itself.
+ */
+export function getCurrentToken() {
+  return _token;
+}
+
+/**
  * Reset the stored session so the next request creates a fresh one.
  * Called when the user clears the chat.
  */

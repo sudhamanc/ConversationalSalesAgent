@@ -107,13 +107,18 @@ def test_alternatives_unknown_404(client):
 def test_best_value(client):
     body = client.get("/api/v1/products/best-value").json()
     assert body["found"] is True and body["recommended"]["product_id"] == "FIB-10G"
-    body = client.get("/api/v1/products/best-value", params={"category": "coax", "max_budget": 100}).json()
+    body = client.get("/api/v1/products/best-value", params={"category": "coax"}).json()
     assert body["recommended"]["product_id"] == "COAX-1G"
     assert "unit_price" not in body["recommended"]
 
 
-def test_best_value_negative_budget_422(client):
-    assert client.get("/api/v1/products/best-value", params={"max_budget": -1}).status_code == 422
+def test_best_value_has_no_budget_parameter(client):
+    # max_budget was removed (pricing is not disclosed by the catalog); unknown
+    # query parameters are ignored, so old callers still get the category result.
+    params = client.app.openapi()["paths"]["/api/v1/products/best-value"]["get"]["parameters"]
+    assert [p["name"] for p in params] == ["category"]
+    resp = client.get("/api/v1/products/best-value", params={"category": "coax", "max_budget": -1})
+    assert resp.status_code == 200 and resp.json()["recommended"]["product_id"] == "COAX-1G"
 
 
 def test_knowledge_validation_422(client):

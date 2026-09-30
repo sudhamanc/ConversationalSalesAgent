@@ -9,13 +9,20 @@ from typing import Any, Dict
 
 import psycopg
 
-from sales_common.db import now_iso
+from sales_common.db import compute_expires_at, now_iso
 from sales_common.ids import new_id
 
 from ..utils.logger import get_logger
 from ..utils.database import save_cart, load_cart, load_carts_for_customer, delete_cart
 
 logger = get_logger(__name__)
+
+
+def _touch(cart: Dict[str, Any]) -> None:
+    """Record cart activity: bump ``updated_at`` and slide the 24h ``expires_at``."""
+    now = now_iso()
+    cart["updated_at"] = now
+    cart["expires_at"] = compute_expires_at(now, "cart")
 
 
 def create_cart(customer_id: str) -> Dict[str, Any]:
@@ -33,14 +40,16 @@ def create_cart(customer_id: str) -> Dict[str, Any]:
     try:
         cart_id = new_id("CART", timestamp_format="%Y%m%d%H%M%S")
         
+        created_at = now_iso()
         cart = {
             "cart_id": cart_id,
             "customer_id": customer_id,
             "items": [],
             "total_amount": 0.0,
-            "created_at": now_iso(),
-            "updated_at": now_iso(),
-            "expires_at": None,  # Set to 30 minutes from last update
+            "created_at": created_at,
+            "updated_at": created_at,
+            # Cart TTL (24h) runs from the last activity; refreshed by _touch().
+            "expires_at": compute_expires_at(created_at, "cart"),
         }
         
         save_cart(cart)
@@ -107,7 +116,7 @@ def add_to_cart(
         
         # Update total
         cart["total_amount"] = sum(item["subtotal"] for item in cart["items"])
-        cart["updated_at"] = now_iso()
+        _touch(cart)
         
         save_cart(cart)
         
@@ -151,7 +160,7 @@ def remove_from_cart(cart_id: str, service_type: str) -> Dict[str, Any]:
         
         cart["items"] = [item for item in cart["items"] if item["service_type"] != service_type]
         cart["total_amount"] = sum(item["subtotal"] for item in cart["items"])
-        cart["updated_at"] = now_iso()
+        _touch(cart)
         
         save_cart(cart)
         
@@ -227,7 +236,7 @@ def clear_cart(cart_id: str) -> Dict[str, Any]:
         
         cart["items"] = []
         cart["total_amount"] = 0.0
-        cart["updated_at"] = now_iso()
+        _touch(cart)
         
         save_cart(cart)
         

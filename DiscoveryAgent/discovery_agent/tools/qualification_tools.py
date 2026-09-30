@@ -117,6 +117,17 @@ def get_opportunity_qualification(
     return db.fetch_all(query, params)
 
 
+def find_opportunity(conn, company_name: str, opportunity_name: str) -> Optional[Dict[str, Any]]:
+    """Existing opportunity with the same company + name (case-insensitive), else None."""
+    return conn.execute(
+        'SELECT "Company Name", "Opportunity Name", "Stage", "BANT_Score_0to100", '
+        '"BANT_Priority_Bucket" FROM opportunities '
+        'WHERE lower("Company Name") = lower(%s) AND lower("Opportunity Name") = lower(%s) '
+        "LIMIT 1",
+        (company_name.strip(), opportunity_name.strip()),
+    ).fetchone()
+
+
 def add_opportunity(
     company_name: str,
     opportunity_name: str,
@@ -128,8 +139,16 @@ def add_opportunity(
     timeline_days: Optional[int] = None,
     target_close_date: Optional[str] = None,
     next_step: Optional[str] = None,
-) -> bool:
-    """Insert an opportunity with computed BANT scores. True when a row was written."""
+) -> Dict[str, Any]:
+    """Insert an opportunity with computed BANT scores.
+
+    ``opportunities`` has no unique key, so duplicates are detected explicitly:
+    when the company already has an opportunity with the same name
+    (case-insensitive) nothing is inserted. The check and insert run in one
+    transaction under a per-company advisory lock.
+
+    Returns ``{"created": bool, "duplicate": bool, "existing": row | None}``.
+    """
     bant_budget = calculate_budget_score(budget)
     bant_authority = calculate_authority_score(authority)
     bant_need = calculate_need_score(need)
@@ -153,11 +172,19 @@ def add_opportunity(
         created_at, updated_at
     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
-    rows = db.execute(query, (
-        company_name, opportunity_name, stage, mrc,
-        budget, authority, need, timeline_days, target_close_date, next_step,
-        bant_budget, bant_authority, bant_need, bant_timing,
-        bant_weighted, bant_score_100, bant_priority, bant_gaps,
-        now, now,
-    ))
-    return rows > 0
+    with db.transaction() as conn:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('discovery.opportunity:' || lower(%s)))",
+            (company_name.strip(),),
+        )
+        existing = find_opportunity(conn, company_name, opportunity_name)
+        if existing:
+            return {"created": False, "duplicate": True, "existing": existing}
+        rows = conn.execute(query, (
+            company_name, opportunity_name, stage, mrc,
+            budget, authority, need, timeline_days, target_close_date, next_step,
+            bant_budget, bant_authority, bant_need, bant_timing,
+            bant_weighted, bant_score_100, bant_priority, bant_gaps,
+            now, now,
+        )).rowcount
+    return {"created": rows > 0, "duplicate": False, "existing": None}

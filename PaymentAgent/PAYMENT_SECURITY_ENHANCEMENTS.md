@@ -14,7 +14,7 @@
 | Tool | Description |
 |---|---|
 | `validate_payment_method` | Luhn algorithm check for credit cards; 9-digit routing validation for ACH |
-| `tokenize_payment_method` | Generated token in format `tok_{brand}_{last4}` (e.g. `tok_visa_1234`) |
+| `tokenize_payment_method` | Historical: token format `tok_{brand}_{last4}` (e.g. `tok_visa_1234`). Now opaque `tok_` + `secrets.token_urlsafe(24)`; see AGENTS.md |
 | `add_payment_method` | Saved token to customer account (simulated, not persisted to DB) |
 | `process_payment` | Ran payment; approved if `amount < 10000`, declined otherwise |
 | `get_payment_methods` | Returned hardcoded static list of fake payment methods regardless of customer |

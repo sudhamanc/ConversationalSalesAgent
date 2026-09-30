@@ -2,13 +2,17 @@
  * Remote logging shim.
  *
  * Wraps console.log/warn/error/info so each call is also POSTed to the
- * backend's /api/client-log, which appends to SuperAgent/logs/frontend.log.
+ * backend's /api/client-log (same origin; Vite proxies /api in dev), which
+ * appends to <repo>/logs/frontend.log. The endpoint requires the chat session's
+ * Bearer token, so nothing is forwarded until a session exists.
  * Original console behavior is preserved (logs still appear in DevTools).
  *
  * Also forwards uncaught errors and unhandled promise rejections.
  */
 
-const ENDPOINT = "http://localhost:8000/api/client-log";
+import { getCurrentToken } from "./api";
+
+const ENDPOINT = "/api/client-log";
 
 const ORIGINAL = {
   log: console.log.bind(console),
@@ -33,10 +37,15 @@ function safeStringify(value) {
 
 function send(level, args) {
   try {
+    const token = getCurrentToken();
+    if (!token) return; // no session yet: the endpoint would reject it
     const message = args.map(safeStringify).join(" ").slice(0, 4000);
     fetch(ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         level,
         message,

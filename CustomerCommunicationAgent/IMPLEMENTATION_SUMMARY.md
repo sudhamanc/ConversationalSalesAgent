@@ -1,3 +1,7 @@
+> **Superseded.** This summary describes an earlier implementation and is out of date.
+> The current design (PostgreSQL outbox dispatcher, templates, tools, environment) is
+> documented in [AGENTS.md](AGENTS.md) and [README.md](README.md).
+
 # CustomerCommunicationAgent - Implementation Summary
 
 ## Overview

@@ -28,6 +28,9 @@ def mcp_result_payload(tool_response: Any) -> Optional[dict]:
     """Extract the JSON object from an MCP ``CallToolResult``-shaped dict.
 
     Prefers ``structuredContent``; falls back to parsing the first JSON text part.
+    MCPServer wraps non-object return values as ``{"result": ...}``; when that
+    wrapper holds an object (``{"result": {...}}`` and no other key) the inner
+    object is returned. Other wrapped values are returned as the wrapper dict.
     """
     if not isinstance(tool_response, dict):
         return None
@@ -35,7 +38,9 @@ def mcp_result_payload(tool_response: Any) -> Optional[dict]:
         return None
     structured = tool_response.get("structuredContent") or tool_response.get("structured_content")
     if isinstance(structured, dict):
-        # FastMCP/MCPServer wraps non-object returns as {"result": ...}
+        inner = structured.get("result")
+        if len(structured) == 1 and isinstance(inner, dict):
+            return inner
         return structured
     for part in tool_response.get("content") or []:
         if isinstance(part, dict) and part.get("type") == "text":

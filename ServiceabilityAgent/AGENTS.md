@@ -70,6 +70,11 @@ ServiceabilityAgent/
 Unserviceable: `{"serviceable": false, "address", "reason", "available_products": [], "available_product_categories": []}`.
 Invalid input (e.g. unknown state) is an MCP tool error.
 
+`validate_and_parse_address` handles comma-less input by splitting at the street suffix
+(`123 Main street philadelphia pa 19103` -> street `123 Main street`, city `philadelphia`) and
+accepts full state names before the ZIP; see
+[services/serviceability/README.md](../services/serviceability/README.md#address-parsing-addresspy).
+
 ---
 
 ## Journey context

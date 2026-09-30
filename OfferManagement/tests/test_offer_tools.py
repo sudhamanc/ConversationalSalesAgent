@@ -131,3 +131,15 @@ def test_same_bundle_for_two_customers_is_isolated(pg):
     # Re-quoting the same customer is idempotent (same offer id, row updated in place).
     again = generate_offer_quote(items, 12, 0.0, customer_id=a_id, company_name="A Co", tool_context=_ctx())
     assert again["offer_id"] == qa["offer_id"]
+
+
+def test_generate_offer_quote_persists_bant_score(pg):
+    from sales_common import db
+
+    cid = f"CUST-BANT-{uuid.uuid4().hex[:6]}"
+    result = generate_offer_quote(
+        json.dumps([{"product_id": "FIB-1G"}]), term_months=12, bant_score=72.5, customer_id=cid,
+    )
+    assert result["bant_score"] == 72.5
+    row = db.fetch_one("SELECT bant_score FROM quotes WHERE offer_id = %s", (result["offer_id"],))
+    assert row["bant_score"] == 72.5

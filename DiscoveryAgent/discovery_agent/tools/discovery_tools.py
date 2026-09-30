@@ -35,6 +35,31 @@ def _db_guard(func: Callable[..., dict]) -> Callable[..., dict]:
     return wrapper
 
 
+def _val(row: Optional[dict], column: str, default: Any = "N/A") -> Any:
+    """``row[column]``, or ``default`` when the column is missing, NULL or blank.
+
+    ``dict.get(column, default)`` returns ``None`` for a NULL column, so the
+    default never applied to database rows.
+    """
+    if not row:
+        return default
+    value = row.get(column)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    return value
+
+
+def _address(company: dict, default: Any = "N/A") -> dict:
+    """Account address; missing parts become ``default`` (``address_line2`` becomes '')."""
+    return {
+        "street": _val(company, "Street", default),
+        "address_line2": _val(company, "address_line2", ""),
+        "city": _val(company, "City", default),
+        "state": _val(company, "State", default),
+        "zip_code": _val(company, "zip_code", default),
+    }
+
+
 def _customer_context(customer_id: str, company_name: str, address: dict) -> dict:
     return {"customer_id": customer_id, "company_name": company_name, "address": address}
 
@@ -82,13 +107,7 @@ def search_companies(
             "company_name": company["Company Name"],
             "industry": company["Industry"],
             "region": company["Territory/Region"],
-            "address": {
-                "street": company.get("Street", "N/A"),
-                "address_line2": company.get("address_line2") or "",
-                "city": company.get("City", "N/A"),
-                "state": company.get("State", "N/A"),
-                "zip_code": company.get("zip_code", "N/A"),
-            },
+            "address": _address(company),
             "website": company["Website"],
             "customer_status": "Existing Customer" if company.get("Existing Customer") == "Y" else "Prospect",
             "customer_id": company.get("customer_id"),
@@ -120,13 +139,7 @@ def get_company_profile(company_name: str, tool_context: Optional[ToolContext] =
         "company_name": company["Company Name"],
         "industry": company["Industry"],
         "region": company["Territory/Region"],
-        "address": {
-            "street": company.get("Street", "N/A"),
-            "address_line2": company.get("address_line2") or "",
-            "city": company.get("City", "N/A"),
-            "state": company.get("State", "N/A"),
-            "zip_code": company.get("zip_code", "N/A"),
-        },
+        "address": _address(company),
         "website": company["Website"],
         "customer_status": "Existing Customer" if company.get("Existing Customer") == "Y" else "Prospect",
         "customer_id": company.get("customer_id"),
@@ -137,21 +150,21 @@ def get_company_profile(company_name: str, tool_context: Optional[ToolContext] =
     if company.get("Estimated Annual Spend"):
         profile["advertising_spend"] = {
             "total": company["Estimated Annual Spend"],
-            "digital": company.get("Digital", 0),
-            "programmatic": company.get("Programmatic", 0),
-            "tv": company.get("TV", 0),
-            "audio": company.get("Audio", 0),
-            "ooh": company.get("OOH", 0),
-            "search": company.get("Search", 0),
-            "social": company.get("Social", 0),
-            "primary_agency": company.get("Primary Agency", "Unknown"),
+            "digital": _val(company, "Digital", 0),
+            "programmatic": _val(company, "Programmatic", 0),
+            "tv": _val(company, "TV", 0),
+            "audio": _val(company, "Audio", 0),
+            "ooh": _val(company, "OOH", 0),
+            "search": _val(company, "Search", 0),
+            "social": _val(company, "Social", 0),
+            "primary_agency": _val(company, "Primary Agency", "Unknown"),
         }
 
     # Publish customer identity to session state; export_context_delta forwards
     # it to the gateway so downstream agents share the same customer_context.
     if tool_context is not None and profile.get("customer_id"):
         tool_context.state["customer_context"] = _customer_context(
-            profile["customer_id"], profile["company_name"], profile["address"]
+            profile["customer_id"], profile["company_name"], _address(company, default="")
         )
         logger.info(f"[STATE WRITE] get_company_profile -> customer_context = {tool_context.state['customer_context']}")
 
@@ -184,10 +197,10 @@ def get_contact_personas(company_name: str) -> dict:
 
     return {
         "company_name": company_name,
-        "economic_buyers": [{"name": c["Name"], "title": c["Title"], "email": c.get("Email", "N/A"), "phone": c.get("Phone", "N/A"), "notes": c.get("Notes")} for c in buyers],
-        "technical_buyers": [{"name": c["Name"], "title": c["Title"], "email": c.get("Email", "N/A"), "phone": c.get("Phone", "N/A")} for c in tech_buyers],
-        "champions": [{"name": c["Name"], "title": c["Title"], "email": c.get("Email", "N/A"), "phone": c.get("Phone", "N/A")} for c in champions],
-        "influencers": [{"name": c["Name"], "title": c["Title"], "email": c.get("Email", "N/A")} for c in influencers],
+        "economic_buyers": [{"name": c["Name"], "title": c["Title"], "email": _val(c, "Email", "N/A"), "phone": _val(c, "Phone", "N/A"), "notes": c.get("Notes")} for c in buyers],
+        "technical_buyers": [{"name": c["Name"], "title": c["Title"], "email": _val(c, "Email", "N/A"), "phone": _val(c, "Phone", "N/A")} for c in tech_buyers],
+        "champions": [{"name": c["Name"], "title": c["Title"], "email": _val(c, "Email", "N/A"), "phone": _val(c, "Phone", "N/A")} for c in champions],
+        "influencers": [{"name": c["Name"], "title": c["Title"], "email": _val(c, "Email", "N/A")} for c in influencers],
         "end_users": [{"name": c["Name"], "title": c["Title"]} for c in users],
     }
 
@@ -214,9 +227,9 @@ def get_customer_intent(company_name: str) -> dict:
     intent_data: dict[str, Any] = {"company_name": company_name}
 
     if insights:
-        intent_data["buying_signals"] = insights.get("Buying Signals", "None identified")
-        intent_data["pain_points"] = insights.get("Pain Points", "None identified")
-        intent_data["recommended_positioning"] = insights.get("Recommended Positioning", "None specified")
+        intent_data["buying_signals"] = _val(insights, "Buying Signals", "None identified")
+        intent_data["pain_points"] = _val(insights, "Pain Points", "None identified")
+        intent_data["recommended_positioning"] = _val(insights, "Recommended Positioning", "None specified")
 
     if opportunities:
         intent_data["opportunities"] = []
@@ -224,24 +237,24 @@ def get_customer_intent(company_name: str) -> dict:
             intent_data["opportunities"].append({
                 "name": opp["Opportunity Name"],
                 "stage": opp["Stage"],
-                "mrc_estimate": opp.get("Total MRC (Est)", 0),
-                "bant_score": opp.get("BANT_Score_0to100", 0),
-                "bant_priority": opp.get("BANT_Priority_Bucket", "N/A"),
-                "budget": opp.get("Budget", "Unknown"),
-                "authority": opp.get("Authority", "Unknown"),
-                "need": opp.get("Need", "Unknown"),
-                "timeline_days": opp.get("Timeline (days)", "N/A"),
-                "target_close_date": opp.get("Target Close Date", "N/A"),
-                "next_step": opp.get("Next Step", "N/A"),
+                "mrc_estimate": _val(opp, "Total MRC (Est)", 0),
+                "bant_score": _val(opp, "BANT_Score_0to100", 0),
+                "bant_priority": _val(opp, "BANT_Priority_Bucket", "N/A"),
+                "budget": _val(opp, "Budget", "Unknown"),
+                "authority": _val(opp, "Authority", "Unknown"),
+                "need": _val(opp, "Need", "Unknown"),
+                "timeline_days": _val(opp, "Timeline (days)", "N/A"),
+                "target_close_date": _val(opp, "Target Close Date", "N/A"),
+                "next_step": _val(opp, "Next Step", "N/A"),
                 "data_gaps": opp.get("BANT_Data_Gaps"),
             })
 
     if actions:
         intent_data["recommended_actions"] = {
-            "owner": actions.get("Owner", "Unassigned"),
-            "priority": actions.get("Priority", "Unknown"),
-            "initial_outreach": actions.get("Initial Outreach Date", "Not scheduled"),
-            "follow_up_cadence": actions.get("Follow-Up Cadence", "Not defined"),
+            "owner": _val(actions, "Owner", "Unassigned"),
+            "priority": _val(actions, "Priority", "Unknown"),
+            "initial_outreach": _val(actions, "Initial Outreach Date", "Not scheduled"),
+            "follow_up_cadence": _val(actions, "Follow-Up Cadence", "Not defined"),
         }
 
     return intent_data
@@ -270,9 +283,9 @@ def search_by_intent_signals(keyword: str) -> dict:
             "company_name": company["Company Name"],
             "industry": company["Industry"],
             "region": company["Territory/Region"],
-            "buying_signals": company.get("Buying Signals", "N/A"),
-            "pain_points": company.get("Pain Points", "N/A"),
-            "recommended_positioning": company.get("Recommended Positioning", "N/A"),
+            "buying_signals": _val(company, "Buying Signals", "N/A"),
+            "pain_points": _val(company, "Pain Points", "N/A"),
+            "recommended_positioning": _val(company, "Recommended Positioning", "N/A"),
         })
 
     return {"keyword": keyword, "found": len(companies), "companies": companies}
@@ -301,10 +314,10 @@ def get_high_priority_opportunities(limit: int = 10) -> dict:
             "company_name": opp["Company Name"],
             "opportunity_name": opp["Opportunity Name"],
             "stage": opp["Stage"],
-            "mrc_estimate": opp.get("Total MRC (Est)", 0),
-            "bant_score": opp.get("BANT_Score_0to100", 0),
-            "bant_priority": opp.get("BANT_Priority_Bucket", "N/A"),
-            "target_close_date": opp.get("Target Close Date", "N/A"),
+            "mrc_estimate": _val(opp, "Total MRC (Est)", 0),
+            "bant_score": _val(opp, "BANT_Score_0to100", 0),
+            "bant_priority": _val(opp, "BANT_Priority_Bucket", "N/A"),
+            "target_close_date": _val(opp, "Target Close Date", "N/A"),
         })
 
     return {"found": len(opp_data), "opportunities": opp_data}
@@ -479,17 +492,32 @@ def add_new_contact(
         Success or failure message
     """
     logger.info(f"DiscoveryAgent: add_new_contact called with company_name={company_name}, contact_name={contact_name}, title={title}, role_in_decision_making={role_in_decision_making}, email={email}, phone={phone}, notes={notes}")
-    success = db.add_contact(
+    canonical = db.find_company_name(company_name)
+    if canonical is None:
+        return {
+            "action": "add_contact",
+            "success": False,
+            "company_name": company_name,
+            "contact_name": contact_name,
+            "error": f"Company '{company_name}' not found. Register it with add_new_company first.",
+        }
+    company_name = canonical
+    outcome = db.add_contact(
         company_name, contact_name, title, role_in_decision_making,
         email, phone, notes,
     )
-
+    messages = {
+        "created": f"Successfully added contact: {contact_name} at {company_name}",
+        "duplicate": f"Contact {contact_name} already exists at {company_name}; use update_contact_info to change details.",
+        "failed": f"Failed to add contact {contact_name} at {company_name}.",
+    }
     return {
         "action": "add_contact",
-        "success": success,
+        "success": outcome == "created",
+        "duplicate": outcome == "duplicate",
         "company_name": company_name,
         "contact_name": contact_name,
-        "message": f"Successfully added contact: {contact_name} at {company_name}" if success else f"Failed to add contact. Company '{company_name}' may not exist.",
+        "message": messages[outcome],
     }
 
 
@@ -609,7 +637,7 @@ def create_opportunity_from_bant(
         JSON with success status, BANT score, and priority bucket
     """
     logger.info(f"DiscoveryAgent: create_opportunity_from_bant called for {company_name}")
-    success = lead_db.add_opportunity(
+    result = lead_db.add_opportunity(
         company_name=company_name,
         opportunity_name=opportunity_name,
         stage="Discovery",
@@ -622,12 +650,31 @@ def create_opportunity_from_bant(
         next_step=next_step or "Check serviceability and recommend products",
     )
 
-    if not success:
+    if result["duplicate"]:
+        existing = result["existing"] or {}
+        return {
+            "action": "create_opportunity",
+            "success": False,
+            "duplicate": True,
+            "company_name": company_name,
+            "opportunity_name": _val(existing, "Opportunity Name", opportunity_name),
+            "existing_opportunity": {
+                "stage": _val(existing, "Stage"),
+                "score_0to100": _val(existing, "BANT_Score_0to100", 0),
+                "priority_bucket": _val(existing, "BANT_Priority_Bucket"),
+            },
+            "message": (
+                f"Opportunity '{_val(existing, 'Opportunity Name', opportunity_name)}' already exists "
+                f"for '{company_name}'. Not created again; use a different opportunity name for a new one."
+            ),
+        }
+
+    if not result["created"]:
         return {
             "action": "create_opportunity",
             "success": False,
             "company_name": company_name,
-            "message": f"Failed to create opportunity. Company '{company_name}' may not exist or opportunity name may be duplicate.",
+            "message": f"Failed to create opportunity. Company '{company_name}' may not exist.",
         }
 
     # Retrieve the created opportunity to show calculated scores
@@ -647,16 +694,16 @@ def create_opportunity_from_bant(
         "company_name": company_name,
         "opportunity_name": opportunity_name,
         "bant_scores": {
-            "budget_score": opp_data.get("BANT_Budget_Score", 0),
-            "authority_score": opp_data.get("BANT_Authority_Score", 0),
-            "need_score": opp_data.get("BANT_Need_Score", 0),
-            "timing_score": opp_data.get("BANT_Timing_Score", 0),
-            "weighted_score": opp_data.get("BANT_Weighted_0to3", 0),
-            "score_0to100": opp_data.get("BANT_Score_0to100", 0),
-            "priority_bucket": opp_data.get("BANT_Priority_Bucket", "N/A"),
-            "data_gaps": opp_data.get("BANT_Data_Gaps", ""),
+            "budget_score": _val(opp_data, "BANT_Budget_Score", 0),
+            "authority_score": _val(opp_data, "BANT_Authority_Score", 0),
+            "need_score": _val(opp_data, "BANT_Need_Score", 0),
+            "timing_score": _val(opp_data, "BANT_Timing_Score", 0),
+            "weighted_score": _val(opp_data, "BANT_Weighted_0to3", 0),
+            "score_0to100": _val(opp_data, "BANT_Score_0to100", 0),
+            "priority_bucket": _val(opp_data, "BANT_Priority_Bucket", "N/A"),
+            "data_gaps": _val(opp_data, "BANT_Data_Gaps", ""),
         },
-        "message": f"Opportunity created with BANT score {opp_data.get('BANT_Score_0to100') or 0:.1f}/100 ({opp_data.get('BANT_Priority_Bucket', 'N/A')})",
+        "message": f"Opportunity created with BANT score {opp_data.get('BANT_Score_0to100') or 0:.1f}/100 ({_val(opp_data, 'BANT_Priority_Bucket')})",
     }
 
 

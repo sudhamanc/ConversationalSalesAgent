@@ -1,8 +1,9 @@
 """Installation coordination tools: technician dispatch, progress and completion.
 
 ``dispatch_technician`` and ``complete_installation`` update the
-``fulfillments`` row (``dispatched`` / ``installed``). ``complete_installation``
-enqueues an ``installation_complete`` notification in the same transaction.
+``fulfillments`` row (``dispatched`` / ``installed``) and enqueue an
+``install_dispatched`` / ``installation_complete`` notification in the same
+transaction (only when a recipient email is known).
 """
 
 from __future__ import annotations
@@ -41,6 +42,19 @@ def _installation_from_state(tool_context) -> dict[str, Any]:
     return installation if isinstance(installation, dict) else {}
 
 
+def _recipient_email(conn, order: dict, customer_id: Optional[str]) -> Optional[str]:
+    """Order contact email, else the customer_master contact email, else None."""
+    email = (order.get("contact_email") or "").strip()
+    if email:
+        return email
+    if not customer_id:
+        return None
+    row = conn.execute(
+        "SELECT contact_email FROM customer_master WHERE customer_id = %s", (customer_id,)
+    ).fetchone()
+    return ((row or {}).get("contact_email") or "").strip() or None
+
+
 def dispatch_technician(
     appointment_id: Optional[str] = None,
     order_id: Optional[str] = None,
@@ -50,7 +64,9 @@ def dispatch_technician(
     """Dispatches a technician for a scheduled installation appointment.
 
     appointment_id, order_id and scheduled_date default to the journey
-    order_context (installation booked earlier) when not passed.
+    order_context (installation booked earlier) when not passed. The first
+    dispatch queues an install_dispatched notification to the order's contact
+    email (re-dispatching does not notify again).
 
     Args:
         appointment_id: Appointment identifier (APT-...)
@@ -83,16 +99,35 @@ def dispatch_technician(
             order_id = row["order_id"]
             scheduled_date = row["appointment_date"] or scheduled_date
             dispatch_id = row["dispatch_id"] or f"DISP-{appointment_id.split('-')[-1]}"
+            tech = TECHNICIANS[stable_number(appointment_id, len(TECHNICIANS))]
+            already_dispatched = row["status"] == "dispatched"
             conn.execute(
                 "UPDATE fulfillments SET dispatch_id = %s, status = 'dispatched', updated_at = %s "
                 "WHERE fulfillment_id = %s",
                 (dispatch_id, db.now_iso(), appointment_id),
             )
+            notification_id = None
+            if not already_dispatched:
+                order = get_order(conn, order_id) or {}
+                recipient = _recipient_email(conn, order, row["customer_id"])
+                if recipient:
+                    notification_id = notifications.enqueue(
+                        "install_dispatched",
+                        recipient_email=recipient,
+                        customer_id=row["customer_id"],
+                        order_id=order_id,
+                        args={
+                            "order_id": order_id,
+                            "customer_name": order.get("customer_name") or "",
+                            "technician_name": tech["name"],
+                            "technician_phone": tech["phone"],
+                        },
+                        conn=conn,
+                    )
     except psycopg.Error as exc:
         logger.error("Dispatch failed for %s: %s", appointment_id or order_id, exc)
         return {"success": False, "error": f"Technician dispatch error: {type(exc).__name__}"}
 
-    tech = TECHNICIANS[stable_number(appointment_id, len(TECHNICIANS))]
     installation = {**installation, "appointment_id": appointment_id, "status": "dispatched",
                     "dispatch_id": dispatch_id, "technician_name": tech["name"]}
     if scheduled_date:
@@ -111,6 +146,7 @@ def dispatch_technician(
         "scheduled_date": scheduled_date,
         "dispatched_at": db.now_iso(),
         "status": "dispatched",
+        "notification_queued": notification_id is not None,
         "message": f"Technician {tech['name']} assigned and dispatched",
     }
 

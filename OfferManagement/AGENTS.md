@@ -79,7 +79,7 @@ Discount layers (applied sequentially per item):
 
 - `generate_offer_quote` reads `customer_context` (customer_id, company_name) from state when the model omits them.
 - It writes `offer_context` = `{offer_id, customer_id, company_name, items, term_months, total_price, monthly_total, total_discount}`; `export_context_delta` returns it to the gateway as `_context_update.offer_context`.
-- Response fields used by the UI (`QuoteCard.jsx`): `offer_id`, `items[]` (product_id, product_name, quantity, price_points, discount, discount_detail, final_price), `subtotal`, `discount_breakdown[]`, `total_discount`, `total_price`, `monthly_total`, `yearly_total`, `term_months`, and `notification_sent` (`{type, recipient, quote_id, notification_id, status}`) when a confirmation was enqueued.
+- Response fields used by the UI (`QuoteCard.jsx`): `offer_id`, `items[]` (product_id, product_name, quantity, price_points, discount, discount_detail, final_price), `subtotal`, `discount_breakdown[]`, `total_discount`, `total_price`, `monthly_total`, `yearly_total`, `term_months`, and `notification_sent` (`{type, recipient, quote_id, notification_id, status}`) when a confirmation was enqueued. The response also carries `bant_score`, which `save_quote` persists to `quotes.bant_score`.
 
 ### Cross-service integration
 
@@ -102,5 +102,5 @@ TEST_DATABASE_URL=postgresql://.../scratch pytest OfferManagement/tests -q
 
 Fixed: the cache stores only customer-independent pricing; offer ids are per customer; every call persists its own quote, publishes `offer_context` and enqueues its own confirmation.
 
-- `bant_score` is not part of the quote payload, so `quotes.bant_score` is always stored as 0.
-- The prompt mentions `save_quote` / `get_saved_quote` tools that do not exist.
+
+Fixed: `generate_offer_quote` returns `bant_score` and it is persisted to `quotes.bant_score`; the prompt only names registered tools (quotes are saved automatically by `generate_offer_quote`; lookup via `get_existing_quotes` / `get_quote_details`), enforced by `test_prompt_references_only_registered_tools`.

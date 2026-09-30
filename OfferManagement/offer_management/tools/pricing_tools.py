@@ -363,6 +363,8 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
         "customer_id": customer_id,
         "company_name": company_name,
         "term_months": pricing["term_months"],
+        # Persisted to quotes.bant_score by save_quote (was always stored as 0).
+        "bant_score": float(bant_score or 0.0),
         "items": priced_items,
         "subtotal": subtotal,
         "discount_breakdown": discount_breakdown,

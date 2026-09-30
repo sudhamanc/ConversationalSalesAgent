@@ -65,7 +65,7 @@ starts.
 
 | Status | Meaning |
 |---|---|
-| `pending` | Waiting for delivery, or retrying after an SMTP error (`error` holds the reason) |
+| `pending` | Waiting for delivery, or retrying after an SMTP error (`error` holds the reason; next try after `NOTIFY_RETRY_SECONDS * attempts`) |
 | `sent` | Delivered through SMTP |
 | `simulated` | `SMTP_ENABLED` is off, so delivery was only logged |
 | `deduped` | The same template, recipient and reference was sent within the last 5 minutes |
@@ -88,6 +88,7 @@ SMS is always simulated. Abandoned-cart reminders go by email only.
 | `SMTP_PASSWORD` | — | Required when SMTP is enabled. Secret, never logged. For Gmail, use an App Password |
 | `SMTP_FROM_NAME` | `B2B Sales Notifications` | |
 | `NOTIFY_POLL_SECONDS` | `10` | Dispatcher poll interval |
+| `NOTIFY_RETRY_SECONDS` | `60` | Retry backoff base; a failed row waits `value * attempts` seconds before the next try |
 | `LOG_LEVEL` | `INFO` | |
 
 If `SMTP_ENABLED=true` is set without `SMTP_USER`/`SMTP_PASSWORD`, the service fails at startup.

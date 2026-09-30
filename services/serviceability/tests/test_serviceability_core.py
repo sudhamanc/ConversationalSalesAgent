@@ -35,11 +35,38 @@ class TestAddressValidation:
     def test_natural_language_address(self):
         result = validate_and_parse_address("I am at 123 Main street philadelphia pa 19103")
         assert result.valid is True
-        # Known legacy limitation: without commas the street/city split is
-        # ambiguous and the non-greedy parser yields street "123 Main".
-        assert result.address.street.startswith("123 Main")
+        # Input case is preserved; the street ends at its suffix ("street").
+        assert result.address.street == "123 Main street"
+        assert result.address.city == "philadelphia"
         assert result.address.state == "PA"
         assert result.address.zip_code == "19103"
+
+    @pytest.mark.parametrize(
+        "text, street, city, state, zip_code",
+        [
+            ("123 Main St Philadelphia PA 19103", "123 Main St", "Philadelphia", "PA", "19103"),
+            ("123 Main St Philadelphia, PA 19103", "123 Main St", "Philadelphia", "PA", "19103"),
+            ("12 Oak Lane San Francisco California 94105", "12 Oak Lane", "San Francisco", "CA", "94105"),
+            ("9 Elm Rd Charleston West Virginia 25301", "9 Elm Rd", "Charleston", "WV", "25301"),
+            ("1600 Pennsylvania Ave NW Washington DC 20500", "1600 Pennsylvania Ave NW", "Washington", "DC", "20500"),
+            ("500 N Broad St Suite 200 Philadelphia PA 19130-1234", "500 N Broad St Suite 200", "Philadelphia", "PA", "19130"),
+            ("77 W Elm St. Apt 5 West Chester PA 19380", "77 W Elm St. Apt 5", "West Chester", "PA", "19380"),
+            ("45 Harbor Blvd Long Beach CA 90802", "45 Harbor Blvd", "Long Beach", "CA", "90802"),
+            ("8 Mill Pkwy Austin tx 73301", "8 Mill Pkwy", "Austin", "TX", "73301"),
+            ("1 Broadway New York NY 10004", "1 Broadway", "New York", "NY", "10004"),
+            ("123 Market St, Philadelphia, Pennsylvania 19107", "123 Market St", "Philadelphia", "PA", "19107"),
+        ],
+    )
+    def test_commaless_address_split(self, text, street, city, state, zip_code):
+        result = validate_and_parse_address(text)
+        assert result.valid is True, result.error
+        assert (result.address.street, result.address.city) == (street, city)
+        assert (result.address.state, result.address.zip_code) == (state, zip_code)
+
+    def test_city_named_like_state_is_not_a_state(self):
+        # "Washington" is the city part here; no state before the ZIP.
+        result = validate_and_parse_address("1600 Pennsylvania Ave, Washington, 20500")
+        assert result.valid is False
 
     def test_po_box_rejection(self):
         result = validate_and_parse_address("PO Box 1234, Philadelphia, PA 19107")

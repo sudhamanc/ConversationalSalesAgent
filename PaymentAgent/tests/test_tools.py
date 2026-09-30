@@ -39,23 +39,31 @@ def test_validate_ach():
 def test_tokenize_card_and_ach():
     card = tokenize_payment_method("credit_card", card_number="4111 1111 1111 1111",
                                    expiry_month=12, expiry_year=2028, cvv="123")
-    assert card == {
-        "success": True, "token": "tok_visa_1111", "payment_type": "credit_card", "card_brand": "visa",
-        "last_four": "1111", "expiry": "12/2028", "message": "Payment method tokenized successfully",
-    }
+    assert card["success"] is True and card["saved"] is False  # no customer known -> not persisted
+    assert card["token"].startswith("tok_")
+    assert (card["card_brand"], card["last_four"], card["expiry"]) == ("visa", "1111", "12/2028")
     ach = tokenize_payment_method("ach", routing_number="021000021", account_number="123456789",
                                   account_type="checking")
-    assert ach["success"] is True and ach["token"] == "tok_ach_6789"
+    assert ach["success"] is True and ach["token"].startswith("tok_")
+    assert ach["account_last_four"] == "6789"
     assert tokenize_payment_method("credit_card", card_number="4111111111111111")["success"] is False
+    assert tokenize_payment_method("credit_card", card_number="4111111111111111", expiry_month=13,
+                                   expiry_year=2028, cvv="123")["success"] is False
 
 
-def test_get_and_add_payment_methods_simulated():
-    methods = get_payment_methods("CUST-1")
-    assert methods["success"] is True and methods["count"] == 2
-    added = json.loads(add_payment_method("CUST-1", "credit_card", "tok_visa_1111", is_default=True))
-    assert added["success"] is True
-    assert added["payment_method"]["last_four"] == "1111"
-    assert json.loads(add_payment_method("CUST-1", "wire", "tok_x"))["success"] is False
+def test_tokens_are_opaque_and_random():
+    """Regression: the token used to be tok_{brand}_{last4}, derived from the card."""
+    number = "4532015112830366"
+    tokens = {
+        tokenize_payment_method("credit_card", card_number=number, expiry_month=1, expiry_year=2030,
+                                cvv="999")["token"]
+        for _ in range(5)
+    }
+    assert len(tokens) == 5
+    for token in tokens:
+        assert token.startswith("tok_") and len(token) >= 24
+        assert number not in token and number[:6] not in token
+        assert token != "tok_visa_0366"
 
 
 def test_process_payment_input_validation_needs_no_db():
@@ -201,3 +209,127 @@ def test_invoice_and_plan_ids_unique():
     b = generate_invoice(customer_name="Same Co", line_items_json=json.dumps([{"description": "x", "amount": 10.0}]))
     ia, ib = json.loads(a) if isinstance(a, str) else a, json.loads(b) if isinstance(b, str) else b
     assert ia["invoice_id"] != ib["invoice_id"]
+
+
+# --------------------------------------------------------------------------- saved methods
+
+@requires_db
+def test_tokenize_persists_masked_method_and_lists_it(migrated_db):
+    import uuid
+    from types import SimpleNamespace
+
+    from sales_common import db
+
+    cid = f"CUST-PM-{uuid.uuid4().hex[:8]}"
+    number = "4532015112830366"
+    ctx = SimpleNamespace(state={"customer_context": {"customer_id": cid}})
+    tok = tokenize_payment_method("credit_card", card_number=number, expiry_month=7, expiry_year=29,
+                                  cvv="321", tool_context=ctx)
+    assert tok["success"] and tok["saved"] is True and tok["customer_id"] == cid
+
+    row = db.fetch_one("SELECT * FROM customer_payment_methods WHERE token=%s", (tok["token"],))
+    assert row["customer_id"] == cid and row["status"] == "active"
+    assert (row["payment_type"], row["card_brand"], row["last_four"], row["token_expiry"]) == (
+        "credit_card", "visa", "0366", "07/2029")
+    assert number not in " ".join(str(v) for v in row.values())
+
+    # order_context fallback + ACH
+    ctx2 = SimpleNamespace(state={"order_context": {"customer_id": cid}})
+    ach = tokenize_payment_method("ach", routing_number="021000021", account_number="987654321",
+                                  account_type="savings", tool_context=ctx2)
+    assert ach["saved"] is True
+
+    added = add_payment_method(cid, "credit_card", tok["token"], is_default=True, nickname="Ops Visa")
+    assert added["success"] is True
+    assert added["payment_method"]["method_id"] == tok["method_id"]  # same row, updated
+    assert added["payment_method"]["is_default"] is True
+
+    listed = get_payment_methods(cid)
+    assert listed["success"] is True and listed["count"] == 2
+    first = listed["payment_methods"][0]
+    assert first["token"] == tok["token"] and first["nickname"] == "Ops Visa" and first["last_four"] == "0366"
+    assert {m["payment_type"] for m in listed["payment_methods"]} == {"credit_card", "ach"}
+    assert {m["type"] for m in listed["supported_methods"]} == {"credit_card", "ach"}
+    assert number not in str(listed) and "987654321" not in str(listed)
+
+    assert get_payment_methods(f"CUST-NONE-{uuid.uuid4().hex[:6]}")["count"] == 0
+
+
+@requires_db
+def test_add_payment_method_persists_legacy_and_rejects_bad_input(migrated_db):
+    import uuid
+
+    cid = f"CUST-PM-{uuid.uuid4().hex[:8]}"
+    legacy = f"tok_visa_{uuid.uuid4().int % 10000:04d}"
+    added = add_payment_method(cid, "credit_card", legacy)
+    assert added["success"] is True
+    assert added["payment_method"]["last_four"] == legacy[-4:]
+    assert added["payment_method"]["card_brand"] == "visa"
+    assert get_payment_methods(cid)["payment_methods"][0]["token"] == legacy
+    # a token already saved for another customer is not re-assigned
+    assert add_payment_method("CUST-OTHER", "credit_card", legacy)["success"] is False
+    assert add_payment_method(cid, "wire", "tok_x")["success"] is False
+    assert add_payment_method(cid, "credit_card", "4111111111111111")["success"] is False
+
+
+@requires_db
+def test_process_payment_accepts_new_opaque_token(make_order):
+    order = make_order()
+    tok = tokenize_payment_method("credit_card", card_number="4111111111111111", expiry_month=12,
+                                  expiry_year=2030, cvv="123", customer_id=order["customer_id"])
+    result = process_payment(amount=249.0, payment_method_token=tok["token"], order_id=order["order_id"])
+    assert result["success"] is True and result["payment_method_token"] == tok["token"]
+
+
+# --------------------------------------------------------------------------- order status guard
+
+def _set_status(order_id: str, status: str) -> None:
+    from sales_common import db
+
+    db.execute("UPDATE orders SET status=%s WHERE order_id=%s", (status, order_id))
+
+
+def _assert_refused(order: dict, status: str) -> None:
+    from sales_common import db
+
+    result = process_payment(amount=249.0, payment_method_token="tok_visa_1111",
+                             customer_email="a@example.com", order_id=order["order_id"])
+    assert result["success"] is False
+    assert result["error"] == f"Order {order['order_id']} cannot be paid in status {status}"
+    assert "transaction_id" not in result
+    oid = order["order_id"]
+    assert db.fetch_one("SELECT COUNT(*) AS n FROM payments WHERE order_id=%s", (oid,))["n"] == 0
+    assert db.fetch_one("SELECT COUNT(*) AS n FROM notifications WHERE order_id=%s", (oid,))["n"] == 0
+    assert db.fetch_one("SELECT status FROM orders WHERE order_id=%s", (oid,))["status"] == status
+    rl = db.fetch_one("SELECT COUNT(*) AS n FROM payment_rate_limit WHERE customer_id=%s",
+                      (order["customer_id"],))
+    assert rl["n"] == 0
+
+
+@requires_db
+def test_process_payment_refuses_cancelled_order(make_order):
+    order = make_order()
+    _set_status(order["order_id"], "cancelled")
+    _assert_refused(order, "cancelled")
+
+
+@requires_db
+def test_process_payment_refuses_paid_order(make_order):
+    order = make_order()
+    _set_status(order["order_id"], "paid")  # paid without a completed payment row here
+    _assert_refused(order, "paid")
+
+
+@requires_db
+def test_process_payment_allows_draft_and_keeps_idempotent_replay(make_order):
+    order = make_order()
+    _set_status(order["order_id"], "draft")
+    key = "idem-draft-" + order["order_id"]
+    first = process_payment(amount=249.0, payment_method_token="tok_visa_1111", order_id=order["order_id"],
+                            idempotency_key=key)
+    assert first["success"] is True
+    # The order is now 'paid'; replaying the same key still returns the original result.
+    replay = process_payment(amount=249.0, payment_method_token="tok_visa_1111", order_id=order["order_id"],
+                             idempotency_key=key)
+    assert replay["success"] is True and replay["idempotent"] is True
+    assert replay["transaction_id"] == first["transaction_id"]

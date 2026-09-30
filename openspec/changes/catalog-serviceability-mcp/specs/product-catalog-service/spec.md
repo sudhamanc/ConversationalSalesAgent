@@ -23,7 +23,7 @@ The catalog service SHALL expose these JSON endpoints:
 - `GET /api/v1/categories`
 - `POST /api/v1/products/compare` (body `{product_ids: [2..5]}`)
 - `GET /api/v1/products/{product_id}/alternatives?criteria=faster|similar|different_tech`
-- `GET /api/v1/products/best-value?max_budget=`
+- `GET /api/v1/products/best-value?category=`
 - `GET /api/v1/knowledge/search?q=&top_k=`
 
 Invalid input SHALL return HTTP 422, and unknown products HTTP 404, each with a JSON error body.
@@ -39,6 +39,11 @@ Invalid input SHALL return HTTP 422, and unknown products HTTP 404, each with a 
 #### Scenario: Fastest product computed numerically
 - **WHEN** comparing `FIB-1G`, `FIB-5G` and `FIB-10G`
 - **THEN** the comparison names `FIB-10G` as fastest
+
+#### Scenario: Best value ranked by throughput within a category
+- **WHEN** a client requests `GET /api/v1/products/best-value?category=coax`
+- **THEN** the response recommends `COAX-1G` and contains no price fields
+- **AND** the endpoint takes no budget parameter, because pricing is not disclosed by the catalog
 
 ### Requirement: MCP server
 

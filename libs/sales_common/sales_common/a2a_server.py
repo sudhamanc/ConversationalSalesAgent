@@ -42,6 +42,30 @@ def _public_endpoint() -> tuple[str, int, str]:
     return parts.hostname, port, parts.scheme
 
 
+_TASK_TABLE = "a2a_tasks"
+# a2a-sdk maps the task table on its global declarative ``Base.metadata``; mapping
+# the same table name twice raises ``InvalidRequestError``. Keep one ORM model per
+# table name per process and share it between task stores (each app still gets
+# its own engine and store).
+_task_models: dict[str, type] = {}
+
+
+def _task_store(engine, table_name: str = _TASK_TABLE):
+    """``DatabaseTaskStore`` on ``engine`` that is safe to build repeatedly."""
+    from a2a.server.tasks import DatabaseTaskStore
+
+    model = _task_models.get(table_name)
+    if model is None:
+        store = DatabaseTaskStore(engine=engine, table_name=table_name)
+        _task_models[table_name] = store.task_model
+        return store
+    # The default table name reuses the SDK's pre-mapped TaskModel (no new
+    # mapping); then point the store at the cached model for ``table_name``.
+    store = DatabaseTaskStore(engine=engine)
+    store.task_model = model
+    return store
+
+
 def create_a2a_app(
     agent,
     *,
@@ -54,21 +78,23 @@ def create_a2a_app(
 
     * ADK ``App`` with compaction + context caching (``sales_common.adk_app``)
     * ``DatabaseSessionService`` on PostgreSQL (sessions keyed by A2A context id)
-    * a2a-sdk ``DatabaseTaskStore`` on the same database
+    * a2a-sdk ``DatabaseTaskStore`` on the same database (table ``a2a_tasks``)
     * ``GET /healthz`` (503 when the database is unreachable)
+
+    Safe to call more than once per process (tests, several apps in one
+    process): the task-table ORM model is shared, engines are per app.
     """
     name = app_name or agent.name
     setup_logging(name)
     host, port, protocol = _public_endpoint()
 
-    from a2a.server.tasks import DatabaseTaskStore
     from sqlalchemy.ext.asyncio import create_async_engine
 
     session_url = db.session_db_url()
     logger.info("A2A service %s sessions/tasks at %s", name, mask_url(session_url))
     session_service = DatabaseSessionService(db_url=session_url)
     task_engine = create_async_engine(session_url, pool_pre_ping=True)
-    task_store = DatabaseTaskStore(engine=task_engine, table_name="a2a_tasks")
+    task_store = _task_store(task_engine)
 
     adk_app = build_app(name, agent, plugins=plugins)
     runner = Runner(app=adk_app, session_service=session_service, auto_create_session=True)

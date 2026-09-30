@@ -198,7 +198,7 @@ The router (`route_intent`) picks one agent per turn in this priority order:
 
 All services share **one PostgreSQL 16 database** (a `postgres:16` container or your own server locally, Cloud SQL in GCP). It replaces the earlier SQLite `sales_agent.db` and its GCS sync.
 
-- **Schema** is managed only by versioned SQL migrations in `db/migrations/` (`001_sales_schema.sql` 19 sales tables, `002_catalog.sql` `products`, `003_platform.sql` `adk_memories` + `revoked_sessions`, `004_coverage.sql` `coverage_zones`). Services never create business tables at runtime.
+- **Schema** is managed only by versioned SQL migrations in `db/migrations/` (`001_sales_schema.sql` 19 sales tables, `002_catalog.sql` `products`, `003_platform.sql` `adk_memories` + `revoked_sessions`, `004_coverage.sql` `coverage_zones`, `005_notifications_seq.sql` outbox insertion order). Services never create business tables at runtime.
 - **Seed data** in `db/seed/` (demo accounts exported from the legacy SQLite database, 16 SKUs, 38 coverage ZIPs) is applied once per database.
 - **Apply** with `scripts/db.sh migrate | seed | reset --yes` or `python -m sales_common.migrate [--seed]`. Applied files are tracked in `schema_migrations` / `seed_versions`.
 - **Library-managed tables:** ADK session tables (`sessions`, `events`, `app_states`, `user_states`) are created by `DatabaseSessionService`, and `a2a_tasks` by the a2a-sdk `DatabaseTaskStore`.
@@ -512,7 +512,8 @@ The PaymentAgent is a **deterministic, defense-in-depth payment workflow** rathe
 - **Per-customer rate limiting** for payment attempts (`payment_rate_limit`).
 - **Velocity-aware approval checks** that simulate transaction-count and cumulative-spend controls.
 - An **append-only `payment_events` audit trail** for every status transition.
-- **Cryptographically random tokens and transaction identifiers.**
+- **Opaque random tokens and transaction identifiers** (`tok_` + `secrets.token_urlsafe`), never derived from card data. Saved payment methods are stored masked (brand, last four, expiry) in `customer_payment_methods`; full card numbers and CVV are never stored or logged.
+- **Order-status guard:** only orders in `pending_payment` or `draft` can be charged; cancelled, expired, paid or fulfilled orders are refused without a charge, payment row or notification.
 - **CVV discard** after validation; sensitive verification data is never stored.
 - **Order-linked persistence** in PostgreSQL, with `orders.status` updated to `paid` only after successful completion, in the same transaction as the payment-receipt outbox row.
 - **Journey-state propagation:** `payment_context` is written to state and returned to the gateway as `_context_update`, so downstream steps never re-infer payment results from conversation text.
@@ -729,6 +730,41 @@ python scripts/e2e_test.py --base-url http://127.0.0.1:8000  # against a running
 ```
 
 DB-backed tests are skipped when `TEST_DATABASE_URL` is unset; use a scratch database. Agent tests use a scripted model and need no API key.
+
+---
+
+## Secrets and Configuration
+
+- All configuration is environment variables. Shared defaults live in [.env.example](./.env.example); copy it to `.env` (git-ignored, as is any `.env.*` other than `.env.example`). Never commit real keys.
+- Required: `GEMINI_MODEL`, `GOOGLE_API_KEY` (or Vertex AI env), `DATABASE_URL`, `SESSION_SECRET_KEY` (gateway), `PUBLIC_URL` (each agent service). Services fail fast at startup when a required variable is missing.
+- In GCP, secrets come from Secret Manager (`GOOGLE_API_KEY`, `SESSION_SECRET_KEY`, `SMTP_USER`, `SMTP_PASSWORD`, `DB_PASSWORD`); service-to-service calls use Google-signed ID tokens (`SERVICE_AUTH=gcp_id_token`).
+- Database passwords are masked in logs; the browser log endpoint (`POST /api/client-log`) requires a session token, is rate-limited and strips control characters.
+
+---
+
+## Recent Fixes and Known Limitations
+
+Fixed after the rewrite (each with a regression test):
+
+| Area | Fix |
+|---|---|
+| Order / Payment ids | Collision-safe random ids (`sales_common.ids.new_id`) replace salted `hash() % 1000`; mock credit score is process-independent |
+| Offer quotes | Pricing cache holds no customer data; offer ids are per customer; every quote is persisted and confirmed; `bant_score` stored |
+| Payment | Order-status guard; opaque random tokens; saved methods persisted masked; dead duplicate tools removed |
+| Order | Carts (24 h from last activity) and orders (48 h) get `expires_at`, so hourly cleanup expires them |
+| Discovery | Tool descriptions restored (docstrings); per-day `customer_id` counter; contacts require an existing company; duplicate contacts and opportunities rejected; NULL columns render as `N/A` |
+| Serviceability | Comma-less US addresses parse correctly (`123 Main street philadelphia pa 19103`) |
+| Notifications | Outbox dispatched in insertion order (`notifications.seq`); retry backoff (`NOTIFY_RETRY_SECONDS`); technician-dispatch notification |
+| Gateway / UI | Client log endpoint authenticated, rate-limited, sanitized, same-origin URL; `create_a2a_app` safe to build more than once per process |
+| Catalog | `best-value` takes `category` only (no ignored budget parameter) |
+
+Known limitations:
+
+- **Rate limiting is per gateway instance** (in-memory token bucket); use a shared store or Cloud Armor for multi-instance limits.
+- **One shared PostgreSQL schema** with some cross-domain writers (Payment and Fulfillment update `orders`); single-writer services are planned in `openspec/changes/mcp-remaining-domains`.
+- `contacts` and `opportunities` have no unique index (seed data contains legacy duplicates); duplicates are prevented in code under an advisory lock.
+- The catalog image downloads the embedding model at build time; knowledge search reports `available: false` if the index is missing.
+- ADK compaction, context caching and `to_a2a` are experimental in google-adk 2.10.0 (pinned).
 
 ---
 

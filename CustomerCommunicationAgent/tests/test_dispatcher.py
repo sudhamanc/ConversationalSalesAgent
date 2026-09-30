@@ -68,6 +68,16 @@ def _row(db, nid):
     return db.fetch_one("SELECT * FROM notifications WHERE notification_id=%s", (nid,))
 
 
+def _age(db, nid, *, seconds):
+    """Move a row's ``updated_at`` ``seconds`` into the past (naive-UTC ISO text)."""
+    db.execute(
+        "UPDATE notifications SET updated_at = to_char("
+        "(now() AT TIME ZONE 'UTC') - make_interval(secs => %s), 'YYYY-MM-DD\"T\"HH24:MI:SS') "
+        "WHERE notification_id = %s",
+        (seconds, nid),
+    )
+
+
 @pytest.mark.pg
 def test_enqueue_then_dispatch_is_simulated(clean_db):
     nid = notifications.enqueue(
@@ -145,7 +155,9 @@ def test_smtp_failure_retries_then_fails(clean_db, monkeypatch):
     assert (row["status"], row["attempts"]) == ("pending", 1)
     assert "boom" in row["error"]
 
+    _age(clean_db, nid, seconds=61)
     assert dispatcher.dispatch_pending()["retrying"] == 1
+    _age(clean_db, nid, seconds=121)
     counts = dispatcher.dispatch_pending()
     assert counts["failed"] == 1
     row = _row(clean_db, nid)
@@ -220,3 +232,84 @@ async def test_background_loop_delivers_and_stops(clean_db, monkeypatch):
             await asyncio.sleep(0.05)
     assert _row(clean_db, nid)["status"] == "simulated"
     assert not [t for t in asyncio.all_tasks() if t.get_name() == "notification-dispatcher"]
+
+
+@pytest.mark.pg
+def test_failed_attempt_backs_off_before_retry(clean_db, monkeypatch):
+    monkeypatch.setattr(dispatcher, "send_email",
+                        lambda settings, to, subject, body: {"sent": False, "detail": "boom"})
+    monkeypatch.setenv("SMTP_ENABLED", "true")
+    monkeypatch.setenv("SMTP_USER", "sender@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.delenv("NOTIFY_RETRY_SECONDS", raising=False)
+
+    nid = notifications.enqueue("order_cancelled", recipient_email="r@example.com",
+                                args={"order_id": "ORD-R"})
+    assert dispatcher.dispatch_pending()["retrying"] == 1
+    # Not re-picked immediately: 60 s * 1 attempt has not elapsed.
+    assert dispatcher.dispatch_pending(notification_id=nid)["processed"] == 0
+    assert dispatcher.dispatch_pending()["processed"] == 0
+    _age(clean_db, nid, seconds=30)
+    assert dispatcher.dispatch_pending()["processed"] == 0
+    assert _row(clean_db, nid)["attempts"] == 1
+
+    _age(clean_db, nid, seconds=61)
+    assert dispatcher.dispatch_pending()["retrying"] == 1
+    assert _row(clean_db, nid)["attempts"] == 2
+    # Second retry waits 60 s * 2 attempts.
+    _age(clean_db, nid, seconds=90)
+    assert dispatcher.dispatch_pending()["processed"] == 0
+    _age(clean_db, nid, seconds=121)
+    assert dispatcher.dispatch_pending()["failed"] == 1
+
+    # NOTIFY_RETRY_SECONDS configures the base delay (0 = retry on the next poll).
+    monkeypatch.setenv("NOTIFY_RETRY_SECONDS", "0")
+    nid2 = notifications.enqueue("order_cancelled", recipient_email="r2@example.com",
+                                 args={"order_id": "ORD-R2"})
+    assert dispatcher.dispatch_pending()["retrying"] == 1
+    assert dispatcher.dispatch_pending(notification_id=nid2)["retrying"] == 1
+
+
+def test_negative_retry_seconds_rejected(monkeypatch):
+    from sales_common.config import ConfigError
+
+    monkeypatch.setenv("NOTIFY_RETRY_SECONDS", "-1")
+    with pytest.raises(ConfigError):
+        dispatcher.retry_seconds()
+
+
+@pytest.mark.pg
+def test_same_second_rows_dispatch_in_insertion_order(clean_db):
+    meta = json.dumps({"template": "escalation", "args": {"order_id": "ORD-O"}})
+    for nid, email in (("NTF-ORDER-B", "b@example.com"), ("NTF-ORDER-A", "a@example.com"),
+                       ("NTF-ORDER-C", "c@example.com")):
+        clean_db.execute(
+            "INSERT INTO notifications (notification_id, notification_type, recipient_email, "
+            "metadata_json, status, channels_json, created_at, updated_at) "
+            "VALUES (%s, 'escalation', %s, %s, 'pending', '[\"email\"]', %s, %s)",
+            (nid, email, meta, "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        )
+    order = []
+    for _ in range(3):
+        assert dispatcher.dispatch_pending(limit=1)["processed"] == 1
+        done = clean_db.fetch_all(
+            "SELECT notification_id FROM notifications WHERE status <> 'pending'")
+        order.append(({r["notification_id"] for r in done} - set(order)).pop())
+    # Inserted B, A, C in the same second: dispatched in insertion order (seq, migration 005).
+    assert order == ["NTF-ORDER-B", "NTF-ORDER-A", "NTF-ORDER-C"]
+
+
+@pytest.mark.pg
+def test_install_dispatched_enqueue_and_render(clean_db):
+    assert "install_dispatched" in NOTIFICATION_TYPES
+    nid = notifications.enqueue(
+        "install_dispatched", recipient_email="tech@example.com", order_id="ORD-TD",
+        args={"order_id": "ORD-TD", "customer_name": "Acme", "technician_name": "Sam Tech",
+              "technician_phone": "555-0101"},
+    )
+    assert dispatcher.dispatch_pending()["simulated"] == 1
+    row = _row(clean_db, nid)
+    assert row["subject"] == "Technician Dispatched - Order ORD-TD"
+    assert "Dear Acme" in row["message"]
+    assert "Technician: Sam Tech" in row["message"]
+    assert "Technician Phone: 555-0101" in row["message"]

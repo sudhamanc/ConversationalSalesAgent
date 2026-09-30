@@ -167,6 +167,53 @@ def test_dispatch_and_complete_installation(order, tool_context, next_weekday):
     assert dispatch_technician(appointment_id="APT-NOPE", order_id="ORD-NOPE")["success"] is False
 
 
+def test_dispatch_technician_enqueues_install_dispatched(order, tool_context, next_weekday):
+    schedule_installation(scheduled_date=next_weekday, window="AM", tool_context=tool_context)
+    dispatch = dispatch_technician(tool_context=tool_context)
+    assert dispatch["success"] is True and dispatch["notification_queued"] is True
+    rows = _notifications(order["order_id"], "install_dispatched")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["recipient_email"] == "buyer@example.com"
+    assert row["customer_id"] == order["customer_id"] and row["status"] == "pending"
+    meta = json.loads(row["metadata_json"])
+    assert meta["template"] == "install_dispatched"
+    assert meta["args"] == {
+        "order_id": order["order_id"],
+        "customer_name": order["customer_name"],
+        "technician_name": dispatch["technician_name"],
+        "technician_phone": dispatch["technician_phone"],
+    }
+    # Re-dispatching the same appointment does not notify again.
+    again = dispatch_technician(tool_context=tool_context)
+    assert again["success"] is True and again["notification_queued"] is False
+    assert len(_notifications(order["order_id"], "install_dispatched")) == 1
+
+
+def test_dispatch_technician_email_fallback_and_no_recipient(order, tool_context, next_weekday):
+    schedule_installation(scheduled_date=next_weekday, window="PM", tool_context=tool_context)
+    db.execute("UPDATE orders SET contact_email = NULL WHERE order_id = %s", (order["order_id"],))
+
+    # No order email and no customer_master row: dispatch succeeds without a notification.
+    no_recipient = dispatch_technician(order_id=order["order_id"])
+    assert no_recipient["success"] is True and no_recipient["notification_queued"] is False
+    assert _notifications(order["order_id"], "install_dispatched") == []
+
+    # With a customer_master contact email, the next first-time dispatch uses it.
+    db.execute("UPDATE fulfillments SET status = 'scheduled' WHERE order_id = %s", (order["order_id"],))
+    now = db.now_iso()
+    db.execute(
+        "INSERT INTO customer_master (customer_id, company_name, street, city, state, zip_code, "
+        "contact_email, activated_at, created_at, updated_at) "
+        "VALUES (%s, %s, '8265 Broadway', 'Portland', 'OR', '97201', 'master@example.com', %s, %s, %s)",
+        (order["customer_id"], order["customer_name"], now, now, now),
+    )
+    dispatch = dispatch_technician(order_id=order["order_id"])
+    assert dispatch["notification_queued"] is True
+    rows = _notifications(order["order_id"], "install_dispatched")
+    assert [r["recipient_email"] for r in rows] == ["master@example.com"]
+
+
 def test_activate_service_converts_prospect_to_customer(order, tool_context, next_weekday):
     appt = schedule_installation(scheduled_date=next_weekday, window="AM", tool_context=tool_context)
     result = activate_service(tool_context=tool_context)  # order_id/service_type from order_context

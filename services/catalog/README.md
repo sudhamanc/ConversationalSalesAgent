@@ -41,7 +41,7 @@ Schema: `db/migrations/002_catalog.sql`. Seed: `db/seed/002_catalog.sql`, genera
 | GET | `/api/v1/categories` | category names |
 | POST | `/api/v1/products/compare` | body `{"product_ids": [2..5 ids]}`; 422 outside 2..5; 404 when none exist; `fastest_product_id` computed in Mbps |
 | GET | `/api/v1/products/{product_id}/alternatives?criteria=` | `faster`, `similar`, `different_tech`, or omitted (same category); 422 for other values |
-| GET | `/api/v1/products/best-value?category=` | highest throughput, optionally within a category. `max_budget` is accepted for compatibility but deprecated and **not applied** |
+| GET | `/api/v1/products/best-value?category=` | highest throughput (Mbps), optionally within a category. There is no budget parameter: pricing is not disclosed by the catalog (offer management handles budget fit) |
 | GET | `/api/v1/knowledge/search?q=&top_k=` | `top_k` 1..10 (default 4); `available: false` when the index is not available |
 
 Errors are JSON: `{"error": "not_found" | "invalid_input", "detail": ...}` with HTTP 404 / 422.
@@ -69,7 +69,7 @@ Behaviour changes from the legacy ProductAgent tools:
 
 - Product ids are case-insensitive.
 - Speeds are compared numerically in Mbps. The legacy code compared strings, so `"5 Gbps"` beat `"10 Gbps"`.
-- `max_price` (search) and `max_budget` (best value) were ignored before and are removed.
+- `max_price` (search) and `max_budget` (best value) were ignored before and are removed from the tools and the REST API (an unknown query parameter such as `max_budget` is ignored).
 - `get_best_value_product` takes an optional `category` instead.
 - `suggest_alternatives(criteria="different_tech")` stays within the same product family, e.g. fiber to coax.
 - `search_product_knowledge` returns structured passages instead of a preformatted string.

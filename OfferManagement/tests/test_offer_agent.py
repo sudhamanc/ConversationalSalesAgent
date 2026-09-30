@@ -96,3 +96,17 @@ def test_server_module_imports():
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.strip().endswith("ok")
+
+
+def test_prompt_references_only_registered_tools():
+    import re
+
+    tool_names = {t.__name__ for t in build_agent(model=ScriptLlm(steps=[])).tools}
+    # Tool-like references: snake_case identifiers that start with an action verb
+    # (parameters such as customer_id or agent names such as discovery_agent do not).
+    verbs = r"(?:get|save|generate|find|create|update|delete|list|lookup|fetch|send|transfer|search|apply|calculate)"
+    referenced = set(re.findall(rf"\b({verbs}(?:_[a-z]+)+)\b", OFFER_MANAGEMENT_AGENT_INSTRUCTION))
+    assert referenced, "expected the prompt to reference tools"
+    assert referenced <= tool_names, f"unknown tools in prompt: {referenced - tool_names}"
+    for stale in ("save_quote", "get_saved_quote"):
+        assert stale not in OFFER_MANAGEMENT_AGENT_INSTRUCTION

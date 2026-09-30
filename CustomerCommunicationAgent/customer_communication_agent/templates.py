@@ -43,7 +43,7 @@ TEMPLATE_ARGS: dict[str, tuple[str, ...]] = {
     "quote_expired": ("quote_id", "customer_name", "expired_at"),
     "order_cancelled": ("order_id", "customer_name", "reason"),
     "escalation": ("order_id", "customer_name", "reason", "status"),
-    # Not (yet) in sales_common.notifications.NOTIFICATION_TYPES; rendered when present.
+    # Enqueued by ServiceFulfillment dispatch_technician.
     "install_dispatched": ("order_id", "customer_name", "technician_name", "technician_phone"),
     "generic": ("subject", "message", "customer_name"),
 }

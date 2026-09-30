@@ -5,7 +5,7 @@ Data models for the Order Agent.
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
-from sales_common.db import now_iso
+from sales_common.db import compute_expires_at, now_iso
 
 
 class OrderStatus(str, Enum):
@@ -42,7 +42,10 @@ class Order:
         self.status = status
         self.items: List[Dict[str, Any]] = []
         self.created_at = now_iso()
-        self.updated_at = now_iso()
+        self.updated_at = self.created_at
+        # Order TTL: 48h from creation while pending_payment (enforced by
+        # sales_common.maintenance.cleanup_stale_records).
+        self.expires_at = compute_expires_at(self.created_at, "order")
         self.total_amount = 0.0
     
     def add_item(self, service_type: str, price: float, quantity: int = 1):
@@ -71,6 +74,7 @@ class Order:
             "total_amount": self.total_amount,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "expires_at": self.expires_at,
         }
 
 

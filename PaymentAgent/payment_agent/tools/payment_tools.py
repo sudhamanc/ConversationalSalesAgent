@@ -16,12 +16,13 @@ Everything (payment row, audit events, rate-limit counter, ``orders.status='paid
 ``payment_confirmation`` notification outbox row) is written in ONE database transaction.
 There is no in-memory fallback: when ``DATABASE_URL`` is unset ``sales_common.db`` raises.
 
-Note: ``get_payment_methods``, ``tokenize_payment_method`` and ``add_payment_method`` keep the
-behaviour of the definitions that were effective in the legacy module (simulated, no DB).
+``tokenize_payment_method`` issues opaque random tokens (``tok_...``) and, like
+``add_payment_method``, stores only masked method data in ``customer_payment_methods``;
+``get_payment_methods`` reads the customer's active methods from there.
 """
 
-import json
 import logging
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -31,6 +32,7 @@ import psycopg
 from google.adk.tools.tool_context import ToolContext
 
 from sales_common import db, notifications
+from sales_common.ids import new_id
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ _MAX_DAILY_SPEND = 500_000.00      # Daily cumulative spend limit per customer
 _MAX_DAILY_COUNT = 10              # Daily transaction count limit per customer
 _MAX_ATTEMPTS_PER_HOUR = 5         # Rate-limit: max payment attempts per customer/hour
 _VALID_CURRENCIES = frozenset({"USD", "CAD", "EUR", "GBP", "AUD"})
+_PAYABLE_ORDER_STATUSES = frozenset({"pending_payment", "draft"})
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +294,7 @@ def process_payment(
 
             # High #8: lock the order row; serializes payments for the same order.
             order = conn.execute(
-                "SELECT order_id, customer_id FROM orders WHERE order_id=%s FOR UPDATE",
+                "SELECT order_id, customer_id, status FROM orders WHERE order_id=%s FOR UPDATE",
                 (order_id,),
             ).fetchone()
             if order is None:
@@ -312,6 +315,19 @@ def process_payment(
                     "transaction_id": done["transaction_id"],
                     "status": "completed",
                     "message": f"Payment for order {order_id} was already processed successfully.",
+                }
+
+            # Only open orders can be charged. Checked under the row lock, after the
+            # duplicate guard (a completed payment is returned, never re-charged) and
+            # before any rate-limit counter, payments row or notification is written.
+            order_status = order["status"]
+            if order_status not in _PAYABLE_ORDER_STATUSES:
+                logger.warning("Refusing payment for order %s in status %s", order_id, order_status)
+                return {
+                    "success": False,
+                    "order_id": order_id,
+                    "order_status": order_status,
+                    "error": f"Order {order_id} cannot be paid in status {order_status}",
                 }
 
             # High #9: per-customer hourly rate limit
@@ -452,8 +468,105 @@ def process_payment(
 
 
 # ---------------------------------------------------------------------------
-# Tokenization / saved methods (simulated; behaviour of the legacy effective definitions)
+# Tokenization / saved methods (customer_payment_methods)
 # ---------------------------------------------------------------------------
+# Tokens are opaque random values (``tok_`` + ``secrets.token_urlsafe``); they are
+# never derived from card or account data. Only masked data is stored: brand,
+# last four, payment type, account type, card expiry. Full card/account numbers
+# and CVV are never stored, logged or returned.
+
+_TOKEN_PREFIX = "tok_"
+_LEGACY_TOKEN_RE = re.compile(r"^tok_([a-z]+)_(\d{4})$")  # legacy tok_{brand}_{last4}
+
+SUPPORTED_PAYMENT_METHODS = [
+    {"type": "credit_card", "brands": ["visa", "mastercard", "amex", "discover"],
+     "description": "Credit and debit cards"},
+    {"type": "ach", "account_types": ["checking", "savings"], "description": "ACH bank transfer"},
+]
+
+
+def _new_token() -> str:
+    return _TOKEN_PREFIX + secrets.token_urlsafe(24)
+
+
+def _mask_token(token: Optional[str]) -> str:
+    return f"...{str(token)[-6:]}" if token else ""
+
+
+def _resolve_customer_id(customer_id: Optional[str], tool_context: Optional[ToolContext]) -> Optional[str]:
+    """``customer_id`` argument, else ``customer_context`` / ``order_context`` from state."""
+    if customer_id:
+        return customer_id
+    if tool_context is None:
+        return None
+    for key in ("customer_context", "order_context"):
+        ctx = tool_context.state.get(key) or {}
+        cid = ctx.get("customer_id") if isinstance(ctx, dict) else None
+        if isinstance(cid, str) and cid:
+            return cid
+    return None
+
+
+def _method_view(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Masked, JSON-safe view of a ``customer_payment_methods`` row."""
+    return {
+        "method_id": row["method_id"],
+        "customer_id": row["customer_id"],
+        "token": row["token"],
+        "payment_type": row["payment_type"],
+        "card_brand": row["card_brand"],
+        "last_four": row["last_four"],
+        "account_type": row["account_type"],
+        "expiry": row["token_expiry"],
+        "is_default": bool(row["is_default"]),
+        "nickname": row["nickname"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+    }
+
+
+def _save_payment_method(
+    *,
+    customer_id: str,
+    payment_type: str,
+    token: str,
+    card_brand: Optional[str] = None,
+    last_four: Optional[str] = None,
+    account_type: Optional[str] = None,
+    token_expiry: Optional[str] = None,
+    is_default: bool = False,
+    nickname: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Upsert a masked method by token. Returns the stored row, or None when the
+    token already belongs to another customer."""
+    with db.transaction() as conn:
+        if is_default:
+            conn.execute(
+                "UPDATE customer_payment_methods SET is_default = 0 WHERE customer_id = %s AND token <> %s",
+                (customer_id, token),
+            )
+        return conn.execute(
+            """INSERT INTO customer_payment_methods
+                   (method_id, customer_id, payment_type, token, card_brand, last_four,
+                    account_type, is_default, nickname, token_expiry, status, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active', %s)
+               ON CONFLICT (token) DO UPDATE SET
+                   is_default   = GREATEST(customer_payment_methods.is_default, EXCLUDED.is_default),
+                   nickname     = COALESCE(EXCLUDED.nickname, customer_payment_methods.nickname),
+                   card_brand   = COALESCE(customer_payment_methods.card_brand, EXCLUDED.card_brand),
+                   last_four    = COALESCE(customer_payment_methods.last_four, EXCLUDED.last_four),
+                   account_type = COALESCE(customer_payment_methods.account_type, EXCLUDED.account_type),
+                   token_expiry = COALESCE(customer_payment_methods.token_expiry, EXCLUDED.token_expiry),
+                   status       = 'active'
+               WHERE customer_payment_methods.customer_id = EXCLUDED.customer_id
+               RETURNING *""",
+            (
+                new_id("PM", timestamp_format="%Y%m%d%H%M%S"), customer_id, payment_type, token,
+                card_brand, last_four, account_type, 1 if is_default else 0, nickname,
+                token_expiry, db.now_iso(),
+            ),
+        ).fetchone()
+
 
 def tokenize_payment_method(
     payment_type: str,
@@ -464,9 +577,15 @@ def tokenize_payment_method(
     routing_number: str = None,
     account_number: str = None,
     account_type: str = None,
+    customer_id: str = None,
+    tool_context: Optional[ToolContext] = None,
 ) -> Dict[str, Any]:
     """
-    Tokenizes a payment method for secure storage (simulated gateway tokenization).
+    Tokenizes a payment method (simulated gateway tokenization) and saves the masked
+    method to the customer's account when a customer is known.
+
+    The token is an opaque random value (``tok_...``); it is never derived from the
+    card or account number. CVV and full numbers are never stored.
 
     Args:
         payment_type: 'credit_card' or 'ach'
@@ -477,32 +596,41 @@ def tokenize_payment_method(
         routing_number: Routing number (for ACH)
         account_number: Account number (for ACH)
         account_type: 'checking' or 'savings' (for ACH)
+        customer_id: Customer to save the method for (defaults to customer_context / order_context)
 
     Returns:
-        Tokenization result with secure token
+        Tokenization result with the secure token and masked details
     """
     logger.info("Tokenizing payment method: %s", payment_type)
+    card_brand = None
+    token_expiry = None
     if payment_type == "credit_card":
         if not all([card_number, expiry_month, expiry_year, cvv]):
             return {"success": False, "error": "Missing required fields for credit card tokenization"}
         validation = validate_payment_method("credit_card", card_number=card_number)
         if not validation.get("valid"):
             return {"success": False, "error": validation.get("error")}
-        last_four = str(card_number).replace(" ", "").replace("-", "")[-4:]
         try:
-            expiry = f"{int(expiry_month):02d}/{expiry_year}"
+            month = int(expiry_month)
+            year = int(expiry_year)
         except (TypeError, ValueError):
             return {"success": False, "error": "Invalid expiry date values"}
-        return {
+        if not 1 <= month <= 12:
+            return {"success": False, "error": "Invalid expiry date values"}
+        if year < 100:
+            year += 2000
+        card_brand = validation["card_brand"]
+        last_four = validation["last_four"]
+        token_expiry = f"{month:02d}/{year}"
+        result: Dict[str, Any] = {
             "success": True,
-            "token": f"tok_{validation['card_brand']}_{last_four}",
             "payment_type": "credit_card",
-            "card_brand": validation["card_brand"],
+            "card_brand": card_brand,
             "last_four": last_four,
-            "expiry": expiry,
+            "expiry": token_expiry,
             "message": "Payment method tokenized successfully",
         }
-    if payment_type == "ach":
+    elif payment_type == "ach":
         if not all([routing_number, account_number, account_type]):
             return {"success": False, "error": "Missing required fields for ACH tokenization"}
         validation = validate_payment_method(
@@ -510,54 +638,81 @@ def tokenize_payment_method(
         )
         if not validation.get("valid"):
             return {"success": False, "error": validation.get("error")}
-        last_four = str(account_number)[-4:]
-        return {
+        last_four = validation["account_last_four"]
+        result = {
             "success": True,
-            "token": f"tok_ach_{last_four}",
             "payment_type": "ach",
             "account_type": account_type,
             "account_last_four": last_four,
-            "routing_number": routing_number,
+            "last_four": last_four,
+            "routing_number": validation["routing_number"],
             "message": "ACH account tokenized successfully",
         }
-    return {"success": False, "error": f"Unsupported payment type: {payment_type}"}
+    else:
+        return {"success": False, "error": f"Unsupported payment type: {payment_type}"}
+
+    token = _new_token()
+    result["token"] = token
+
+    resolved_customer_id = _resolve_customer_id(customer_id, tool_context)
+    result["customer_id"] = resolved_customer_id
+    result["saved"] = False
+    if resolved_customer_id:
+        try:
+            row = _save_payment_method(
+                customer_id=resolved_customer_id,
+                payment_type=payment_type,
+                token=token,
+                card_brand=card_brand,
+                last_four=last_four,
+                account_type=account_type if payment_type == "ach" else None,
+                token_expiry=token_expiry,
+            )
+        except psycopg.Error as exc:
+            logger.error("Saving payment method failed: %s", type(exc).__name__)
+            result["warning"] = "Token created but the payment method could not be saved"
+        else:
+            if row is not None:
+                result["saved"] = True
+                result["method_id"] = row["method_id"]
+    logger.info("Tokenized %s ending %s (token %s, saved=%s)",
+                payment_type, last_four, _mask_token(token), result["saved"])
+    return result
 
 
-def get_payment_methods(customer_id: str) -> Dict[str, Any]:
+def get_payment_methods(customer_id: str = None, tool_context: Optional[ToolContext] = None) -> Dict[str, Any]:
     """
-    Retrieves saved payment methods for a customer (simulated list).
+    Retrieves the customer's saved (active) payment methods, masked, plus the payment
+    method types this service supports.
 
     Args:
-        customer_id: Unique customer identifier
+        customer_id: Unique customer identifier (defaults to customer_context / order_context)
 
     Returns:
-        List of saved payment methods
+        Saved payment methods (token, type, brand, last four, expiry, default flag, nickname)
     """
+    customer_id = _resolve_customer_id(customer_id, tool_context)
     logger.info("Retrieving payment methods for customer: %s", customer_id)
-    payment_methods = [
-        {
-            "token": "tok_visa_1234",
-            "type": "credit_card",
-            "brand": "visa",
-            "last_four": "1234",
-            "expiry": "12/2026",
-            "is_default": True,
-            "nickname": "Business Visa",
-        },
-        {
-            "token": "tok_ach_5678",
-            "type": "ach",
-            "bank_name": "Chase Bank",
-            "account_last_four": "5678",
-            "is_default": False,
-            "nickname": "Business Checking",
-        },
-    ]
+    if not customer_id:
+        return {"success": False, "error": "customer_id is required",
+                "supported_methods": SUPPORTED_PAYMENT_METHODS}
+    try:
+        rows = db.fetch_all(
+            """SELECT * FROM customer_payment_methods
+               WHERE customer_id = %s AND status = 'active'
+               ORDER BY is_default DESC, created_at DESC, method_id""",
+            (customer_id,),
+        )
+    except psycopg.Error as exc:
+        logger.error("Loading payment methods failed: %s", type(exc).__name__)
+        return {"success": False, "error": f"Payment method lookup error: {type(exc).__name__}"}
+    payment_methods = [_method_view(r) for r in rows]
     return {
         "success": True,
         "customer_id": customer_id,
         "payment_methods": payment_methods,
         "count": len(payment_methods),
+        "supported_methods": SUPPORTED_PAYMENT_METHODS,
     }
 
 
@@ -567,47 +722,65 @@ def add_payment_method(
     payment_token: str,
     is_default: bool = False,
     nickname: str = None,
-) -> str:
+    tool_context: Optional[ToolContext] = None,
+) -> Dict[str, Any]:
     """
-    Adds a tokenized payment method to a customer's account (simulated; not persisted).
+    Saves a tokenized payment method to a customer's account (customer_payment_methods).
 
     ALWAYS call tokenize_payment_method first to get a secure token before calling this.
+    A token already saved by tokenize_payment_method is updated (default flag, nickname).
 
     Args:
-        customer_id: Customer identifier
+        customer_id: Customer identifier (defaults to customer_context / order_context)
         payment_type: 'credit_card' or 'ach'
         payment_token: Secure token from tokenize_payment_method
         is_default: Whether to set as default payment method (default: False)
         nickname: Optional friendly name for the payment method
 
     Returns:
-        JSON string with success confirmation and saved payment method details
+        Success confirmation and the saved (masked) payment method
     """
+    customer_id = _resolve_customer_id(customer_id, tool_context)
     logger.info("Adding payment method for customer: %s", customer_id)
     if not customer_id or not payment_token:
-        return json.dumps({"success": False, "error": "customer_id and payment_token are required"})
+        return {"success": False, "error": "customer_id and payment_token are required"}
     if payment_type not in ("credit_card", "ach"):
-        return json.dumps({
+        return {
             "success": False,
             "error": f"Invalid payment_type: {payment_type}. Must be 'credit_card' or 'ach'",
-        })
-    token_last_four = payment_token[-4:] if len(payment_token) >= 4 else payment_token
-    if not nickname:
-        nickname = f"Payment method ending in {token_last_four}"
-    result = {
+        }
+    if not str(payment_token).startswith(_TOKEN_PREFIX):
+        return {"success": False, "error": "payment_token must come from tokenize_payment_method"}
+
+    # Legacy tokens (tok_{brand}_{last4}) carry masked details; opaque tokens do not.
+    card_brand = last_four = None
+    legacy = _LEGACY_TOKEN_RE.match(payment_token)
+    if legacy:
+        brand, last_four = legacy.groups()
+        card_brand = brand if payment_type == "credit_card" else None
+    try:
+        row = _save_payment_method(
+            customer_id=customer_id,
+            payment_type=payment_type,
+            token=payment_token,
+            card_brand=card_brand,
+            last_four=last_four,
+            is_default=bool(is_default),
+            nickname=nickname,
+        )
+    except psycopg.Error as exc:
+        logger.error("Saving payment method failed: %s", type(exc).__name__)
+        return {"success": False, "error": f"Payment method save error: {type(exc).__name__}"}
+    if row is None:
+        return {"success": False, "error": "payment_token is registered to a different customer"}
+    if not row["nickname"]:
+        ending = row["last_four"] or _mask_token(payment_token)
+        row = dict(row, nickname=f"Payment method ending in {ending}")
+    return {
         "success": True,
-        "message": f"Payment method added successfully for customer {customer_id}",
-        "payment_method": {
-            "customer_id": customer_id,
-            "payment_type": payment_type,
-            "token": payment_token,
-            "is_default": is_default,
-            "nickname": nickname,
-            "last_four": token_last_four,
-            "status": "active",
-        },
+        "message": f"Payment method saved for customer {customer_id}",
+        "payment_method": _method_view(row),
     }
-    return json.dumps(result, indent=2)
 
 
 # ---------------------------------------------------------------------------

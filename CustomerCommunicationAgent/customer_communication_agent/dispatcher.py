@@ -4,16 +4,21 @@ Producers insert ``notifications`` rows with ``status='pending'`` through
 ``sales_common.notifications.enqueue`` (in their business transaction). This
 module delivers them:
 
-1. ``SELECT ... WHERE status='pending' ORDER BY created_at FOR UPDATE SKIP LOCKED``
-   (several service instances can dispatch concurrently without double-sending).
+1. ``SELECT ... WHERE status='pending' <backoff due> ORDER BY seq (insertion order, migration 005)
+   FOR UPDATE SKIP LOCKED`` (several service instances can dispatch concurrently without
+   double-sending). ``created_at`` has second resolution and ``notifications`` has no
+   sequence column, so ``notification_id`` is only a deterministic tiebreak: rows created
+   in the same second are processed in id order, not strictly in insertion order.
 2. Render subject/message from ``metadata_json = {"template": ..., "args": {...}}``
    with :mod:`.templates` (unknown templates use ``generic``).
 3. De-duplicate through ``dedup_cache`` (same template + recipient + reference within
    ``DEDUP_WINDOW_MINUTES``) -> ``status='deduped'``.
 4. Email via SMTP when ``SMTP_ENABLED=true`` (``status='sent'``), otherwise simulated
    (``status='simulated'``). SMS is always simulated.
-5. On a delivery error the row stays ``pending`` with ``error`` set and is retried on
-   the next poll; after ``MAX_ATTEMPTS`` attempts it is marked ``failed``.
+5. On a delivery error the row stays ``pending`` with ``error`` set; after
+   ``MAX_ATTEMPTS`` attempts it is marked ``failed``. Retries back off linearly: a row
+   with ``attempts > 0`` is picked again only once ``updated_at`` is at least
+   ``NOTIFY_RETRY_SECONDS`` (default 60) * ``attempts`` seconds in the past.
 
 :func:`dispatcher_lifespan` runs :func:`dispatch_pending` every ``NOTIFY_POLL_SECONDS``
 (default 10) in a worker thread for the lifetime of the A2A server.
@@ -191,11 +196,21 @@ def _deliver(conn: Connection, row: dict, settings: SmtpSettings) -> str:
     return status
 
 
+def retry_seconds() -> float:
+    """Base retry backoff (``NOTIFY_RETRY_SECONDS``, default 60, >= 0)."""
+    value = env_float("NOTIFY_RETRY_SECONDS", 60.0)
+    if value < 0:
+        raise ConfigError(f"NOTIFY_RETRY_SECONDS must be >= 0, got {value}")
+    return value
+
+
 def dispatch_pending(limit: int = DEFAULT_BATCH, *, notification_id: Optional[str] = None) -> dict[str, int]:
     """Deliver up to ``limit`` pending notifications in one transaction.
 
     ``notification_id`` restricts the batch to one row (used by the agent's own
-    ``send_*`` tools). Rows locked by another dispatcher are skipped.
+    ``send_*`` tools). Rows locked by another dispatcher are skipped, and rows whose
+    retry backoff (``NOTIFY_RETRY_SECONDS * attempts`` since ``updated_at``) has not
+    elapsed are left for a later poll.
 
     Returns counts: ``processed``, ``sent``, ``simulated``, ``deduped``,
     ``retrying`` (failed attempt, will retry) and ``failed`` (gave up).
@@ -203,8 +218,13 @@ def dispatch_pending(limit: int = DEFAULT_BATCH, *, notification_id: Optional[st
     counts = {"processed": 0, "sent": 0, "simulated": 0, "deduped": 0, "retrying": 0, "failed": 0}
     limit = max(1, int(limit))
     settings = SmtpSettings.from_env()
-    where = "status = 'pending'"
-    params: list[Any] = []
+    # Timestamps are naive-UTC ISO text (sales_common.db.now_iso).
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    where = (
+        "status = 'pending' AND (attempts = 0 OR updated_at IS NULL "
+        "OR updated_at::timestamp <= %s::timestamp - make_interval(secs => %s * attempts))"
+    )
+    params: list[Any] = [now.isoformat(timespec="seconds"), retry_seconds()]
     if notification_id:
         where += " AND notification_id = %s"
         params.append(notification_id)
@@ -212,7 +232,8 @@ def dispatch_pending(limit: int = DEFAULT_BATCH, *, notification_id: Optional[st
     with db.transaction() as conn:
         rows = conn.execute(
             f"SELECT * FROM notifications WHERE {where} "
-            "ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s",
+            # Best-effort chronological order; notification_id breaks same-second ties.
+            "ORDER BY seq FOR UPDATE SKIP LOCKED LIMIT %s",
             params,
         ).fetchall()
         for row in rows:
@@ -252,6 +273,7 @@ async def run_dispatch_loop(interval: float, stop: asyncio.Event) -> None:
 async def dispatcher_lifespan(_app):
     """Starlette lifespan: run the dispatcher loop while the server is up."""
     SmtpSettings.from_env().validate()
+    retry_seconds()  # fail fast on a bad NOTIFY_RETRY_SECONDS
     interval = poll_seconds()
     stop = asyncio.Event()
     task = asyncio.create_task(run_dispatch_loop(interval, stop), name="notification-dispatcher")

@@ -24,6 +24,7 @@ A PostgreSQL advisory lock serialises concurrent runners.
 | `migrations/002_catalog.sql` | `products` (catalog service) |
 | `migrations/003_platform.sql` | `adk_memories` (long-term memory), `revoked_sessions` (gateway tokens) |
 | `migrations/004_coverage.sql` | `coverage_zones` (serviceability service) |
+| `migrations/005_notifications_seq.sql` | `notifications.seq` insertion-order column for the outbox dispatcher |
 | `seed/001_sales_data.sql` | demo prospects/accounts etc. exported from the legacy SQLite `sales_agent.db` (removed; recoverable from git commit `b3cb18a`) by `scripts/export_sqlite_seed.py` (orphaned legacy rows skipped) |
 | `seed/002_catalog.sql` | 16 SKUs with price/family (`scripts/export_catalog_seed.py`) |
 | `seed/003_coverage.sql` | 38 coverage ZIPs (`scripts/export_coverage_seed.py`) |

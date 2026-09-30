@@ -624,7 +624,7 @@ erDiagram
 - `GET /health` (alias `GET /healthz`) - Liveness plus a PostgreSQL ping; 503 when degraded (USER_FACING / ops)
 - `GET /api/session/health` - Session API liveness (USER_FACING / ops)
 - `GET /api/debug/session` - The caller's own ADK session state; available only when `DEBUG=true` and requires the Bearer token (developer only)
-- `POST /api/client-log` - Browser console forwarding to `SuperAgent/logs/frontend.log` (development aid)
+- `POST /api/client-log` - Browser console forwarding to `logs/frontend.log` (Bearer token required, rate-limited, control characters stripped; `LOG_DIR` overrides the directory)
 - `GET /assets/*`, `GET /{path}` - Built React SPA (`client/dist`)
 
 **Internal API Endpoints: A2A agent services (private, `roles/run.invoker` for `csa-gateway` SA):**
@@ -652,7 +652,7 @@ Every agent service built by `create_a2a_app` exposes the same three routes:
 
 - `GET /api/v1/products?category=` - List available products (category aliases accepted)
 - `GET /api/v1/products/search?speed=&technology=` - Numeric speed and technology search
-- `GET /api/v1/products/best-value?category=` - Highest-throughput product in a category (`max_budget` is deprecated and ignored)
+- `GET /api/v1/products/best-value?category=` - Highest-throughput product in a category (no budget parameter: pricing is not disclosed by the catalog)
 - `GET /api/v1/categories` - Product categories
 - `POST /api/v1/products/compare` - Compare 2 to 5 products; names the fastest
 - `GET /api/v1/products/ID` - Product detail by case-insensitive id; never includes price fields
@@ -794,7 +794,7 @@ All services get `--add-cloudsql-instances`, `DATABASE_URL` on the `/cloudsql/<c
 | 6 | **Remaining in-process domain tools.** Discovery, offer, order, payment, fulfillment and communication tools still run inside LLM agent containers; OfferManagement keeps its own `PRODUCT_PRICE_BOOK` | No reuse by non-agent clients; price drift versus `products.unit_price` | Planned change `mcp-remaining-domains`: `crm`, `pricing`, `orders`, `payments`, `fulfillment` and `notifications` REST + MCP services |
 | 7 | **Latency and cold starts.** Each turn adds a router LLM call and one to three A2A hops, and each agent opens an MCP session. 13 services scale to zero | First-turn latency after idle; slower multi-hop turns | Greeting fast path, context caching, `min-instances` configurable for the gateway, single region |
 | 8 | **Outbox delay and context envelope.** Notifications wait up to `NOTIFY_POLL_SECONDS`. `_context_update` is visible to the agent's model | Delayed emails; slight prompt noise | 10 s default poll; the key is documented as internal in agent instructions |
-| 9 | **Unauthenticated `POST /api/client-log`** writes to a local file on the gateway | Log-spam vector on the public service | Restrict to `DEBUG=true` or remove in production |
+| 9 | **`POST /api/client-log` (resolved)** previously accepted unauthenticated writes | Fixed: requires a session token, has its own per-session rate limit, strips control characters | Regression tests in `SuperAgent/tests/test_api.py` |
 
 ## Document Metadata
 

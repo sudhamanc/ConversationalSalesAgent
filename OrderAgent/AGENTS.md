@@ -91,6 +91,11 @@ One transaction:
 - Writes `order_context` = `{order_id, customer_id, customer_name, contact_email, contact_phone, service_address, service_type, price, offer_id, total_amount, status}`. `export_context_delta` returns it as `_context_update.order_context`.
 - Response: `success, order_id, customer_name, customer_id, service_address, service_type, contact_phone, contact_email, offer_id, status, total_amount, created_at, email_confirmation_sent, email_notification_id, message[, warning]`.
 
+### Expiry (TTL)
+
+- Carts: `expires_at` = last activity + 24h. Set by `create_cart` and refreshed by `add_to_cart`, `remove_from_cart` and `clear_cart`. Maintenance marks active carts past `expires_at` as `expired` (abandoned-cart notification).
+- Orders: `expires_at` = `created_at` + 48h, set by `create_order` and not extended by later edits. Maintenance cancels `pending_payment` orders past `expires_at` (order-cancelled notification).
+
 ### Order State Machine
 
 ```
@@ -123,4 +128,4 @@ TEST_DATABASE_URL=postgresql://.../scratch pytest OrderAgent/tests -q
 
 Fixed: `order_id`, `cart_id` and fallback `customer_id` now come from `sales_common.ids.new_id`, so repeat orders no longer collide.
 
-- Carts and orders are written with `expires_at = NULL`, so `sales_common.maintenance` never expires them.
+Fixed: carts and orders get `expires_at` (`sales_common.db.compute_expires_at`), so `sales_common.maintenance.cleanup_stale_records` expires abandoned carts and cancels unpaid orders.

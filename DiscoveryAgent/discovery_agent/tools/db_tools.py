@@ -168,19 +168,35 @@ def search_by_intent_signals(signal_keyword: str) -> List[Dict[str, Any]]:
 # ==================== WRITE OPERATIONS ====================
 
 def _generate_customer_id(conn) -> str:
-    """Generate a customer_id in format CUST-YYYYMMDD-XXX (legacy algorithm)."""
+    """Generate a customer_id ``CUST-YYYYMMDD-NNN`` for today's date (UTC).
+
+    The counter is the highest numeric suffix among today's ids plus one
+    (starting at 001), so ids from other dates never affect it. The counter is
+    zero-padded to three digits and widens naturally past 999 (``...-1000``).
+    Callers must hold the ``discovery.customer_id`` advisory lock.
+    """
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    prefix = f"CUST-{today}-"
     row = conn.execute(
-        "SELECT customer_id FROM accounts WHERE customer_id IS NOT NULL "
-        "ORDER BY customer_id DESC LIMIT 1"
+        "SELECT MAX(CAST(substr(customer_id, %s) AS BIGINT)) AS max_idx FROM accounts "
+        "WHERE customer_id LIKE %s AND substr(customer_id, %s) ~ '^[0-9]+$'",
+        (len(prefix) + 1, prefix + "%", len(prefix) + 1),
     ).fetchone()
-    next_idx = 1
-    if row and row["customer_id"]:
-        try:
-            next_idx = int(row["customer_id"].split("-")[-1]) + 1
-        except (ValueError, IndexError):
-            next_idx = 1
-    return f"CUST-{today}-{next_idx:03d}"
+    next_idx = (row["max_idx"] or 0) + 1 if row else 1
+    return f"{prefix}{next_idx:03d}"
+
+
+def find_company_name(company_name: str) -> Optional[str]:
+    """Canonical ``"Company Name"`` of an existing account (case-insensitive), else None."""
+    if not company_name or not company_name.strip():
+        return None
+    row = db.fetch_one(
+        'SELECT "Company Name" FROM accounts '
+        'WHERE lower("Company Name") IN (lower(%s), lower(%s)) '
+        'ORDER BY ("Company Name" = %s) DESC LIMIT 1',
+        (company_name.strip(), normalize_company_name(company_name), company_name.strip()),
+    )
+    return row["Company Name"] if row else None
 
 
 def add_company(
@@ -275,21 +291,40 @@ def add_contact(
     email: Optional[str] = None,
     phone: Optional[str] = None,
     notes: Optional[str] = None,
-) -> bool:
-    query = """
-    INSERT INTO contacts (
-        "Company Name", "Name", "Title", "Role in Decision Making",
-        "Email", "Phone", "Notes", created_at
-    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+) -> str:
+    """Insert a contact unless the same person already exists for the company.
+
+    Returns ``"created"``, ``"duplicate"`` (same name, or same email, at the company,
+    case-insensitive) or ``"failed"``. The check and insert run under a per-company
+    advisory lock because ``contacts`` has no unique key in the shared schema.
     """
     try:
-        rows = db.execute(query, (
-            company_name, contact_name, title, role_in_decision_making,
-            email, phone, notes, db.now_iso(),
-        ))
+        with db.transaction() as conn:
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext('discovery.contacts:' || lower(%s)))",
+                (company_name,),
+            )
+            existing = conn.execute(
+                'SELECT 1 FROM contacts WHERE lower("Company Name") = lower(%s) '
+                'AND (lower("Name") = lower(%s) '
+                '     OR (%s::text IS NOT NULL AND %s::text <> \'\' AND lower("Email") = lower(%s)))',
+                (company_name, contact_name, email, email, email),
+            ).fetchone()
+            if existing:
+                return "duplicate"
+            rows = conn.execute(
+                """
+                INSERT INTO contacts (
+                    "Company Name", "Name", "Title", "Role in Decision Making",
+                    "Email", "Phone", "Notes", created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (company_name, contact_name, title, role_in_decision_making,
+                 email, phone, notes, db.now_iso()),
+            ).rowcount
     except pg_errors.IntegrityError:
-        return False
-    return rows > 0
+        return "failed"
+    return "created" if rows > 0 else "failed"
 
 
 _CONTACT_FIELDS = {

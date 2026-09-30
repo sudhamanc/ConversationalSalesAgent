@@ -29,7 +29,8 @@ SuperAgent/
 │   ├── api/session.py       # POST/DELETE /api/session
 │   ├── api/suggestions.py   # follow-up suggestion chips (google-genai)
 │   ├── api/debug.py         # GET /api/debug/session (DEBUG=true only)
-│   ├── api/client_log.py    # POST /api/client-log (browser console forwarding)
+│   ├── api/client_log.py    # POST /api/client-log (browser console forwarding, Bearer token)
+│   ├── run_scenarios.py     # smoke-run chat scenarios against a running gateway
 │   └── middleware/          # auth.py (signed tokens), rate_limiter.py
 ├── client/                  # React 19 + Vite + Tailwind (see client/AGENTS.md)
 └── tests/                   # gateway tests
@@ -106,7 +107,7 @@ Only when `DEBUG=true` (otherwise 403). Requires the Bearer token and returns th
 
 ### Other
 
-- `POST /api/client-log`: forwards browser console lines to `SuperAgent/logs/frontend.log` (local development).
+- `POST /api/client-log`: forwards browser console lines (development aid). Requires `Authorization: Bearer <token>` (401 otherwise) and has its own per-session rate limit (`RATE_LIMIT_*` values, separate buckets from chat; 429). Body `{"level", "message", "timestamp"}`; control characters and newlines are replaced with spaces (no forged log lines) and the message is capped at 4000 characters. Lines are appended to `<repo>/logs/frontend.log` (`LOG_DIR` overrides the directory, as in `scripts/lib.sh`). The UI shim (`client/src/utils/remoteLog.js`) posts to the same-origin `/api/client-log` and sends nothing until a session token exists.
 
 ## Environment Variables
 
@@ -130,6 +131,7 @@ The shared template is the repo-root [`.env.example`](../.env.example). `super_a
 | `AGENT_NAME` | no | `super_sales_agent` | ADK app name (session and memory scope) |
 | `PORT` / `SERVER_PORT`, `SERVER_HOST` | no | `8000`, `0.0.0.0` | When running `python main.py` |
 | `LOG_LEVEL` | no | `INFO` | |
+| `LOG_DIR` | no | `<repo>/logs` | Directory of `frontend.log` (browser console forwarding) |
 | `COMPACTION_*`, `CONTEXT_CACHE_*` | no | see `sales_common.config.ContextSettings` | Compaction and context-cache tuning |
 | `SAFETY_*` | no | `BLOCK_LOW_AND_ABOVE` | Gemini safety thresholds |
 
@@ -151,6 +153,8 @@ uvicorn main:app --reload --port 8000
 cd ../client && npm run dev     # UI on :3000, proxies /api to :8000
 ```
 
+Smoke-run a few chat turns against a running gateway: `python SuperAgent/server/run_scenarios.py` (`GATEWAY_URL` overrides `http://localhost:8000`).
+
 Docker: `docker build -f SuperAgent/Dockerfile -t csa-gateway .` from the repo root. The same image runs migrations (`python -m sales_common.migrate --seed`) for compose `db-init` and the Cloud Run job `csa-db-init`.
 
 ## Tests
@@ -166,7 +170,7 @@ TEST_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_test pytest SuperAgent
 | `test_workflow_run.py` | Full workflow turns with in-process fake agents and a scripted router (`tests/fakes.py`) |
 | `test_sse.py` | Event → SSE mapping, de-duplication, card and cart payloads |
 | `test_auth.py` | Token signing, expiry, tampering, revocation |
-| `test_api.py` | Session and chat endpoints |
+| `test_api.py` | Session and chat endpoints, `/api/client-log` (auth, sanitizing, rate limit, log path), `run_scenarios.py` against the app |
 
 System-level tests: `tests/integration/` (all services as real processes with a scripted model) and `scripts/e2e_test.py` (real Gemini against a running stack).
 

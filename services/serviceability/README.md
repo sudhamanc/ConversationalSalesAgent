@@ -46,6 +46,17 @@ Serviceability result (fields that are null are omitted):
 
 Unserviceable: `{"serviceable": false, "address": {...}, "reason": "...", "available_product_categories": [], "available_products": []}`.
 
+## Address parsing (`address.py`)
+
+- Comma-separated input (`street, city, state ZIP`) splits on commas.
+- Comma-less input (`123 Main street philadelphia pa 19103`) ends the street at the first
+  street suffix after the house number and a name word (St/Street, Ave/Avenue, Rd/Road,
+  Blvd, Dr/Drive, Ln/Lane, Way, Ct, Pl, Pkwy, Hwy, ...), optionally followed by a directional
+  (`NW`) and a unit (`Suite 200`, `#5`); the rest before the state is the city. Without a
+  suffix it falls back to a generic pattern (`1 Broadway New York NY 10004`).
+- The state is a 2-letter code or a full state name directly before the ZIP
+  (`... Philadelphia Pennsylvania 19103`). Input case is preserved (no title-casing).
+
 ## MCP server
 
 Streamable HTTP at `/mcp/` (stateless, JSON responses; client URL must end in

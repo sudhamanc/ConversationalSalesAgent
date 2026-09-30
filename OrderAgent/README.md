@@ -8,8 +8,8 @@ See [AGENTS.md](AGENTS.md) for tools, tables, journey context and output formats
 
 The Order Agent handles PRE-FULFILLMENT operations:
 
-- **Cart Management:** create, update and manage shopping carts
-- **Order Creation:** create orders (status `pending_payment`); customer IDs are auto-generated when missing
+- **Cart Management:** create, update and manage shopping carts (carts expire 24h after the last change)
+- **Order Creation:** create orders (status `pending_payment`, `expires_at` = created + 48h; unpaid orders are cancelled by `sales_common.maintenance`); customer IDs are auto-generated when missing
 - **Order Modification:** update draft/pending orders
 - **Contract Generation:** service contracts with standard terms
 - **Order Status Management:** draft → pending_payment → paid → confirmed

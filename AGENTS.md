@@ -557,7 +557,7 @@ Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by Fa
 **Remaining:**
 
 1. **`mcp-remaining-domains`** (planned): REST + MCP services for CRM, pricing, orders, payments, fulfillment and notifications, with single-writer table ownership; OfferManagement reads prices from the catalog service instead of its own price book.
-2. **Known domain bugs:** fixed (duplicate Payment tool definitions, Offer quote cache/offer-id customer isolation, Discovery empty tool descriptions, `hash()`-based IDs in Order and Payment). Remaining minor issues are listed in each agent's `AGENTS.md` under "Known issues".
+2. **Known domain bugs:** all fixed with regression tests (see README "Recent Fixes and Known Limitations"). Residual limitations are listed in each agent's `AGENTS.md` under "Known issues".
 3. **Structured UI contracts:** extend `structured_card` to serviceability, product and order results so `responseFormatters.js` becomes a fallback only.
 4. **Rate limiting** is per gateway instance (in-memory token bucket); move to a shared store for multi-instance deployments.
 5. **Known environment limitations:** the RAG embedding model download is blocked in the build sandbox (the catalog service then reports `available: false` for knowledge search); Docker images were not built in the sandbox (run `docker compose build` / `scripts/deploy_cloud.sh` yourself).

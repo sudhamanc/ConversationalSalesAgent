@@ -7,8 +7,10 @@ Usage::
 
 Files are applied in lexical order from ``<DB_DIR>/migrations/*.sql`` and
 ``<DB_DIR>/seed/*.sql``. Applied versions are recorded in ``schema_migrations``
-and ``seed_versions`` so re-runs are no-ops. ``DB_DIR`` defaults to the first
-``db/`` directory found walking up from the current working directory.
+and ``seed_versions`` so re-runs are no-ops. Without ``DB_DIR`` the first
+``db/`` directory found walking up from the current working directory is used,
+then walking up from the installed package (editable install in the repo),
+then ``/app/db`` (see ``find_db_dir``).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import psycopg
 
@@ -29,17 +32,33 @@ logger = logging.getLogger("sales_common.migrate")
 _LOCK_ID = 7_402_113  # arbitrary advisory-lock key shared by all runners
 
 
+def _walk_up_for_db(start: Path) -> Optional[Path]:
+    for candidate in [start, *start.parents]:
+        if (candidate / "db" / "migrations").is_dir():
+            return candidate / "db"
+    return None
+
+
 def find_db_dir() -> Path:
+    """Locate the ``db/`` directory (``migrations/`` + ``seed/``).
+
+    Order: ``DB_DIR`` env override, walk up from the current working directory,
+    walk up from this package's location (editable installs live inside the
+    repo), then ``/app/db`` (container images).
+    """
     explicit = os.getenv("DB_DIR", "").strip()
     if explicit:
         path = Path(explicit)
         if not (path / "migrations").is_dir():
             raise FileNotFoundError(f"DB_DIR={explicit} has no migrations/ directory")
         return path
-    here = Path.cwd().resolve()
-    for candidate in [here, *here.parents]:
-        if (candidate / "db" / "migrations").is_dir():
-            return candidate / "db"
+    for start in (Path.cwd().resolve(), Path(__file__).resolve().parent):
+        found = _walk_up_for_db(start)
+        if found is not None:
+            return found
+    container = Path("/app/db")
+    if (container / "migrations").is_dir():
+        return container
     raise FileNotFoundError("Could not locate db/migrations; set DB_DIR")
 
 

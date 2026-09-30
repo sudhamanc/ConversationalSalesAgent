@@ -39,7 +39,6 @@ ServiceFulfillmentAgent/
 │   ├── agent.py             # build_agent(model=None) -> Agent
 │   ├── prompts.py
 │   ├── server.py            # app = create_a2a_app(root_agent)
-│   ├── models/schemas.py    # pydantic models (reference only)
 │   └── tools/
 │       ├── _common.py           # order/fulfillment lookups, journey-state helpers
 │       ├── scheduling_tools.py
@@ -65,7 +64,7 @@ Tools return JSON-serializable dicts with `success`. Errors are `{"success": fal
 | `reschedule_appointment` | `fulfillments` UPDATE date | `order_context.installation` | — |
 | `cancel_appointment` | `fulfillments` status → `cancelled` | `order_context.installation` | — |
 | `provision_equipment` / `track_equipment` / `verify_equipment_delivery` | — (simulated) | — | — |
-| `dispatch_technician` | `fulfillments` → `dispatched`, `dispatch_id` | `order_context.installation` | — (no outbox type yet) |
+| `dispatch_technician` | `fulfillments` → `dispatched`, `dispatch_id`, `orders`/`customer_master` R | `order_context.installation` | `install_dispatched` (first dispatch only; to `orders.contact_email`, else `customer_master.contact_email`; skipped when neither is set) |
 | `update_installation_status` | — (simulated) | — | — |
 | `complete_installation` | `fulfillments` → `installed`, `orders` R | `order_context.installation` | `installation_complete` |
 | `activate_service` | `fulfillments` → `activated`, `customer_master` UPSERT, `accounts` UPDATE, `orders` → `fulfilled`, `order_items` R | `order_context.status/activation/installation` | `service_activated` |

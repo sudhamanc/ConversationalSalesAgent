@@ -9,8 +9,10 @@ build/
 .venv312/
 venv/
 
-# Environment
+# Environment (keep committed templates only)
 .env
+.env.*
+!.env.example
 
 # Node
 node_modules/

@@ -54,18 +54,7 @@ def _router() -> APIRouter:
         return core.search_products_by_criteria(speed, technology).model_dump()
 
     @api.get("/products/best-value", response_model=BestValueResult)
-    def best_value(
-        category: Optional[str] = None,
-        max_budget: Annotated[
-            Optional[float],
-            Query(
-                ge=0,
-                deprecated=True,
-                description="Accepted for compatibility and not applied: pricing is not disclosed "
-                "by the catalog; budget fit is handled by offer management.",
-            ),
-        ] = None,
-    ) -> Any:
+    def best_value(category: Optional[str] = None) -> Any:
         """Highest-throughput product, optionally within a category."""
         return core.get_best_value_product(category).model_dump()
 
