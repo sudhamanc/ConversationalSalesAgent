@@ -2,8 +2,6 @@
 
 A multi-agent system for end-to-end B2B telecom sales conversations, built on Google ADK 2.x with Gemini: an orchestration **workflow** in a gateway, **10 domain agents as independent A2A services**, and **REST + MCP tool services**, all backed by PostgreSQL.
 
-**Drexel University – Senior Design Project — Winter/Spring 2026**
-
 ---
 
 ## What This Project Is
@@ -740,6 +738,29 @@ python scripts/e2e_test.py --base-url http://127.0.0.1:8000  # against a running
 ```
 
 DB-backed tests are skipped when `TEST_DATABASE_URL` is unset; use a scratch database. Agent tests use a scripted model and need no API key.
+
+#### Test structure
+
+Tests live **next to the code they test**. Each package (the shared library, every agent, each tool service, the gateway) has its own `tests/` folder. The root `tests/` folder holds only tests that span several services.
+
+| Where | What it tests | Model | Needs | Run |
+|---|---|---|---|---|
+| `libs/sales_common/tests/` | Shared library: config, DB helpers, migrations, journey context, A2A/MCP factories, model wrapper | none | DB for some tests | `pytest libs/sales_common/tests -q` |
+| `<Agent>/tests/` (e.g. `OrderAgent/tests/`) | One agent: its tools against PostgreSQL, and its behavior with a scripted model (`sales_common.testing.ScriptLlm`) | scripted | DB for tool tests | `pytest OrderAgent/tests -q` |
+| `services/catalog/tests/`, `services/serviceability/tests/` | One tool service: REST API, MCP tools, RAG indexes | none | DB; the embedding model for some RAG tests | `pytest services/catalog/tests -q` |
+| `SuperAgent/tests/` | Gateway: routing workflow with in-process fake agents, handoff rules, SSE mapping, auth, API | scripted | DB for some tests | `pytest SuperAgent/tests -q` |
+| `tests/integration/` | **Cross-service:** all 13 services as real processes over A2A, MCP and PostgreSQL | scripted (`fake-sales`) | DB | `pytest tests/integration -q -s` |
+| `tests/test_baseline_doc.py` | **Repo-wide:** `openspec/BASELINE.md` lists every service, port and agent tool | none | nothing | `pytest tests/test_baseline_doc.py -q` |
+| `evals/` | Real-model quality against golden datasets; `test_golden_valid.py` / `test_metrics.py` also run offline | **real Gemini** (live tests) | billed key, DB | `scripts/eval.sh` (offline checks: `pytest evals -q`) |
+| `scripts/e2e_test.py` | Live smoke test of a running stack | real Gemini | running stack | `python scripts/e2e_test.py` |
+
+Why unit tests sit inside each package rather than under the root `tests/`:
+
+- **Self-contained services.** Each agent and service is installed, built and deployed on its own, and its tests travel with it. Its `conftest.py` sets that package's environment defaults and scratch-database setup.
+- **One pattern for all 14 packages** (documented in [docs/agent-service-guide.md](docs/agent-service-guide.md)), so a new agent starts with a ready `tests/` folder.
+- **Clear meaning for the root `tests/`:** a test there needs the whole system, or checks the repository as a whole.
+
+DB-backed tests use the scratch database in `TEST_DATABASE_URL`, never your dev database. Run every suite before committing; after prompt, model, tool or routing changes, also run the golden evals.
 
 ### Evals
 
