@@ -11,7 +11,7 @@
 - [x] 2.1 Write `scripts/setup_local.sh` (no `.env` overwrite); verify with `bash -n` and a run in the sandbox
 - [x] 2.2 Write `scripts/db.sh` (migrate/seed/reset guards); verify reset refuses without `--yes`
 - [x] 2.3 Write `scripts/start_local.sh` / `stop_local.sh` (PID files, health waits, log tail on failure); verify a full local start against PostgreSQL 16 with all health checks green, then stop
-- [ ] 2.4 Update `scripts/e2e_test.py` with assertions; verify against the local stack (fake-model mode for CI-less verification) — script written and verified against a fake SSE gateway; a live run needs a real Gemini key (the scripted fake model does not produce quotes). Live multi-process coverage is in `tests/integration/test_local_stack.py`.
+- [x] 2.4 Update `scripts/e2e_test.py` with assertions; verify against the local stack — verified live on 2026-09-30: `python scripts/e2e_test.py --base-url http://127.0.0.1:8000` passed all 5 steps against real Gemini (client helpers now in `scripts/e2e_client.py`, see `agent-eval-suite`)
 
 ## 3. Cloud scripts
 

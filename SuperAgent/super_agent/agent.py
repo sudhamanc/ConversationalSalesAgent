@@ -2,7 +2,7 @@
 
 Domain agents are remote A2A services (``RemoteA2aAgent``); the router is the
 only in-process LLM. See ``workflow.py`` for the graph and
-``openspec/changes/adk2-workflow-orchestration/design.md`` for the rationale.
+``openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md`` for the rationale.
 """
 
 from __future__ import annotations

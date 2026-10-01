@@ -1,0 +1,87 @@
+{
+  "eval_set_id": "journeys/s4-non-serviceable",
+  "name": "s4-non-serviceable journey",
+  "eval_cases": [
+    {
+      "evalId": "s4-non-serviceable",
+      "conversation": [
+        {
+          "invocationId": "s4-non-serviceable-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "We're Summit Ridge Outfitters, a retail store at 456 Mountain Rd, Helena, MT 59601. Please register us."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "We are more than happy to have you as a customer! I've got your address as 456 Mountain Rd in Helena. \n\nTo make sure we have the exact location for Summit Ridge Outfitters, is there a suite, floor, or unit number we should include?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Summit Ridge Outfitters"
+                },
+                "name": "search_companies"
+              },
+              {
+                "args": {
+                  "company_name": "Summit Ridge Outfitters",
+                  "zip_code": "59601"
+                },
+                "name": "add_new_company"
+              },
+              {
+                "args": {
+                  "zip_code": "59601"
+                },
+                "name": "check_service_availability"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It registers Summit Ridge Outfitters."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It says the Helena, MT address is not serviceable."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r3",
+              "rubricContent": {
+                "textProperty": "It offers no products or prices."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "super_sales_agent",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

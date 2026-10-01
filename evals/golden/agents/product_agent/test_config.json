@@ -1,0 +1,36 @@
+{
+  "criteria": {
+    "golden_trajectory_v1": 0.8,
+    "final_response_match_v2": {
+      "threshold": 0.6,
+      "judge_model_options": {
+        "judge_model": "gemini-3-flash-preview",
+        "num_samples": 3
+      }
+    },
+    "rubric_based_final_response_quality_v1": {
+      "threshold": 0.7,
+      "judge_model_options": {
+        "judge_model": "gemini-3-flash-preview",
+        "num_samples": 3
+      },
+      "rubrics": []
+    },
+    "hallucinations_v1": {
+      "threshold": 0.8,
+      "judge_model_options": {
+        "judge_model": "gemini-3-flash-preview",
+        "num_samples": 3
+      },
+      "evaluate_intermediate_nl_responses": false
+    }
+  },
+  "custom_metrics": {
+    "golden_trajectory_v1": {
+      "code_config": {
+        "name": "evals.metrics.golden_trajectory_v1"
+      },
+      "description": "Golden tool calls occur in order with matching stable arguments (evals/metrics.py)."
+    }
+  }
+}

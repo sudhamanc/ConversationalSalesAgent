@@ -1,0 +1,417 @@
+{
+  "eval_set_id": "agents/product_agent/product_agent",
+  "name": "product_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "list-all-products",
+      "conversation": [
+        {
+          "invocationId": "list-all-products-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What products do you offer?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "We offer a range of business solutions across five main categories:\n\n**Fiber Internet (FTTP)**\n- **Business Fiber 1 Gbps (FIB-1G)**: Symmetrical 1 Gbps speeds.\n- **Business Fiber 5 Gbps (FIB-5G)**: Symmetrical 5 Gbps speeds.\n- **Business Fiber 10 Gbps (FIB-10G)**: Symmetrical 10 Gbps speeds.\n\n**Coax Internet (HFC/DOCSIS 3.1)**\n- **Business Internet 200 Mbps (COAX-200M)**: 200 Mbps Download / 20 Mbps Upload.\n- **Business Internet 500 Mbps (COAX-500M)**: 500 Mbps Download / 50 Mbps Upload.\n- **Business Internet 1 Gbps (COAX-1G)**: 1 Gbps Download / 100 Mbps Upload.\n\n**Voice (VoIP/SIP/Cloud)**\n- **Business Voice Basic (VOICE-BAS)**: 1-5 lines, G.711 HD Voice.\n- **Business Voice Standard (VOICE-STD)**: 5-20 lines, G.711 HD Voice.\n- **Business Voice Enterprise (VOICE-ENT)**: 20-100+ lines, SIP Trunking.\n- **Unified Communications (UCaaS) (VOICE-UCAAS)**: Unlimited users, Cloud-based.\n\n**SD-WAN**\n- **SD-WAN Essentials (SDWAN-ESS)**: Up to 250 Mbps throughput, 1-5 sites.\n- **SD-WAN Professional (SDWAN-PRO)**: Up to 1 Gbps throughput, 5-25 sites.\n- **SD-WAN Enterprise (SDWAN-ENT)**: Up to 10 Gbps throughput, 25-500+ sites.\n\n**Business Mobile (4G LTE/5G)**\n- **Business Mobile Basic (MOB-BAS)**: 10 GB/month on 4G LTE.\n- **Business Mobile Unlimited (MOB-UNL)**: Unlimited data on 5G Nationwide.\n- **Business Mobile Premium (MOB-PREM)**: Unlimited Premium data on 5G Ultra Wideband.\n\n**Next Steps:**\n- Would you like to see pricing and availability for any of these products?\n- I can also show you detailed specifications or compare specific options for you."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "list_available_products"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It lists products across Internet, Voice, SD-WAN and Mobile."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "fiber-5g-details",
+      "conversation": [
+        {
+          "invocationId": "fiber-5g-details-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Tell me about Business Fiber 5 Gbps."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "**Business Fiber 5 Gbps (FIB-5G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 5 Gbps Download / 5 Gbps Upload (Symmetrical)\n- Description: High-performance 5 Gbps fiber for bandwidth-intensive businesses\n- Features:\n  - 99.9% uptime SLA\n  - Symmetrical speeds\n  - Priority 24/7 support\n  - Free installation\n  - Premium Business Gateway included\n  - 5 static IP addresses included\n\n**Next Steps:**\n- Would you like to see pricing and availability for this product?\n- I can also show you alternative products or compare options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "product_id": "FIB-5G"
+                },
+                "name": "get_product_by_id"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It describes symmetrical 5 Gbps fiber with its SLA and included features from the catalog."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r3",
+              "rubricContent": {
+                "textProperty": "It ends with a Next Steps suggestion."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "compare-fiber",
+      "conversation": [
+        {
+          "invocationId": "compare-fiber-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Compare Business Fiber 1 Gbps and Business Fiber 5 Gbps."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "| Feature | Business Fiber 1 Gbps (FIB-1G) | Business Fiber 5 Gbps (FIB-5G) |\n| :--- | :--- | :--- |\n| **Technology** | FTTP | FTTP |\n| **Download Speed** | 1 Gbps | 5 Gbps |\n| **Upload Speed** | 1 Gbps | 5 Gbps |\n| **Uptime SLA** | 99.9% | 99.9% |\n| **Key Features** | Symmetrical speeds, 24/7 business support | Symmetrical speeds, Priority 24/7 support |\n\n**Next Steps:**\n- Would you like to see pricing and availability for these products?\n- I can also show you alternative products or compare other options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "product_ids": [
+                    "FIB-1G",
+                    "FIB-5G"
+                  ]
+                },
+                "name": "compare_products"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It compares speed and features of both products side by side."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "sdwan-category",
+      "conversation": [
+        {
+          "invocationId": "sdwan-category-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Show me SD-WAN options."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "**SD-WAN Essentials (SDWAN-ESS)**\n- Category: SD-WAN\n- Technology: SD-WAN\n- Speeds: Up to 250 Mbps throughput, 1-5 sites\n- Description: Entry-level SD-WAN for small multi-site businesses with basic traffic optimization\n- Features:\n  - Application-aware routing\n  - Dual-WAN failover\n  - Basic QoS and traffic shaping\n  - Cloud-managed portal\n  - Zero-touch provisioning\n  - SD-WAN gateway appliance included\n  - Business support\n\n**SD-WAN Professional (SDWAN-PRO)**\n- Category: SD-WAN\n- Technology: SD-WAN\n- Speeds: Up to 1 Gbps throughput, 5-25 sites\n- Description: Advanced SD-WAN with integrated security and multi-cloud connectivity\n- Features:\n  - Application-aware routing with AI optimization\n  - Multi-WAN failover (up to 4 links)\n  - Advanced QoS with 8 traffic classes\n  - Integrated firewall and IPS\n  - Cloud-managed portal with analytics\n  - Multi-cloud connectivity (AWS, Azure, GCP)\n  - Zero-touch provisioning\n  - SD-WAN gateway appliance included\n  - 99.9% uptime SLA\n  - Priority 24/7 support\n\n**SD-WAN Enterprise (SDWAN-ENT)**\n- Category: SD-WAN\n- Technology: SD-WAN\n- Speeds: Up to 10 Gbps throughput, 25-500+ sites\n- Description: Enterprise-class SD-WAN with full SASE integration, global backbone, and managed services\n- Features:\n  - AI-driven application optimization\n  - Multi-WAN failover with sub-second switchover\n  - Full SASE integration (ZTNA, SWG, CASB)\n  - Global private backbone network\n  - Advanced analytics and AIOps\n  - Multi-cloud connectivity with private peering\n  - Managed service option available\n  - Custom traffic policies per application\n  - 99.99% uptime SLA\n  - Dedicated account manager\n  - 24/7 NOC monitoring\n\n**Next Steps:**\n- Would you like to see pricing and availability for these products?\n- I can also show you alternative products or compare options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "list_available_products"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It lists SD-WAN Essentials, Professional and Enterprise."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "non-existent-product",
+      "conversation": [
+        {
+          "invocationId": "non-existent-product-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Tell me about Fiber 100G."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "We do not currently offer a 100 Gbps fiber plan. The highest bandwidth tier available on our network is the 10 Gbps plan.\n\n**Business Fiber 10 Gbps (FIB-10G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 10 Gbps Download / 10 Gbps Upload (Symmetrical)\n- Description: Enterprise-grade symmetrical fiber designed for large enterprises, data-intensive industries, and organizations requiring carrier-grade performance.\n- Features:\n  - Dedicated account manager\n  - Enterprise redundancy hardware\n  - Strongest SLA in the portfolio (99.9%–99.95% uptime)\n  - Low latency (5–15 ms)\n  - Dedicated fiber strand (not shared)\n  - Typical provisioning lead time: 15–30 business days\n\n**Next Steps:**\n- Would you like to see pricing and availability for this product?\n- I can also show you alternative products or compare options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "list_available_products"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It says Fiber 100G is not offered and points to the fiber products that exist."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "declines-pricing",
+      "conversation": [
+        {
+          "invocationId": "declines-pricing-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "How much is Business Fiber 5 Gbps per month?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "**Business Fiber 5 Gbps (FIB-5G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 5 Gbps download / 5 Gbps upload\n- Description: High-performance 5 Gbps fiber for bandwidth-intensive businesses\n- Features:\n  - 99.9% uptime SLA\n  - Symmetrical speeds\n  - Priority 24/7 support\n  - Free installation\n  - Premium Business Gateway included\n  - 5 static IP addresses included\n\nPricing and quotes come from the offer specialist; you can ask for a quote next.\n\n**Next Steps:**\n- Would you like to see pricing and availability for this product?\n- I can also show you alternative products or compare options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "product_id": "FIB-5G"
+                },
+                "name": "get_product_by_id"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It says pricing is provided separately (a quote) and offers that next."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "declines-competitors",
+      "conversation": [
+        {
+          "invocationId": "declines-competitors-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "How does your fiber compare to AT&T?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I can provide the technical specifications and features for our Business Fiber products to help you evaluate our offerings.\n\n**Business Fiber 1 Gbps (FIB-1G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 1 Gbps Download / 1 Gbps Upload\n- Description: Symmetrical 1 Gbps fiber internet perfect for small to medium businesses\n- Features:\n  - 99.9% uptime SLA\n  - Symmetrical speeds\n  - 24/7 business support\n  - Free installation\n  - Business Gateway router included\n\n**Business Fiber 5 Gbps (FIB-5G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 5 Gbps Download / 5 Gbps Upload\n- Description: High-performance 5 Gbps fiber for bandwidth-intensive businesses\n- Features:\n  - 99.9% uptime SLA\n  - Symmetrical speeds\n  - Priority 24/7 support\n  - Free installation\n  - Premium Business Gateway included\n  - 5 static IP addresses included\n\n**Business Fiber 10 Gbps (FIB-10G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 10 Gbps Download / 10 Gbps Upload\n- Description: Enterprise-grade 10 Gbps fiber for maximum performance\n- Features:\n  - 99.95% uptime SLA\n  - Symmetrical speeds\n  - Dedicated account manager\n  - Priority 24/7 support\n  - Free installation\n  - Enterprise Gateway with redundancy\n  - 10 static IP addresses included\n  - Managed security options\n\n**Next Steps:**\n- Would you like to see pricing and availability for these products?\n- I can also show you alternative products or compare these options side-by-side."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It declines to compare with competitors and offers to describe its own products."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

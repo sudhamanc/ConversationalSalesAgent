@@ -1,0 +1,372 @@
+{
+  "eval_set_id": "agents/discovery_agent/discovery_agent",
+  "name": "discovery_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "existing-company-found",
+      "conversation": [
+        {
+          "invocationId": "existing-company-found-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "We're Beacon Wealth Advisors."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I found **Beacon Wealth Advisors** in our system at **234 Charles Street, Baltimore, MD 21201**. \n\nAre you calling about service for this location?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Beacon Wealth Advisors"
+                },
+                "name": "search_companies"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms Beacon Wealth Advisors was found and states its address (234 Charles Street, Baltimore, MD) from the tool result."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "company-not-found",
+      "conversation": [
+        {
+          "invocationId": "company-not-found-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "We're Quantum Pickle Labs."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "We are more than happy to have you as a customer! Let's get you started. I'll just need a bit more information:\n\nCould you please provide the **full address** (Street, City, State, and Zip Code) where you need service, and let me know what **industry** Quantum Pickle Labs is in?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Quantum Pickle Labs"
+                },
+                "name": "search_companies"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It says the company is not on file yet."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It asks for the details needed to register it (such as industry and business address)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "register-new-company",
+      "conversation": [
+        {
+          "invocationId": "register-new-company-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "We're Evalia Bakery, a bakery at 10 Elm St, Boston, MA 02101. Please register us."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Welcome! I've registered **Evalia Bakery** at **10 Elm St, Boston, MA 02101**. I'll check service availability for this address now...\n\nWhile I'm getting that ready, what's driving your interest in new service—are you opening a new location or looking to upgrade your current internet? Also, do you have a target date for when you'd like the service to be active?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Evalia Bakery"
+                },
+                "name": "search_companies"
+              },
+              {
+                "args": {
+                  "company_name": "Evalia Bakery",
+                  "industry": "Restaurant/Food Service",
+                  "street": "10 Elm St",
+                  "city": "Boston",
+                  "state": "MA",
+                  "zip_code": "02101"
+                },
+                "name": "add_new_company"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms Evalia Bakery was registered, using the customer id or details returned by the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not claim service availability results (that is a separate check)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "address-missing-zip",
+      "conversation": [
+        {
+          "invocationId": "address-missing-zip-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "We're Northwind Dental, a dental clinic at 55 Pine St, Philadelphia, PA."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "We are more than happy to have you as a customer! Let's get you started. \n\nI've noted that you're a dental clinic in Philadelphia. To complete your registration, could you please provide the **Zip Code** for 55 Pine St? Also, is there a **suite or unit number** for your office?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Northwind Dental"
+                },
+                "name": "search_companies"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It asks for the ZIP code of the business address."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "add-contact",
+      "conversation": [
+        {
+          "invocationId": "add-contact-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "I'm Dana Lee, the CFO. My email is dana.lee@beaconwealth.example and my phone is 410-555-0199."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Thank you, Dana. I've updated our records with your contact information as the CFO for Beacon Wealth Advisors. \n\nI'll check service availability for your location at 234 Charles Street in Baltimore now..."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Beacon Wealth Advisors",
+                  "contact_name": "Dana Lee",
+                  "email": "dana.lee@beaconwealth.example",
+                  "phone": "410-555-0199"
+                },
+                "name": "add_new_contact"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms Dana Lee was saved as a contact for Beacon Wealth Advisors."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260426-038",
+            "company_name": "Beacon Wealth Advisors",
+            "address": {
+              "street": "234 Charles Street",
+              "address_line2": "",
+              "city": "Baltimore",
+              "state": "MD",
+              "zip_code": "21201"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "prospect-not-identified",
+      "conversation": [
+        {
+          "invocationId": "prospect-not-identified-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Hi, I need internet for my business."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I'd be happy to help you get set up with internet service! To get started, could you please tell me your company name and the address where you need the service?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It asks for the company name and business location before anything else."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

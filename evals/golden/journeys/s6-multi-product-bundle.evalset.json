@@ -1,0 +1,115 @@
+{
+  "eval_set_id": "journeys/s6-multi-product-bundle",
+  "name": "s6-multi-product-bundle journey",
+  "eval_cases": [
+    {
+      "evalId": "s6-multi-product-bundle",
+      "conversation": [
+        {
+          "invocationId": "s6-multi-product-bundle-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "We're Beacon Wealth Advisors."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I found **Beacon Wealth Advisors** in our system at **234 Charles Street, Baltimore, MD 21201**. \n\nAre you calling about service for this location?\n\nI've checked network availability for 234 Charles Street, Baltimore, MD 21201.\n\n✅ This location is serviceable with our Fiber infrastructure (FTTP).\n\n**Network Infrastructure Details:**\n• **Infrastructure Type:** Fiber to the Premises (FTTP)\n• **Service Zone:** Metro-Baltimore\n• **Typical Equipment:** OLT, ONT, Fiber Optic Cable\n• **Service Class:** Enterprise\n• **Redundancy:** Available\n\n**Speed Capabilities:**\n• **Minimum Speed:** 100 Mbps\n• **Maximum Speed:** 5,000 Mbps (5 Gbps)\n• **Symmetrical:** Yes (same upload/download speeds)\n\n**Installation Timeline:** 6 business days\n\nThank you for your interest! We're excited to confirm that we can provide high-speed fiber service to Beacon Wealth Advisors at this location. Here are the products available to you:\n\n**Available Products:**\n• **FIB-1G** - Business Fiber 1 Gbps\n• **FIB-5G** - Business Fiber 5 Gbps\n• **VOICE-BAS** - Business Voice Basic\n• **VOICE-STD** - Business Voice Standard\n• **VOICE-ENT** - Business Voice Enterprise\n• **VOICE-UCAAS** - Unified Communications (UCaaS)\n• **SDWAN-ESS** - SD-WAN Essentials\n• **SDWAN-PRO** - SD-WAN Professional\n• **MOB-BAS** - Business Mobile Basic\n• **MOB-UNL** - Business Mobile Unlimited\n• **MOB-PREM** - Business Mobile Premium\n\nWould you like to see the detailed technical specifications for any of these products?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "company_name": "Beacon Wealth Advisors"
+                },
+                "name": "search_companies"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It recognizes Beacon Wealth Advisors."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        },
+        {
+          "invocationId": "s6-multi-product-bundle-t2",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Quote Business Fiber 5 Gbps, SD-WAN Essentials and Business Voice Standard on a 36-month term."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've put together a comprehensive quote for **Beacon Wealth Advisors** based on your request for a 36-month term. By bundling these services, you've qualified for significant discounts.\n\nHere is your itemized pricing:\n\n### **Quote Summary (Offer ID: OFF-E56D45F76E)**\n*   **Business Fiber 5 Gbps:** $485.19/mo *(Regularly $599.00)*\n*   **SD-WAN Essentials:** $161.19/mo *(Regularly $199.00)*\n*   **Business Voice Standard:** $19.44/mo *(Regularly $24.00)*\n\n---\n\n### **Total Monthly Investment: $665.82**\n**Annual Total:** $7,989.84\n**Contract Term:** 36 Months\n\n### **Your Savings:**\n*   **Multi-Product Bundle Discount (10%):** Saves you $82.20/mo\n*   **36-Month Commitment Discount (10%):** Saves you $73.98/mo\n*   **Total Monthly Savings: $156.18**\n\nThis quote is valid for 30 days. Would you like to proceed with this order, or would you like to see how the pricing changes for a different term?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "term_months": 36
+                },
+                "name": "generate_offer_quote"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It presents one quote covering all three products with an OFF- id."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It shows a bundle discount and a 36-month term discount from the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r3",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "super_sales_agent",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

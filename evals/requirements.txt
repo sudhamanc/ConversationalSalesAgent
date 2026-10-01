@@ -1,0 +1,2 @@
+# Extra dependencies for the eval suite (scripts/eval.sh installs these when missing).
+google-adk[eval]==2.10.0

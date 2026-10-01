@@ -1,0 +1,231 @@
+{
+  "eval_set_id": "agents/greeting_agent/greeting_agent",
+  "name": "greeting_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "hello",
+      "conversation": [
+        {
+          "invocationId": "hello-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Hello"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Hello! Welcome to Connectivity Max. I’m here to help you explore our business-grade Internet, Voice, Mobile, and SD-WAN products. How can I assist you today?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It welcomes the customer on behalf of Connectivity Max."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It mentions the kinds of business services offered (for example internet, voice, SD-WAN or mobile)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r3",
+              "rubricContent": {
+                "textProperty": "It invites the customer to say what they need."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "good-morning",
+      "conversation": [
+        {
+          "invocationId": "good-morning-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Good morning"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Good morning! Welcome to Connectivity Max, where we specialize in providing Internet, Voice, Mobile, and SD-WAN solutions for businesses. I'm here to help you find the right products for your needs—how can I assist you today?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It returns a time-appropriate, friendly greeting from Connectivity Max."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It offers to help with business services."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "never-uses-company-name",
+      "conversation": [
+        {
+          "invocationId": "never-uses-company-name-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Hi again!"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Hello! Welcome to Connectivity Max, the nation's leading telecommunications provider. I'm here to help you with our Internet, Voice, Mobile, and SD-WAN products. How can I assist you today?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It does not mention 'Beacon Wealth Advisors' or address the customer by any company name."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "The welcome is generic and from Connectivity Max."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "user_profile": {
+            "company_name": "Beacon Wealth Advisors"
+          },
+          "journey_transcript": "user: We're Beacon Wealth Advisors."
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "pricing-in-greeting",
+      "conversation": [
+        {
+          "invocationId": "pricing-in-greeting-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Hi, how much is internet?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Hello! Welcome to Connectivity Max, a leading provider of Internet, Voice, Mobile, and SD-WAN solutions for businesses. I'm happy to help you with internet pricing—how can I assist you today?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It greets the customer."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

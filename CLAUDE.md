@@ -1,6 +1,6 @@
 # Claude Code Instructions
 
-**📖 READ FIRST:** [AGENTS.md](AGENTS.md)
+**📖 READ FIRST:** [openspec/BASELINE.md](openspec/BASELINE.md): the maintained system map (every service, port, agent, tool, context key, handoff rule, command, change recipe and known issue). Start every session there instead of re-discovering the codebase; then [AGENTS.md](AGENTS.md) for standards.
 
 All system architecture, agent development patterns, and technical guidelines are documented in AGENTS.md.
 
@@ -11,6 +11,7 @@ All system architecture, agent development patterns, and technical guidelines ar
 **BEFORE making ANY changes (config, code, structure), you MUST:**
 
 1. **Read the documentation first** - in this order:
+   - [openspec/BASELINE.md](openspec/BASELINE.md) (system map; behavioral specs in `openspec/specs/`)
    - This file (CLAUDE.md)
    - [AGENTS.md](AGENTS.md)
    - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`, `services/catalog/README.md`)
@@ -19,7 +20,7 @@ All system architecture, agent development patterns, and technical guidelines ar
 2. **Common tasks → Required reading:**
    - Configuration changes → [.env.example](.env.example) (shared variables) and [SuperAgent/README.md](SuperAgent/README.md) (gateway variables)
    - Agent development → [docs/agent-service-guide.md](docs/agent-service-guide.md) + the component's AGENTS.md
-   - Orchestration / routing / handoffs → [SuperAgent/README.md](SuperAgent/README.md) + [openspec/changes/adk2-workflow-orchestration/design.md](openspec/changes/adk2-workflow-orchestration/design.md)
+   - Orchestration / routing / handoffs → [SuperAgent/README.md](SuperAgent/README.md) + [openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md](openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md)
    - Tool services (catalog, serviceability) → `services/<name>/README.md`
    - Database schema → [db/README.md](db/README.md) (migrations and seed files, table ownership)
    - Running or deploying → [README.md](README.md#getting-started-local) (`scripts/setup_local.sh`, `scripts/db.sh up`, `scripts/start_local.sh`) and [GCP_DEPLOY.md](GCP_DEPLOY.md)
@@ -36,7 +37,8 @@ All system architecture, agent development patterns, and technical guidelines ar
 1. Create `openspec/changes/<change-name>/` with `proposal.md` (Why, What Changes, Capabilities, Non-goals, Impact), `design.md`, `specs/<capability>/spec.md` (delta: ADDED/MODIFIED/REMOVED requirements with scenarios) and `tasks.md`. Use `/opsx:propose` (or the `openspec-propose` skill); project rules are in [openspec/config.yaml](openspec/config.yaml).
 2. Validate: `openspec validate <change-name>` must pass.
 3. Implement against `tasks.md` (`/opsx:apply`), ticking each task only with its verification (test, command or observable behavior).
-4. Commit the OpenSpec change together with the code it describes; archive it (`/opsx:archive`) once complete.
+4. Update [openspec/BASELINE.md](openspec/BASELINE.md) in the same change whenever a service, port, tool, context key, handoff rule, command or known issue changes (`pytest tests/test_baseline_doc.py` checks services, ports and tools).
+5. Commit the OpenSpec change together with the code it describes; archive it (`openspec archive <name> -y`) once complete so `openspec/specs/` stays the source of truth.
 
 ---
 
@@ -52,7 +54,7 @@ See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete detail
 2. Each agent is an A2A service: see [docs/agent-service-guide.md](docs/agent-service-guide.md). No `importlib` isolation, no `sys.modules` lookups, no imports of another agent's package
 3. Deterministic tools via MCP services (`services/*`, consumed with `McpToolset`) or in-process `FunctionTool`s that return JSON dicts. No LLM calls inside tools
 4. No inline styles in React (Tailwind CSS only)
-5. Test before committing (per-service `pytest`, gateway tests, `tests/integration`)
+5. Test before committing (per-service `pytest`, gateway tests, `tests/integration`); after prompt, model, tool or routing changes also run the golden evals (`scripts/eval.sh`, see [evals/README.md](evals/README.md))
 
 ---
 
@@ -78,13 +80,15 @@ When working in specific directories, also read:
 - **Database:** [db/README.md](db/README.md)
 - **UI Development:** `SuperAgent/client/AGENTS.md`
 - **Bootstrap Template:** `BootStrapAgent/AGENTS.md`
-- **Design decisions and specs:** `openspec/changes/*/{proposal,design,tasks}.md` + `specs/` (`mcp-remaining-domains` is a planned follow-up, not implemented)
+- **System map:** [openspec/BASELINE.md](openspec/BASELINE.md)
+- **Behavioral specs (source of truth):** `openspec/specs/<capability>/spec.md`; history in `openspec/changes/archive/`; open changes in `openspec/changes/` (`mcp-remaining-domains` is planned, not implemented)
 - **Operations scripts:** `scripts/` (service list in `scripts/services.conf`)
 
 ---
 
 ## ✅ Quick Checks
 
+- [ ] Read openspec/BASELINE.md before exploring code
 - [ ] OpenSpec change created first and `openspec validate <name>` passes
 - [ ] Read AGENTS.md relevant section
 - [ ] Follow ADK Bootstrap Template pattern (`build_agent()`, `root_agent`, `server.py` with `create_a2a_app`)
@@ -92,8 +96,10 @@ When working in specific directories, also read:
 - [ ] No LLM hallucination for deterministic data (use tools; tools return JSON)
 - [ ] New service registered in `scripts/services.conf` (+ `docker-compose.yml`, + gateway registry for agents)
 - [ ] Tests pass
+- [ ] Golden evals run for prompt/model/tool/routing changes (`scripts/eval.sh`); changed goldens re-recorded and reviewed (`python -m evals.review`)
 - [ ] Documentation updated
 - [ ] OpenSpec `tasks.md` ticked with verification and committed with the code
+- [ ] openspec/BASELINE.md updated if anything it lists changed; `pytest tests/test_baseline_doc.py` passes
 
 ---
 

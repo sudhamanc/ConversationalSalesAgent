@@ -25,8 +25,14 @@ context: |
     - React: Tailwind CSS only, no inline styles
     - Documentation-first: AGENTS.md, component AGENTS.md, README.md stay in sync with code
 
+  System map: openspec/BASELINE.md (read it first; it lists every service, port, agent,
+  tool, journey-context key, handoff rule, command and known issue). Behavioral specs:
+  openspec/specs/<capability>/spec.md. A change that alters anything BASELINE.md lists
+  must update it (tests/test_baseline_doc.py checks services, ports and tools).
+
 rules:
   proposal:
+    - List the openspec/BASELINE.md sections the change affects (or "none")
     - Include a "Non-goals" section
     - Call out impact on agents, APIs/MCP servers, data, scripts, and documentation
   design:

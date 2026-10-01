@@ -1,0 +1,371 @@
+{
+  "eval_set_id": "agents/service_fulfillment_agent/service_fulfillment_agent",
+  "name": "service_fulfillment_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "check-availability",
+      "conversation": [
+        {
+          "invocationId": "check-availability-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "When can you install?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Here are the available installation slots:\n• October 01, 2026 - Morning (8AM-12PM)\n• October 02, 2026 - Morning (8AM-12PM)\n• October 02, 2026 - Afternoon (1PM-5PM)\n• October 05, 2026 - Morning (8AM-12PM)\n• October 05, 2026 - Afternoon (1PM-5PM)\n• October 06, 2026 - Morning (8AM-12PM)\n• October 07, 2026 - Afternoon (1PM-5PM)\n\nWhich time slot works best for you?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "check_availability"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It lists installation dates/windows returned by the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-179",
+            "company_name": "Sprite Max",
+            "address": {
+              "street": "123 Main Street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          },
+          "order_context": {
+            "order_id": "ORD-20260430-179",
+            "customer_id": "CUST-20260430-179",
+            "customer_name": "Sprite Max",
+            "contact_email": "cola.max@gmail.com",
+            "contact_phone": null,
+            "service_address": "123 Main Street, Philadelphia, PA 19103",
+            "service_type": "FIB-1G",
+            "price": 165.6,
+            "offer_id": null,
+            "total_amount": 165.6,
+            "status": "pending_payment"
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "schedule-installation",
+      "conversation": [
+        {
+          "invocationId": "schedule-installation-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Book the earliest available morning installation slot."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "✅ **Installation Scheduled!**\n\n**Appointment Details:**\n• Date: 2026-10-01\n• Time Window: AM (8AM-12PM)\n• Appointment ID: APT-20261001-6449F2\n• Address: 123 Main Street, Philadelphia, PA 19103\n\nYour installation is confirmed! Now let's proceed with payment."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "schedule_installation"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms the appointment with the APT- id returned by the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It says payment is the next step."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-179",
+            "company_name": "Sprite Max",
+            "address": {
+              "street": "123 Main Street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          },
+          "order_context": {
+            "order_id": "ORD-20260430-179",
+            "customer_id": "CUST-20260430-179",
+            "customer_name": "Sprite Max",
+            "contact_email": "cola.max@gmail.com",
+            "contact_phone": null,
+            "service_address": "123 Main Street, Philadelphia, PA 19103",
+            "service_type": "FIB-1G",
+            "price": 165.6,
+            "offer_id": null,
+            "total_amount": 165.6,
+            "status": "pending_payment"
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "reschedule",
+      "conversation": [
+        {
+          "invocationId": "reschedule-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Please move appointment APT-20260430-920 to an afternoon slot next week."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've found several afternoon slots available for next week. Which of these works best for you?\n\n*   **Monday, May 4, 2026** - Afternoon (1PM-5PM)\n*   **Wednesday, May 6, 2026** - Afternoon (1PM-5PM)\n*   **Friday, May 8, 2026** - Afternoon (1PM-5PM)"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "appointment_id": "APT-20260430-920"
+                },
+                "name": "reschedule_appointment"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms the new date and window for APT-20260430-920 from the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          },
+          "order_context": {
+            "order_id": "ORD-20260429-296",
+            "customer_id": "CUST-20260430-156",
+            "customer_name": "Connection Pro Inc",
+            "contact_email": "connection@connectionpro.com",
+            "contact_phone": null,
+            "service_address": "123 Main street, Philadelphia, PA 19103",
+            "service_type": "FIB-1G",
+            "price": 206.17,
+            "offer_id": "OFF-003FEA01F1",
+            "total_amount": 206.17,
+            "status": "pending_payment"
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "cancel-appointment",
+      "conversation": [
+        {
+          "invocationId": "cancel-appointment-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Cancel installation appointment APT-20260430-225, the site isn't ready."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Your installation appointment (APT-20260430-225) has been successfully cancelled as requested because the site is not yet ready.\n\n**Cancellation Details:**\n• **Appointment ID:** APT-20260430-225\n• **Order ID:** ORD-20260429-606\n• **Status:** Cancelled\n\nWhen your site is ready for the installation, please let us know and we can check for new available time slots to get you back on the schedule."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "appointment_id": "APT-20260430-225"
+                },
+                "name": "cancel_appointment"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms APT-20260430-225 was cancelled."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "fulfillment-status",
+      "conversation": [
+        {
+          "invocationId": "fulfillment-status-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What's the fulfillment status of order ORD-20260427-065?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "The fulfillment status for order **ORD-20260427-065** (Coke Inc) is **Fulfilled**.\n\nYour service has been fully installed and activated. Here are the details:\n\n**Service Details:**\n• **Status:** Activated\n• **Circuit ID:** CKT-202604-82959\n• **Account ID:** ACCT-982959\n• **Installation Date:** April 30, 2026\n\n**Fulfillment Progress:**\n• ✅ Scheduled\n• ✅ Dispatched\n• ✅ Installed\n• ✅ Activated\n\nYour service is live and fully operational. Is there anything else I can help you with?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260427-065"
+                },
+                "name": "get_fulfillment_status"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It reports the service as activated with circuit CKT-202604-82959."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

@@ -1,0 +1,251 @@
+{
+  "eval_set_id": "agents/faq_agent/faq_agent",
+  "name": "faq_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "uptime-sla",
+      "conversation": [
+        {
+          "invocationId": "uptime-sla-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What's your uptime guarantee?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Great question. For our business-class services, we typically offer a 99.9% uptime guarantee as part of our Service Level Agreement. This ensures your connection stays reliable when it matters most. \n\nIf you’re looking for the specific details on a particular plan or for residential service, let me check with our specialist team and get back to you on that."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It answers the question about uptime or SLA directly."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not quote a price."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "installation-timeline",
+      "conversation": [
+        {
+          "invocationId": "installation-timeline-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "How long does installation take?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "\"Typically, for a standard professional installation, we can usually get a technician out to your location within three to seven business days. If you're eligible for a self-install kit, those usually arrive at your door in about two to three business days. Once we finalize your order, we’ll be able to give you a much more specific date based on the current schedule in your area.\""
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It gives a typical installation timeframe or the factors that determine it."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "contract-lengths",
+      "conversation": [
+        {
+          "invocationId": "contract-lengths-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What contract lengths do you offer?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "We offer a few different options depending on what works best for you. Typically, we have month-to-month plans if you're looking for flexibility without a long-term commitment. We also offer one, two, and sometimes three-year contracts, which usually come with lower monthly rates or price guarantees. I can check the current promotions for your area to see which term gives you the best value."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It describes the available contract terms (for example 12, 24 or 36 months)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "support-hours",
+      "conversation": [
+        {
+          "invocationId": "support-hours-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "When can I reach support?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "\"You can reach our technical support team 24/7, so we’re always here if you run into any service issues. For billing or general account questions, those specialists are available Monday through Friday, from 8 AM to 8 PM. You can get in touch by calling us directly, using the live chat on our website, or through our mobile app.\""
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It explains when or how to reach customer support."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "specific-pricing-redirect",
+      "conversation": [
+        {
+          "invocationId": "specific-pricing-redirect-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "How much is Fiber 5G?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "\"That’s a great question! Pricing for our Fiber services can vary depending on the speed tier you’re looking for and the current promotions available in your area. To give you an accurate monthly rate, I’d just need to quickly verify your address. Would you like me to look that up for you, or were you looking for a general price range for a specific speed?\""
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It offers to get a quote or says pricing is handled by the pricing/quote team."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

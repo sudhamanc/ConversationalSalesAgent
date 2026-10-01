@@ -1,0 +1,155 @@
+{
+  "eval_set_id": "journeys/s3-product-information",
+  "name": "s3-product-information journey",
+  "eval_cases": [
+    {
+      "evalId": "s3-product-information",
+      "conversation": [
+        {
+          "invocationId": "s3-product-information-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What's the difference between SD-WAN Essentials and SD-WAN Enterprise?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "| Feature | SD-WAN Essentials (SDWAN-ESS) | SD-WAN Enterprise (SDWAN-ENT) |\n| :--- | :--- | :--- |\n| **Throughput** | Up to 250 Mbps | Up to 10 Gbps |\n| **Scale** | 1–5 sites | 25–500+ sites |\n| **Uptime SLA** | N/A | 99.99% |\n| **Failover** | Dual-WAN failover | Multi-WAN with sub-second switchover |\n| **Security** | Basic QoS and traffic shaping | Full SASE (ZTNA, SWG, CASB) |\n| **Optimization** | Application-aware routing | AI-driven application optimization |\n\n**SD-WAN Essentials (SDWAN-ESS)**\n- **Category:** SD-WAN\n- **Technology:** SD-WAN\n- **Description:** Entry-level solution for small businesses requiring basic traffic optimization and centralized management. It is designed as a first step away from single-ISP connectivity.\n\n**SD-WAN Enterprise (SDWAN-ENT)**\n- **Category:** SD-WAN\n- **Technology:** SD-WAN\n- **Description:** High-performance tier for large organizations requiring global backbone access and managed NOC services.\n- **Key Capabilities:**\n    - Supports hybrid operations (simultaneous MPLS and internet links).\n    - Direct SD-WAN gateways co-located with major cloud providers to reduce latency.\n    - Full SASE integration for advanced security.\n\n**Next Steps:**\n- Would you like to see pricing and availability for these products?\n- I can also show you alternative products or compare other options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "product_ids": [
+                    "SDWAN-ESS",
+                    "SDWAN-ENT"
+                  ]
+                },
+                "name": "compare_products"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It compares the two SD-WAN tiers' features."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        },
+        {
+          "invocationId": "s3-product-information-t2",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What about SLA differences?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "The primary difference in service level commitments between the two tiers is the uptime guarantee:\n\n*   **SD-WAN Essentials (SDWAN-ESS):** Does not include a specific uptime SLA (N/A). It is designed as an entry-level solution for small businesses with 1–5 locations.\n*   **SD-WAN Enterprise (SDWAN-ENT):** Includes a **99.99% uptime SLA**. This tier is designed for large organizations with stringent compliance and reliability requirements and includes optional managed NOC (Network Operations Center) services for proactive monitoring.\n\nFor comparison, the mid-tier **SD-WAN Professional** includes a 99.9% uptime SLA.\n\n**Next Steps:**\n- Would you like to see pricing and availability for these products?\n- I can also show you alternative products or compare other options."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "search_product_knowledge"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It explains SLA differences between the tiers from product knowledge."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not state any price, dollar amount, discount or total."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        },
+        {
+          "invocationId": "s3-product-information-t3",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Tell me about your quantum mesh networking."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I do not have any information regarding \"quantum mesh networking\" in our current product catalog or technical documentation. \n\nOur available product categories include:\n- **Fiber Internet** (Speeds up to 10 Gbps)\n- **Coax Internet** (Speeds up to 1 Gbps)\n- **SD-WAN** (Essentials, Professional, and Enterprise tiers)\n- **Voice** (Basic, Standard, Enterprise, and UCaaS)\n- **Business Mobile** (4G LTE and 5G plans)\n\n**Next Steps:**\n- Would you like more information on any of the categories listed above?\n- I can also help you compare specific products within those categories."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "list_available_products"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It says that product is not offered and names the categories that are."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "super_sales_agent",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

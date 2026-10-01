@@ -1,0 +1,971 @@
+{
+  "greeting_agent": {},
+  "faq_agent": {},
+  "discovery_agent": {
+    "add_new_company": {
+      "company_name": {
+        "required": true
+      },
+      "industry": {
+        "required": true
+      },
+      "region": {
+        "required": true
+      },
+      "street": {
+        "required": true
+      },
+      "city": {
+        "required": true
+      },
+      "state": {
+        "required": true
+      },
+      "zip_code": {
+        "required": false
+      },
+      "address_line2": {
+        "required": false
+      },
+      "website": {
+        "required": false
+      },
+      "parent_company": {
+        "required": false
+      },
+      "existing_customer": {
+        "required": false
+      },
+      "current_products": {
+        "required": false
+      },
+      "products_of_interest": {
+        "required": false
+      }
+    },
+    "add_new_contact": {
+      "company_name": {
+        "required": true
+      },
+      "contact_name": {
+        "required": true
+      },
+      "title": {
+        "required": true
+      },
+      "role_in_decision_making": {
+        "required": true
+      },
+      "email": {
+        "required": false
+      },
+      "phone": {
+        "required": false
+      },
+      "notes": {
+        "required": false
+      }
+    },
+    "add_or_update_insights": {
+      "company_name": {
+        "required": true
+      },
+      "buying_signals": {
+        "required": false
+      },
+      "pain_points": {
+        "required": false
+      },
+      "recommended_positioning": {
+        "required": false
+      }
+    },
+    "check_customer_state": {
+      "customer_id": {
+        "required": true
+      }
+    },
+    "create_opportunity_from_bant": {
+      "company_name": {
+        "required": true
+      },
+      "opportunity_name": {
+        "required": false
+      },
+      "budget": {
+        "required": false
+      },
+      "authority": {
+        "required": false
+      },
+      "need": {
+        "required": false
+      },
+      "timeline_days": {
+        "required": false
+      },
+      "total_mrc": {
+        "required": false
+      },
+      "next_step": {
+        "required": false
+      }
+    },
+    "get_company_profile": {
+      "company_name": {
+        "required": true
+      }
+    },
+    "get_contact_personas": {
+      "company_name": {
+        "required": true
+      }
+    },
+    "get_customer_intent": {
+      "company_name": {
+        "required": true
+      }
+    },
+    "get_high_priority_opportunities": {
+      "limit": {
+        "required": false
+      }
+    },
+    "search_by_intent_signals": {
+      "keyword": {
+        "required": true
+      }
+    },
+    "search_companies": {
+      "company_name": {
+        "required": false
+      },
+      "industry": {
+        "required": false
+      },
+      "region": {
+        "required": false
+      },
+      "customer_status": {
+        "required": false
+      },
+      "street": {
+        "required": false
+      },
+      "city": {
+        "required": false
+      },
+      "state": {
+        "required": false
+      }
+    },
+    "update_company_info": {
+      "company_name": {
+        "required": true
+      },
+      "industry": {
+        "required": false
+      },
+      "region": {
+        "required": false
+      },
+      "street": {
+        "required": false
+      },
+      "city": {
+        "required": false
+      },
+      "state": {
+        "required": false
+      },
+      "zip_code": {
+        "required": false
+      },
+      "website": {
+        "required": false
+      },
+      "parent_company": {
+        "required": false
+      },
+      "existing_customer": {
+        "required": false
+      },
+      "current_products": {
+        "required": false
+      },
+      "products_of_interest": {
+        "required": false
+      }
+    },
+    "update_contact_info": {
+      "company_name": {
+        "required": true
+      },
+      "contact_name": {
+        "required": true
+      },
+      "title": {
+        "required": false
+      },
+      "role_in_decision_making": {
+        "required": false
+      },
+      "email": {
+        "required": false
+      },
+      "phone": {
+        "required": false
+      },
+      "notes": {
+        "required": false
+      }
+    }
+  },
+  "serviceability_agent": {
+    "check_service_availability": {
+      "street": {
+        "required": true
+      },
+      "city": {
+        "required": true
+      },
+      "state": {
+        "required": true
+      },
+      "zip_code": {
+        "required": true
+      }
+    },
+    "extract_zip_code": {
+      "address_string": {
+        "required": true
+      }
+    },
+    "get_coverage_zones": {},
+    "get_infrastructure_by_technology": {
+      "technology": {
+        "required": true
+      },
+      "zone": {
+        "required": false
+      }
+    },
+    "normalize_address": {
+      "street": {
+        "required": true
+      },
+      "city": {
+        "required": true
+      },
+      "state": {
+        "required": true
+      },
+      "zip_code": {
+        "required": true
+      }
+    },
+    "validate_and_parse_address": {
+      "address_string": {
+        "required": true
+      }
+    }
+  },
+  "product_agent": {
+    "compare_products": {
+      "product_ids": {
+        "required": true
+      }
+    },
+    "get_best_value_product": {
+      "category": {
+        "required": false
+      }
+    },
+    "get_product_by_id": {
+      "product_id": {
+        "required": true
+      }
+    },
+    "get_product_categories": {},
+    "list_available_products": {
+      "category": {
+        "required": false
+      }
+    },
+    "search_product_knowledge": {
+      "query": {
+        "required": true
+      },
+      "top_k": {
+        "required": false
+      }
+    },
+    "search_products_by_criteria": {
+      "speed": {
+        "required": false
+      },
+      "technology": {
+        "required": false
+      }
+    },
+    "suggest_alternatives": {
+      "product_id": {
+        "required": true
+      },
+      "criteria": {
+        "required": false
+      }
+    }
+  },
+  "offer_management_agent": {
+    "find_best_bundle_offer": {
+      "items": {
+        "required": true
+      },
+      "term_months": {
+        "required": false
+      },
+      "bant_score": {
+        "required": false
+      }
+    },
+    "generate_offer_quote": {
+      "items": {
+        "required": true
+      },
+      "term_months": {
+        "required": false
+      },
+      "bant_score": {
+        "required": false
+      },
+      "customer_id": {
+        "required": false
+      },
+      "company_name": {
+        "required": false
+      },
+      "customer_email": {
+        "required": false
+      }
+    },
+    "get_existing_quotes": {
+      "company_name": {
+        "required": false
+      },
+      "customer_id": {
+        "required": false
+      }
+    },
+    "get_quote_details": {
+      "offer_id": {
+        "required": true
+      }
+    }
+  },
+  "order_agent": {
+    "add_to_cart": {
+      "cart_id": {
+        "required": true
+      },
+      "service_type": {
+        "required": true
+      },
+      "price": {
+        "required": true
+      },
+      "quantity": {
+        "required": false
+      }
+    },
+    "cancel_order": {
+      "order_id": {
+        "required": true
+      },
+      "reason": {
+        "required": false
+      }
+    },
+    "clear_cart": {
+      "cart_id": {
+        "required": true
+      }
+    },
+    "create_cart": {
+      "customer_id": {
+        "required": true
+      }
+    },
+    "create_order": {
+      "customer_name": {
+        "required": true
+      },
+      "service_address": {
+        "required": true
+      },
+      "service_type": {
+        "required": true
+      },
+      "contact_phone": {
+        "required": false
+      },
+      "customer_id": {
+        "required": false
+      },
+      "contact_email": {
+        "required": false
+      },
+      "price": {
+        "required": false
+      },
+      "offer_id": {
+        "required": false
+      }
+    },
+    "generate_contract": {
+      "order_id": {
+        "required": true
+      }
+    },
+    "get_cart": {
+      "cart_id": {
+        "required": true
+      }
+    },
+    "get_order": {
+      "order_id": {
+        "required": true
+      }
+    },
+    "modify_order": {
+      "order_id": {
+        "required": true
+      },
+      "service_type": {
+        "required": false
+      },
+      "price": {
+        "required": false
+      }
+    },
+    "remove_from_cart": {
+      "cart_id": {
+        "required": true
+      },
+      "service_type": {
+        "required": true
+      }
+    },
+    "update_order_status": {
+      "order_id": {
+        "required": true
+      },
+      "new_status": {
+        "required": true
+      },
+      "notes": {
+        "required": false
+      }
+    }
+  },
+  "payment_agent": {
+    "add_payment_method": {
+      "customer_id": {
+        "required": true
+      },
+      "payment_type": {
+        "required": true
+      },
+      "payment_token": {
+        "required": true
+      },
+      "is_default": {
+        "required": false
+      },
+      "nickname": {
+        "required": false
+      }
+    },
+    "check_business_credit": {
+      "business_name": {
+        "required": true
+      },
+      "ein": {
+        "required": true
+      },
+      "years_in_business": {
+        "required": true
+      },
+      "state": {
+        "required": true
+      },
+      "requested_credit_limit": {
+        "required": false
+      }
+    },
+    "generate_invoice": {
+      "customer_name": {
+        "required": true
+      },
+      "line_items_json": {
+        "required": true
+      },
+      "due_date": {
+        "required": false
+      },
+      "tax_rate": {
+        "required": false
+      }
+    },
+    "get_credit_report": {
+      "ein": {
+        "required": true
+      }
+    },
+    "get_payment_history": {
+      "customer_id": {
+        "required": true
+      },
+      "start_date": {
+        "required": false
+      },
+      "end_date": {
+        "required": false
+      },
+      "limit": {
+        "required": false
+      }
+    },
+    "get_payment_methods": {
+      "customer_id": {
+        "required": false
+      }
+    },
+    "process_payment": {
+      "amount": {
+        "required": true
+      },
+      "payment_method_token": {
+        "required": true
+      },
+      "description": {
+        "required": false
+      },
+      "invoice_id": {
+        "required": false
+      },
+      "order_id": {
+        "required": false
+      },
+      "customer_name": {
+        "required": false
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "idempotency_key": {
+        "required": false
+      },
+      "currency": {
+        "required": false
+      }
+    },
+    "setup_payment_plan": {
+      "total_amount": {
+        "required": true
+      },
+      "num_installments": {
+        "required": true
+      },
+      "start_date": {
+        "required": false
+      },
+      "frequency": {
+        "required": false
+      }
+    },
+    "tokenize_payment_method": {
+      "payment_type": {
+        "required": true
+      },
+      "card_number": {
+        "required": false
+      },
+      "expiry_month": {
+        "required": false
+      },
+      "expiry_year": {
+        "required": false
+      },
+      "cvv": {
+        "required": false
+      },
+      "routing_number": {
+        "required": false
+      },
+      "account_number": {
+        "required": false
+      },
+      "account_type": {
+        "required": false
+      },
+      "customer_id": {
+        "required": false
+      }
+    },
+    "validate_payment_method": {
+      "payment_type": {
+        "required": true
+      },
+      "card_number": {
+        "required": false
+      },
+      "routing_number": {
+        "required": false
+      },
+      "account_number": {
+        "required": false
+      }
+    }
+  },
+  "service_fulfillment_agent": {
+    "activate_service": {
+      "order_id": {
+        "required": false
+      },
+      "service_type": {
+        "required": false
+      },
+      "circuit_id": {
+        "required": false
+      }
+    },
+    "cancel_appointment": {
+      "appointment_id": {
+        "required": true
+      },
+      "reason": {
+        "required": false
+      }
+    },
+    "check_availability": {
+      "service_address": {
+        "required": true
+      },
+      "service_type": {
+        "required": true
+      },
+      "start_date": {
+        "required": false
+      },
+      "num_days": {
+        "required": false
+      }
+    },
+    "complete_installation": {
+      "equipment_installed": {
+        "required": true
+      },
+      "appointment_id": {
+        "required": false
+      },
+      "order_id": {
+        "required": false
+      },
+      "tests_passed": {
+        "required": false
+      },
+      "customer_signature": {
+        "required": false
+      },
+      "notes": {
+        "required": false
+      }
+    },
+    "dispatch_technician": {
+      "appointment_id": {
+        "required": false
+      },
+      "order_id": {
+        "required": false
+      },
+      "scheduled_date": {
+        "required": false
+      }
+    },
+    "get_fulfillment_status": {
+      "order_id": {
+        "required": false
+      }
+    },
+    "provision_equipment": {
+      "order_id": {
+        "required": true
+      },
+      "service_type": {
+        "required": true
+      },
+      "equipment_list_json": {
+        "required": false
+      }
+    },
+    "reschedule_appointment": {
+      "appointment_id": {
+        "required": true
+      },
+      "new_date": {
+        "required": true
+      },
+      "new_window": {
+        "required": true
+      },
+      "reason": {
+        "required": false
+      }
+    },
+    "run_service_tests": {
+      "circuit_id": {
+        "required": true
+      },
+      "test_types": {
+        "required": false
+      }
+    },
+    "schedule_installation": {
+      "scheduled_date": {
+        "required": true
+      },
+      "window": {
+        "required": true
+      },
+      "service_address": {
+        "required": false
+      },
+      "order_id": {
+        "required": false
+      },
+      "customer_id": {
+        "required": false
+      },
+      "customer_name": {
+        "required": false
+      },
+      "customer_contact": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "special_instructions": {
+        "required": false
+      }
+    },
+    "track_equipment": {
+      "order_id": {
+        "required": false
+      },
+      "tracking_number": {
+        "required": false
+      }
+    },
+    "update_installation_status": {
+      "appointment_id": {
+        "required": true
+      },
+      "status": {
+        "required": true
+      },
+      "notes": {
+        "required": false
+      },
+      "issues": {
+        "required": false
+      }
+    },
+    "verify_equipment_delivery": {
+      "order_id": {
+        "required": true
+      },
+      "equipment_ids": {
+        "required": false
+      }
+    }
+  },
+  "customer_communication_agent": {
+    "get_notification_history": {
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "notification_type": {
+        "required": false
+      },
+      "limit": {
+        "required": false
+      }
+    },
+    "send_abandoned_cart_reminder": {
+      "cart_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "cart_items": {
+        "required": false
+      },
+      "total_amount": {
+        "required": false
+      }
+    },
+    "send_installation_reminder": {
+      "order_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "installation_date": {
+        "required": false
+      },
+      "installation_time": {
+        "required": false
+      },
+      "service_address": {
+        "required": false
+      }
+    },
+    "send_order_confirmation": {
+      "order_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "service_type": {
+        "required": false
+      },
+      "total_amount": {
+        "required": false
+      }
+    },
+    "send_order_status_update": {
+      "order_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "old_status": {
+        "required": false
+      },
+      "new_status": {
+        "required": false
+      },
+      "status_message": {
+        "required": false
+      }
+    },
+    "send_payment_notification": {
+      "order_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "payment_status": {
+        "required": false
+      },
+      "amount": {
+        "required": false
+      },
+      "payment_method": {
+        "required": false
+      }
+    },
+    "send_quote_confirmation": {
+      "quote_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "items_summary": {
+        "required": false
+      },
+      "monthly_total": {
+        "required": false
+      },
+      "term_months": {
+        "required": false
+      },
+      "total_discount": {
+        "required": false
+      }
+    },
+    "send_service_activated_notification": {
+      "order_id": {
+        "required": true
+      },
+      "customer_name": {
+        "required": true
+      },
+      "customer_email": {
+        "required": false
+      },
+      "customer_phone": {
+        "required": false
+      },
+      "service_type": {
+        "required": false
+      },
+      "account_number": {
+        "required": false
+      },
+      "circuit_id": {
+        "required": false
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "accuracy_threshold": 0.95,
+  "rule_accuracy_threshold": 1.0,
+  "_comment": "rule = cases tagged with a ROUTER_INSTRUCTION priority rule (1-4) in MANIFEST.json"
+}

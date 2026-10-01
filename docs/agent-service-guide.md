@@ -1,6 +1,6 @@
 # Agent Service Guide (ADK 2.x + A2A + PostgreSQL)
 
-This guide defines how every domain agent is built, served and tested after the ADK 2.x / A2A rewrite. It replaces the old "importlib isolation" pattern. Background decisions are in `openspec/changes/a2a-agent-services/design.md` and `openspec/changes/adk2-workflow-orchestration/design.md`.
+This guide defines how every domain agent is built, served and tested after the ADK 2.x / A2A rewrite. It replaces the old "importlib isolation" pattern. Background decisions are in `openspec/changes/archive/2026-10-01-a2a-agent-services/design.md` and `openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md`.
 
 ## 1. Layout (ADK Bootstrap Template + server)
 
@@ -138,6 +138,16 @@ if os.getenv("TEST_DATABASE_URL"):
 - Tool tests run against a scratch PostgreSQL database (`TEST_DATABASE_URL`) after `sales_common.migrate.run(seed=True)`. Skip them when `TEST_DATABASE_URL` is unset.
 - Agent tests use `sales_common.testing.ScriptLlm` (scripted function calls and text) with an ADK `Runner` and an `InMemorySessionService`. No API key is needed.
 - Run with `pytest <AgentDir>/tests -q`.
+
+### Golden evals
+
+Every agent also has a golden set in `evals/golden/agents/<agent_name>/` (real Gemini, ADK `EvalSet`): user turns, the expected tool calls with their stable arguments, a reference response and rubrics, scored for trajectory and response by `scripts/eval.sh --only <agent>`. A new agent adds:
+
+1. its package to `AGENT_PACKAGES` in `evals/golden_io.py` and its tools to `evals/golden/tool_schemas.json` (`python -m evals.record_golden --snapshot-tools`);
+2. `<agent_name>.evalset.json` + `test_config.json` (copy another agent's config) and MANIFEST entries, from its Scenarios.md cases;
+3. recorded and reviewed reference responses (`python -m evals.record_golden`, `python -m evals.review`).
+
+See [evals/README.md](../evals/README.md).
 
 ## 9. Dockerfile template
 

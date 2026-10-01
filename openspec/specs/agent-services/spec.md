@@ -1,0 +1,69 @@
+# agent-services Specification
+
+## Purpose
+TBD - created by archiving change a2a-agent-services. Update Purpose after archive.
+## Requirements
+### Requirement: One A2A service per agent
+
+Each domain agent SHALL run as its own process and container, reachable only through the A2A protocol (JSON-RPC over HTTP). The domain agents are: discovery, serviceability, product, offer management, order, payment, service fulfillment, customer communication, greeting, faq. No agent SHALL import another agent's package at runtime.
+
+#### Scenario: Independent restart
+- **WHEN** the `payment_agent` service is restarted
+- **THEN** all other agent services continue to serve A2A requests without restarting
+
+#### Scenario: No cross-agent imports
+- **WHEN** the repository's Python sources are scanned
+- **THEN** no agent package imports another agent package, and no code resolves agents through `sys.modules` lookups or `importlib.util.spec_from_file_location`
+
+### Requirement: Agent card discovery
+
+Each agent service SHALL serve an A2A Agent Card at `GET /.well-known/agent-card.json`. The card SHALL contain the agent's fixed name (e.g. `payment_agent`), a description, the streaming capability, and a public URL taken from configuration.
+
+#### Scenario: Card fetch
+- **WHEN** a client requests `/.well-known/agent-card.json` from the offer management service
+- **THEN** it receives HTTP 200 with a JSON card whose `name` is `offer_management_agent` and whose interface URL equals the configured `PUBLIC_URL`
+
+### Requirement: Durable agent sessions and tasks
+
+Each agent service SHALL persist its sessions and A2A tasks in PostgreSQL. Successive A2A messages carrying the same context id SHALL continue the same agent session.
+
+#### Scenario: Multi-turn with one agent
+- **WHEN** the gateway sends two messages to `order_agent` with the same context id
+- **THEN** the second message is processed with the first message in the agent's session history
+
+### Requirement: Forwarded journey context
+
+Each agent service SHALL accept forwarded journey context in A2A request metadata. Before the agent runs, it SHALL apply the forwarded journey keys, user profile and recent transcript to its session state. Tool results that change a journey key SHALL include a `_context_update` object with the new values.
+
+#### Scenario: Customer context available to order agent
+- **WHEN** the gateway forwards `customer_context` with `customer_id` `CUST-20260930-001` to `order_agent`
+- **THEN** order tools that read `customer_context` see `CUST-20260930-001`
+
+#### Scenario: Context update returned
+- **WHEN** `generate_offer_quote` creates offer `OFF-1`
+- **THEN** its function response contains `_context_update.offer_context.offer_id` = `OFF-1`
+
+### Requirement: Health endpoint
+
+Each agent service SHALL expose `GET /healthz`, returning HTTP 200 with the agent name when the process is ready, and HTTP 503 if its database is unreachable.
+
+#### Scenario: Database down
+- **WHEN** PostgreSQL is unreachable
+- **THEN** `/healthz` returns 503
+
+### Requirement: Service authentication in cloud
+
+When `SERVICE_AUTH=gcp_id_token`, callers SHALL attach a Google-signed ID token whose audience is the target service URL. Agent and tool services SHALL NOT be publicly invokable. When `SERVICE_AUTH=none` (local), no token is attached.
+
+#### Scenario: Unauthenticated call rejected in cloud
+- **WHEN** an anonymous request reaches a deployed agent service
+- **THEN** Cloud Run rejects it with HTTP 403 before it reaches the agent
+
+### Requirement: Fail-fast configuration
+
+An agent service SHALL refuse to start, with a clear error naming the missing variable, when any of these is unset: `GEMINI_MODEL`, `DATABASE_URL` (when the agent uses the database), or `PUBLIC_URL`.
+
+#### Scenario: Missing model
+- **WHEN** an agent service starts without `GEMINI_MODEL`
+- **THEN** the process exits non-zero, logging `GEMINI_MODEL is required`
+

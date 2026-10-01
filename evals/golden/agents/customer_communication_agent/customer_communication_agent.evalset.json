@@ -1,0 +1,222 @@
+{
+  "eval_set_id": "agents/customer_communication_agent/customer_communication_agent",
+  "name": "customer_communication_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "order-confirmation",
+      "conversation": [
+        {
+          "invocationId": "order-confirmation-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Send the order confirmation for ORD-20260429-296 to Connection Pro Inc at connection@connectionpro.com."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "✅ Order confirmation sent successfully!\n\n**Notification Details:**\n• **Notification ID:** NTF-2E941F75DB58\n• **Recipient:** Connection Pro Inc (connection@connectionpro.com)\n• **Channels:** Email\n• **Type:** Order Confirmation\n\nThe customer will receive:\n- Order ID and service details\n- Total amount\n- Next steps (payment, installation)\n- Support contact information\n\n**Status:** The notification has been recorded and simulated (email delivery is disabled in this environment)."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260429-296",
+                  "customer_name": "Connection Pro Inc",
+                  "customer_email": "connection@connectionpro.com"
+                },
+                "name": "send_order_confirmation"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms the order confirmation was sent (or queued) to connection@connectionpro.com."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "installation-reminder",
+      "conversation": [
+        {
+          "invocationId": "installation-reminder-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Send an installation reminder for order ORD-20260429-296 to Connection Pro Inc at connection@connectionpro.com."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "✅ Installation reminder sent!\n\n**Notification Details:**\n• Notification ID: NTF-518CE56CD1B1\n• Recipient: Connection Pro Inc (connection@connectionpro.com)\n• Channels: Email\n• Type: Installation Reminder\n\nThe customer will receive a reminder notification with:\n• Installation date and time window\n• Service address\n• Preparation checklist\n• Contact information for rescheduling\n\nThe notification has been recorded and simulated in this environment."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260429-296",
+                  "customer_name": "Connection Pro Inc"
+                },
+                "name": "send_installation_reminder"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms the installation reminder was sent or queued."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "notification-history",
+      "conversation": [
+        {
+          "invocationId": "notification-history-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Show the notifications sent to connection@connectionpro.com."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "**Notification History for connection@connectionpro.com:**\n\n1. **Installation Reminder** - NTF-518CE56CD1B1\n   - Sent: Oct 1, 2026, 3:12 AM\n   - Channels: Email\n   - Status: Simulated (recorded and simulated, not delivered)\n   - Order ID: ORD-20260429-296\n\n2. **Order Confirmation** - NTF-2E941F75DB58\n   - Sent: Oct 1, 2026, 3:12 AM\n   - Channels: Email\n   - Status: Simulated (recorded and simulated, not delivered)\n   - Order ID: ORD-20260429-296\n\n3. **Payment Confirmation** - NTF-19D53217B11B\n   - Created: Oct 1, 2026, 3:11 AM\n   - Channels: Email\n   - Status: Pending\n   - Order ID: ORD-20260429-296\n\n4. **Order Confirmation** - NOTIF-20260429231144766415\n   - Sent: Apr 29, 2026, 11:11 PM\n   - Channels: Email + SMS\n   - Status: ✓ Sent\n   - Order ID: ORD-20260429-296\n\n5. **Quote Saved** - NOTIF-20260429230818691227\n   - Sent: Apr 29, 2026, 11:08 PM\n   - Channels: Email\n   - Status: ✓ Sent\n   - Quote ID: OFF-127611A6FE\n\n**Total:** 5 notifications found.\n\nWould you like me to resend any of these or send a new notification?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "customer_email": "connection@connectionpro.com"
+                },
+                "name": "get_notification_history"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It lists notifications returned by the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "missing-order-id",
+      "conversation": [
+        {
+          "invocationId": "missing-order-id-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Send an order confirmation."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "⚠️ I cannot send the order confirmation yet because I'm missing the necessary details.\n\nTo proceed, please provide:\n*   **Order ID**\n*   **Customer Name**\n*   **Customer Email** and/or **Phone Number**\n\nOnce I have this information, I can send the confirmation via email and SMS. Would you like to provide those details now?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It asks for the order id (and recipient) instead of sending anything."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

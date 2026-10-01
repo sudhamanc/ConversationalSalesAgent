@@ -631,7 +631,8 @@ ConversationalSalesAgent/
 ├── openspec/changes/                # Design proposals and specs for the rewrite
 ├── libs/sales_common/               # Shared runtime library (config, db, A2A, MCP, memory, outbox)
 ├── db/                              # migrations/ + seed/ (PostgreSQL), README with table ownership
-├── scripts/                         # services.conf + setup/start/stop/db/deploy scripts, e2e_test.py
+├── scripts/                         # services.conf + setup/start/stop/db/deploy/eval scripts, e2e_test.py
+├── evals/                           # Golden datasets (ADK EvalSet) + eval runners (agents, router, journeys)
 ├── services/
 │   ├── catalog/                     # Product catalog REST + MCP + RAG (port 8101)
 │   └── serviceability/              # Address + coverage REST + MCP (port 8102)
@@ -739,6 +740,16 @@ python scripts/e2e_test.py --base-url http://127.0.0.1:8000  # against a running
 ```
 
 DB-backed tests are skipped when `TEST_DATABASE_URL` is unset; use a scratch database. Agent tests use a scripted model and need no API key.
+
+### Evals (golden datasets, real Gemini)
+
+```bash
+scripts/eval.sh                                   # agents + router + journeys
+scripts/eval.sh --only discovery,router           # selected agents and/or tiers
+venv/bin/python -m evals.review --list --pending  # golden cases awaiting review
+```
+
+Golden datasets in `evals/golden/` (ADK `EvalSet` format) record the expected trajectory (agents, tool calls with arguments) and a reference response per turn; every eval scores both. Runs use an isolated `csa_eval` database reset to seed data, and need a Gemini key with billing. See [evals/README.md](evals/README.md).
 
 ---
 

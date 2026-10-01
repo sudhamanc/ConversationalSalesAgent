@@ -7,6 +7,7 @@
 **BEFORE making ANY changes (config, code, structure), you MUST:**
 
 1. **Read the documentation first** - in this order:
+   - [openspec/BASELINE.md](openspec/BASELINE.md) (system map: services, ports, agents, tools, context keys, handoffs, commands, known issues)
    - [CLAUDE.md](CLAUDE.md)
    - This file (AGENTS.md)
    - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`, `services/catalog/README.md`)
@@ -32,7 +33,7 @@
 3. Implement against `tasks.md` (`/opsx:apply`), ticking each task only with its verification (test, command or observable behavior).
 4. Commit the OpenSpec change together with the code it describes; archive it (`/opsx:archive`) once complete.
 
-Design history and rationale for the current architecture live in `openspec/changes/`:
+Behavioral specs live in `openspec/specs/<capability>/spec.md`; design history and rationale in `openspec/changes/archive/` (implemented) and `openspec/changes/` (open):
 
 | Change | Status | Scope |
 |---|---|---|
@@ -41,6 +42,8 @@ Design history and rationale for the current architecture live in `openspec/chan
 | `catalog-serviceability-mcp` | Implemented | Catalog and serviceability as REST + MCP services |
 | `multi-service-scripts` | Implemented | `scripts/`, `docker-compose.yml`, per-service Dockerfiles, Cloud Run deployment |
 | `local-dev-reliability` | Implemented | `scripts/db.sh up`/`down` (Docker, Homebrew fallback), start preflight, router thinking budget, single root `.env` |
+| `agent-eval-suite` | Implemented (106/115 goldens reviewed; 9 pending on agent fixes) | Golden datasets + eval runners scoring trajectory and response for agents, router and journeys (`evals/`, `scripts/eval.sh`) |
+| `project-baseline` | Implemented | `openspec/BASELINE.md` system map + `tests/test_baseline_doc.py` drift check; all implemented changes archived into `openspec/specs/` |
 | `mcp-remaining-domains` | **Planned (not implemented)** | REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications |
 
 ---
@@ -267,6 +270,7 @@ Every service MUST include:
 - **Gateway tests** (`SuperAgent/tests/`): handoff rules, workflow runs with in-process fake agents, SSE mapping, auth, API.
 - **Integration tests** (`tests/integration/test_local_stack.py`): real processes for all 13 services, real A2A, real MCP, real PostgreSQL, and a scripted `fake-sales` model.
 - **E2E** against a running stack: `python scripts/e2e_test.py --base-url http://127.0.0.1:8000` (real Gemini).
+- **Golden evals** (`evals/`, real Gemini): every agent has golden cases in `evals/golden/agents/<agent>/` (expected tool trajectory + reference response + rubrics); the router and end-to-end journeys have their own golden sets. Run `scripts/eval.sh` after any prompt, model, tool or routing change. Goldens are reviewed data: re-record with `python -m evals.record_golden`, approve with `python -m evals.review`. See [evals/README.md](evals/README.md).
 - Scenario coverage per [Scenarios.md](Scenarios.md).
 
 ```bash

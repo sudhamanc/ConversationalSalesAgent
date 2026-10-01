@@ -1,0 +1,363 @@
+{
+  "eval_set_id": "agents/offer_management_agent/offer_management_agent",
+  "name": "offer_management_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "quote-24-month",
+      "conversation": [
+        {
+          "invocationId": "quote-24-month-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Give me a quote for Business Fiber 5 Gbps with a 24-month contract."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've generated a quote for you for **Business Fiber 5 Gbps** with a 24-month commitment.\n\n**Quote Details (ID: OFF-220B90DD01):**\n\n*   **Product:** Business Fiber 5 Gbps\n*   **Monthly Price:** $569.05 /month\n*   **Contract Term:** 24 Months\n*   **Annual Total:** $6,828.60 /year\n\n**Your Savings:**\n*   **24-Month Commitment Discount:** 5% → saves **$29.95/mo** off the standard $599.00 rate.\n\nThis quote is valid for 30 days. Would you like to:\n*   **Proceed with this quote** to start your order?\n*   **See pricing for a 36-month term** (which would increase your discount to 10%)?\n*   **Add any other services**, such as Voice or SD-WAN?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "term_months": 24,
+                  "customer_id": "CUST-20260430-156",
+                  "company_name": "Connection Pro Inc"
+                },
+                "name": "generate_offer_quote"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It presents the quote with the OFF- offer id returned by the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It shows the 24-month term discount and the monthly total from the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r3",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "bundle-two-items",
+      "conversation": [
+        {
+          "invocationId": "bundle-two-items-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Price Business Fiber 5 Gbps plus SD-WAN Essentials on a 12-month term."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I found an existing quote for you, but I've also generated a fresh one for the specific products and term you just requested.\n\nHere is the pricing for **Business Fiber 5 Gbps** and **SD-WAN Essentials** on a 12-month term:\n\n### **Quote Summary (ID: OFF-FA031440EB)**\n*   **Business Fiber 5 Gbps:** $557.07/mo (was $599.00)\n*   **SD-WAN Essentials:** $185.07/mo (was $199.00)\n*   **Contract Term:** 12 Months\n\n**Monthly Total: $742.14**\n**Annual Total: $8,905.68**\n\n---\n\n### **Your Savings**\n*   **Multi-Product Bundle Discount (7%):** You are saving **$55.86 per month** by bundling your Internet and SD-WAN services.\n\n---\n\nI also noticed you have an **existing active quote (OFF-220B90DD01)** for just the Business Fiber 5 Gbps on a 24-month term at **$569.05/month**.\n\n**Would you like to:**\n1.  **Proceed with this new bundle quote** (12 months, Fiber + SD-WAN)?\n2.  **Review the details of your existing 24-month quote**?\n3.  **See how much more you could save** by moving this new bundle to a 24 or 36-month term?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "term_months": 12
+                },
+                "name": "generate_offer_quote"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It applies and shows a bundle discount for the two products."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "default-term",
+      "conversation": [
+        {
+          "invocationId": "default-term-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "How much is Business Fiber 1 Gbps?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've found that pricing for you. Here is the quote for **Business Fiber 1 Gbps**:\n\n**Quote Details (OFF-5E02F64AFA):**\n*   **Monthly Price:** $249.00/month\n*   **Annual Total:** $2,988.00/year\n*   **Contract Term:** 12 months\n\nI also noticed that **Connection Pro Inc** has two other active quotes:\n1.  **OFF-FA031440EB**: Business Fiber 5 Gbps + SD-WAN Essentials ($742.14/mo, 12-month term)\n2.  **OFF-220B90DD01**: Business Fiber 5 Gbps ($569.05/mo, 24-month term)\n\nWould you like to:\n*   **Proceed with this new quote** for 1 Gbps?\n*   **Review or proceed with one of your existing quotes**?\n*   **See pricing for a longer term** (24 or 36 months) to lower your monthly rate?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "generate_offer_quote"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It quotes Business Fiber 1 Gbps on the default 12-month term using the tool's prices."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "existing-quotes",
+      "conversation": [
+        {
+          "invocationId": "existing-quotes-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Show my existing quotes."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I found 3 active quotes for **Connection Pro Inc**. Here is a summary of your current offers:\n\n### **Quote 1: Business Fiber 1 Gbps**\n*   **Offer ID:** `OFF-5E02F64AFA`\n*   **Monthly Total:** $249.00\n*   **Term:** 12 Months\n*   **Created:** October 1, 2026\n\n### **Quote 2: Fiber 5G & SD-WAN Bundle**\n*   **Offer ID:** `OFF-FA031440EB`\n*   **Products:** Business Fiber 5 Gbps, SD-WAN Essentials\n*   **Monthly Total:** $742.14\n*   **Term:** 12 Months\n*   **Created:** October 1, 2026\n\n### **Quote 3: Business Fiber 5 Gbps (Extended Term)**\n*   **Offer ID:** `OFF-220B90DD01`\n*   **Monthly Total:** $569.05\n*   **Term:** 24 Months\n*   **Created:** October 1, 2026\n\n**Would you like to:**\n1.  **Proceed with one of these quotes** — move forward to ordering?\n2.  **Generate a fresh quote** — get updated pricing or change your products?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "get_existing_quotes"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It lists the quotes returned for Connection Pro Inc with their offer ids."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "invalid-product",
+      "conversation": [
+        {
+          "invocationId": "invalid-product-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Quote me Fiber 100G for 12 months."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I found a few active quotes for **Connection Pro Inc** in our system. Would you like to proceed with one of these, or generate a fresh quote?\n\n### Your Active Quotes:\n*   **Quote OFF-5E02F64AFA** (Created Oct 1, 2026)\n    *   **Product:** Business Fiber 1 Gbps\n    *   **Term:** 12 Months\n    *   **Monthly Total:** $249.00\n*   **Quote OFF-FA031440EB** (Created Oct 1, 2026)\n    *   **Products:** Business Fiber 5 Gbps + SD-WAN Essentials\n    *   **Term:** 12 Months\n    *   **Monthly Total:** $742.14\n*   **Quote OFF-220B90DD01** (Created Oct 1, 2026)\n    *   **Product:** Business Fiber 5 Gbps\n    *   **Term:** 24 Months\n    *   **Monthly Total:** $569.05\n\nRegarding your request for **Fiber 100G**, it looks like that specific speed isn't in our current catalog. Our high-speed Fiber options include:\n*   **Business Fiber 1 Gbps** (FIB-1G)\n*   **Business Fiber 5 Gbps** (FIB-5G)\n*   **Business Fiber 10 Gbps** (FIB-10G)\n\nWould you like me to generate a new 12-month quote for the **10 Gbps** plan, or would you prefer to move forward with one of your existing quotes?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "generate_offer_quote"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It says Fiber 100G is not in the price book and does not invent a price."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

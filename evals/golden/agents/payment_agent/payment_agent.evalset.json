@@ -1,0 +1,368 @@
+{
+  "eval_set_id": "agents/payment_agent/payment_agent",
+  "name": "payment_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "credit-check",
+      "conversation": [
+        {
+          "invocationId": "credit-check-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Run a credit check for Connection Pro Inc, EIN 12-3456789, 8 years in business, in PA."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've completed the credit check for **Connection Pro Inc**.\n\n**Credit Decision: CONDITIONAL APPROVAL**\n*   **Credit Limit:** $5,000.00\n*   **Payment Terms:** Net 15\n*   **Required Deposit:** $1,250.00 (25%)\n\n**Conditions for Approval:**\n*   Personal guarantee from the business owner is required.\n*   A review of the account will be conducted after 6 months of consistent, on-time payments.\n\nWould you like to proceed with these terms, or would you prefer to use an alternative payment method?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "business_name": "Connection Pro Inc",
+                  "ein": "12-3456789",
+                  "years_in_business": 8,
+                  "state": "PA"
+                },
+                "name": "check_business_credit"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It reports the credit decision and score from the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "pay-by-card",
+      "conversation": [
+        {
+          "invocationId": "pay-by-card-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Pay with Visa 4111 1111 1111 1111, expiry 12/2028, CVV 123."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "✅ Payment Processed Successfully! Your payment is complete!\n\n{\"payment_confirmation\": true, \"amount\": 206.17, \"payment_method\": \"Visa ending in 1111\", \"transaction_id\": \"TXN-4FFC0806DA5A5EDD\", \"status\": \"Approved\"}"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "validate_payment_method"
+              },
+              {
+                "args": {},
+                "name": "tokenize_payment_method"
+              },
+              {
+                "args": {
+                  "amount": 206.17,
+                  "order_id": "ORD-20260429-296"
+                },
+                "name": "process_payment"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms the payment of $206.17 for order ORD-20260429-296."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It never repeats the full card number (at most the last four digits)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          },
+          "order_context": {
+            "order_id": "ORD-20260429-296",
+            "customer_id": "CUST-20260430-156",
+            "customer_name": "Connection Pro Inc",
+            "contact_email": "connection@connectionpro.com",
+            "contact_phone": null,
+            "service_address": "123 Main street, Philadelphia, PA 19103",
+            "service_type": "FIB-1G",
+            "price": 206.17,
+            "offer_id": "OFF-003FEA01F1",
+            "total_amount": 206.17,
+            "status": "pending_payment"
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "invalid-card",
+      "conversation": [
+        {
+          "invocationId": "invalid-card-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Use card 4111 1111 1111 1112, expiry 12/2028, CVV 123."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "⚠️ This card could not be validated. The card number provided appears to be incorrect (failed validation check).\n\nCommon reasons for this include:\n- A typo in the card number\n- Incorrect card number\n- Card not activated\n\nPlease provide a different card or verify the details for your **Connection Pro Inc** order (Total: $206.17) so I can complete your payment."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {},
+                "name": "validate_payment_method"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It says the card number is invalid and asks for another payment method."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It does not claim a payment was processed."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          },
+          "order_context": {
+            "order_id": "ORD-20260429-296",
+            "customer_id": "CUST-20260430-156",
+            "customer_name": "Connection Pro Inc",
+            "contact_email": "connection@connectionpro.com",
+            "contact_phone": null,
+            "service_address": "123 Main street, Philadelphia, PA 19103",
+            "service_type": "FIB-1G",
+            "price": 206.17,
+            "offer_id": "OFF-003FEA01F1",
+            "total_amount": 206.17,
+            "status": "pending_payment"
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "payment-plan",
+      "conversation": [
+        {
+          "invocationId": "payment-plan-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Can I split $1,200 into 4 monthly installments?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Yes, we can certainly set that up for you. I've created a payment plan for the **$1,200.00** total, split into **4 monthly installments of $300.00 each**.\n\nHere is your schedule:\n*   **Installment 1:** $300.00 due on May 20, 2025\n*   **Installment 2:** $300.00 due on June 19, 2025\n*   **Installment 3:** $300.00 due on July 19, 2025\n*   **Installment 4:** $300.00 due on August 18, 2025\n\nTo finalize this plan and process your first installment, I'll need your payment details. Would you like to use a **Credit Card** or **ACH/Bank Transfer**?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "total_amount": 1200,
+                  "num_installments": 4
+                },
+                "name": "setup_payment_plan"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It describes the installment schedule returned by the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "payment-history",
+      "conversation": [
+        {
+          "invocationId": "payment-history-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Show the payment history for customer CUST-20260427-152."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've retrieved the payment history for customer **CUST-20260427-152**. Here are the most recent transactions:\n\n**Summary:**\n*   **Total Transactions:** 5\n*   **Total Amount Paid:** $3,000.00\n\n**Transaction Details:**\n1.  **Date:** 2026-09-30 | **Amount:** $500.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 1\n    *   *Method:* Credit Card (****1234)\n2.  **Date:** 2026-08-31 | **Amount:** $550.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 2\n    *   *Method:* Credit Card (****1234)\n3.  **Date:** 2026-08-01 | **Amount:** $600.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 3\n    *   *Method:* Credit Card (****1234)\n4.  **Date:** 2026-07-02 | **Amount:** $650.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 4\n    *   *Method:* Credit Card (****1234)\n5.  **Date:** 2026-06-02 | **Amount:** $700.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 5\n    *   *Method:* Credit Card (****1234)\n\nIs there anything else regarding these payments I can help you with?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "customer_id": "CUST-20260427-152"
+                },
+                "name": "get_payment_history"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It lists the payment for order ORD-20260427-518 ($495.97) from the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

@@ -30,6 +30,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Eval results (scripts/eval.sh) and ADK eval history
+evals/results/
+.adk/
+
 # Pre-downloaded ML models (87MB, used by Docker build via COPY)
 .hf_models/
 

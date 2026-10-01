@@ -1,0 +1,309 @@
+{
+  "eval_set_id": "agents/order_agent/order_agent",
+  "name": "order_agent golden set",
+  "eval_cases": [
+    {
+      "evalId": "cart-first",
+      "conversation": [
+        {
+          "invocationId": "cart-first-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "I want to order Business Fiber 1 Gbps."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I've added Business Fiber 1 Gbps to your cart!\n\n**Your Cart:**\n• Business Fiber 1 Gbps — $249.00/mo\n**Monthly Total: $249.00/mo**\n\nWould you like to add any other products or services before we proceed?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "customer_id": "CUST-20260430-156"
+                },
+                "name": "create_cart"
+              },
+              {
+                "args": {},
+                "name": "add_to_cart"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It shows the cart contents with Business Fiber 1 Gbps."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "It asks whether to add other products before creating the order."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {
+          "customer_context": {
+            "customer_id": "CUST-20260430-156",
+            "company_name": "Connection Pro Inc",
+            "address": {
+              "street": "123 Main street",
+              "address_line2": "",
+              "city": "Philadelphia",
+              "state": "PA",
+              "zip_code": "19103"
+            }
+          }
+        }
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "order-status",
+      "conversation": [
+        {
+          "invocationId": "order-status-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "What's the status of order ORD-20260429-296?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "The status of order **ORD-20260429-296** is **Pending Payment**.\n\n**Order Details:**\n*   **Customer:** Connection Pro Inc\n*   **Service:** Business Fiber 1 Gbps\n*   **Address:** 123 Main street, Philadelphia, PA 19103\n*   **Monthly Total:** $206.17\n\nThe next step is to schedule your installation appointment. After that, we'll set up payment to confirm your order."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260429-296"
+                },
+                "name": "get_order"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It reports the order status pending_payment from the tool."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "generate-contract",
+      "conversation": [
+        {
+          "invocationId": "generate-contract-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Generate the contract for order ORD-20260427-222."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I have generated the service contract for your order. Here are the details:\n\n**Service Contract: CONT-ORD-20260427-222**\n*   **Order ID:** ORD-20260427-222\n*   **Customer:** Table Inc\n*   **Service Address:** 123 Main street, Philadelphia, PA 19103\n*   **Service:** Business Fiber 1 Gbps — $229.08/mo\n*   **Contract Term:** 12 months (Auto-renewal)\n*   **Billing Cycle:** Monthly (NET-30)\n*   **Status:** Pending Signature\n\nThe contract is ready for review and signature. Please let me know if you need any modifications or have further questions!"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260427-222"
+                },
+                "name": "generate_contract"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It summarizes the contract for ORD-20260427-222 from the tool result."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            },
+            {
+              "rubricId": "r2",
+              "rubricContent": {
+                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "cancel-pending-order",
+      "conversation": [
+        {
+          "invocationId": "cancel-pending-order-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Cancel order ORD-20260429-606, we changed our minds."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Order ORD-20260429-606 has been successfully cancelled as requested (Reason: Customer changed their mind). \n\nIf you decide to explore other services in the future, I'll be happy to help you with a new order."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260429-606"
+                },
+                "name": "cancel_order"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It confirms ORD-20260429-606 was cancelled."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    },
+    {
+      "evalId": "cancel-fulfilled-order",
+      "conversation": [
+        {
+          "invocationId": "cancel-fulfilled-order-t1",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Cancel order ORD-20260427-065."
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "I can certainly help you with that. Could you please provide the reason for cancelling order **ORD-20260427-065**?"
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "order_id": "ORD-20260427-065"
+                },
+                "name": "cancel_order"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0,
+          "rubrics": [
+            {
+              "rubricId": "r1",
+              "rubricContent": {
+                "textProperty": "It does not claim the order was cancelled; it explains the service is already fulfilled/active."
+              },
+              "type": "FINAL_RESPONSE_QUALITY"
+            }
+          ]
+        }
+      ],
+      "sessionInput": {
+        "appName": "csa_eval",
+        "userId": "eval_user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}

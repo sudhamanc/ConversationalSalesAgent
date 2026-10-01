@@ -1,6 +1,7 @@
 # 🧪 Test Scenarios — B2B Conversational Sales Agent
 
 > Comprehensive positive and negative test cases for each agent and end-to-end (E2E) sales flows.
+> Executable versions live in the golden eval datasets ([evals/README.md](evals/README.md)): each golden case's `scenario_id` in `evals/golden/MANIFEST.json` refers to a row number here (`4.2`, `E2E-1`, ...). The golden journeys follow the current flow (cart, order, scheduling, then payment), which differs from the older E2E narratives below.
 > Updated to reflect the current multi-agent system with unified SQLite database and ADK sub-agent delegation.
 
 ---
