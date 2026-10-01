@@ -88,7 +88,12 @@ Thresholds start lenient. Record the first full run here, then tighten `test_con
 | 2026-09-30 | gemini-3-flash-preview (judge: same) | serviceability 6/6, all metrics 1.0 (other agents not yet scored) | 57/58 (98.3%), rule cases 100% | recorded and reviewed; scored run pending |
 | 2026-10-01 (after `fix-eval-defects`) | gemini-3-flash-preview (judge: same) | customer_communication 4/4, discovery 6/6, faq 5/5 pass every metric; greeting 4/4 trajectory (judges stopped by Gemini 402); other 6 agents not scored (402) | 58/58 (100%), rule cases 100% | trajectories correct for all 15 turns of s1–s4 (s6 not run); response scores pending a run with credits |
 
-The 2026-10-01 full run stopped when the Gemini project's prepaid credits ran out (402). Re-run `scripts/eval.sh` with credits to complete the baseline.
+| 2026-10-01 (remaining agents) | gemini-3-flash-preview (judge: same) | greeting 4/4, offer_management 5/5, order 5/5, service_fulfillment 5/5, serviceability 6/6, payment 4/5, product 6/7 (35/37 cases) | — | — |
+
+Open items from the 2026-10-01 runs (fix through an OpenSpec change, then re-run the affected agent):
+- `payment_agent/credit-check`: the reply omits the credit score the tool returns (Scenarios 8.1 expects it).
+- `product_agent/compare-fiber`: one empty reply with no tool calls; 5 direct reruns all answered correctly (intermittent model output).
+- `hallucinations_v1` returned "not evaluated" (judge produced no score) for 4 cases; ADK counts this as a failure. Re-run before treating as a regression.
 
 Review status: all 115 goldens approved (2026-10-01).
 
