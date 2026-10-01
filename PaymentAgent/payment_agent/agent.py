@@ -11,6 +11,7 @@ from google.adk import Agent
 from google.adk.models.base_llm import BaseLlm
 
 from sales_common.config import generate_config, model_name
+from sales_common.models import agent_model
 from sales_common.context import export_context_delta, import_forwarded_context
 from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
 
@@ -30,7 +31,7 @@ def build_agent(model: Optional[str | BaseLlm] = None) -> Agent:
     """Build the payment_agent."""
     return Agent(
         name="payment_agent",
-        model=model or model_name(),
+        model=model or agent_model(),
         description=PAYMENT_SHORT_DESCRIPTION,
         static_instruction=PAYMENT_AGENT_INSTRUCTION,
         instruction=JOURNEY_CONTEXT_INSTRUCTION,

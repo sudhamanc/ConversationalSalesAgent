@@ -115,3 +115,19 @@ Every agent's instruction SHALL include today's date (from `import_forwarded_con
 - **WHEN** a prospect gives company, industry and a full street address with ZIP
 - **THEN** the company is registered in the same turn and the serviceability handoff runs
 
+### Requirement: Empty model responses are retried
+
+Agents SHALL use a model wrapper that repeats a non-streaming model call once when the response contains neither text nor a function call.
+
+#### Scenario: Empty response
+- **WHEN** Gemini returns a response with no text and no function call
+- **THEN** the call is repeated once and the retry's response is used
+
+### Requirement: Credit check reports the score
+
+The payment agent SHALL include the credit score returned by `check_business_credit` together with the decision.
+
+#### Scenario: Conditional approval
+- **WHEN** the credit check returns a score of 55 and a conditional decision
+- **THEN** the reply states both the score and the conditional approval
+

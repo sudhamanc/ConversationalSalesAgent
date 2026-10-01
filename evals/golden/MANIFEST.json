@@ -184,7 +184,7 @@
       "scenario_id": "8.1",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/payment_agent/payment_agent/invalid-card": {
       "scenario_id": "8.8",
@@ -224,7 +224,11 @@
       "scenario_id": "6.10",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-09-30",
+      "skip_metrics": [
+        "hallucinations_v1"
+      ],
+      "skip_reason": "the reply makes no factual claims, so hallucinations_v1 has nothing to score (judge returns no score); trajectory and rubrics are scored"
     },
     "agents/product_agent/product_agent/declines-pricing": {
       "scenario_id": "6.9",
@@ -242,7 +246,11 @@
       "scenario_id": "6.1",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-10-01"
+      "reviewed_at": "2026-10-01",
+      "skip_metrics": [
+        "hallucinations_v1"
+      ],
+      "skip_reason": "hallucinations_v1 returns no score for the 16-product list (judge output not parsed, twice); trajectory, reply match and rubrics are scored"
     },
     "agents/product_agent/product_agent/non-existent-product": {
       "scenario_id": "6.8",

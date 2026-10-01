@@ -18,7 +18,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "I've completed the credit check for **Connection Pro Inc**.\n\n**Credit Decision: CONDITIONAL APPROVAL**\n*   **Credit Limit:** $5,000.00\n*   **Payment Terms:** Net 15\n*   **Required Deposit:** $1,250.00 (25%)\n\n**Conditions for Approval:**\n*   Personal guarantee from the business owner is required.\n*   A review of the account will be conducted after 6 months of consistent, on-time payments.\n\nWould you like to proceed with these terms, or would you prefer to use an alternative payment method?"
+                "text": "I've completed the credit check for Connection Pro Inc.\n\n**Credit Decision: CONDITIONAL**\n**Credit Score: 55**\n\n**Terms:**\n*   **Credit Limit:** $5,000.00\n*   **Payment Terms:** Net 15\n*   **Required Deposit:** $1,250.00 (25%)\n\n**Conditions for Approval:**\n*   Personal guarantee from the business owner is required.\n*   A review of the account will be conducted after 6 months of consistent, on-time payments.\n\nSince this is a conditional approval, we can proceed once the deposit is handled. How would you like to move forward?"
               }
             ],
             "role": "model"

@@ -55,7 +55,7 @@ from e2e_client import post_json, run_turn  # noqa: E402
 pytestmark = [pytest.mark.eval, pytest.mark.asyncio]
 
 GATEWAY_URL = os.getenv("EVAL_GATEWAY_URL", "http://127.0.0.1:8000").rstrip("/")
-TURN_TIMEOUT = float(os.getenv("EVAL_TURN_TIMEOUT", "180"))
+TURN_TIMEOUT = float(os.getenv("EVAL_TURN_TIMEOUT", "360"))  # multi-agent turns with slow model responses
 RECORD = os.getenv("EVAL_RECORD") == "1"
 JOURNEY_PATHS = list(iter_set_paths("journeys"))
 

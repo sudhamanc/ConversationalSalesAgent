@@ -14,6 +14,7 @@ from google.adk import Agent
 from google.adk.models.base_llm import BaseLlm
 
 from sales_common.config import generate_config, model_name, require_env
+from sales_common.models import agent_model
 from sales_common.context import export_context_delta, import_forwarded_context
 from sales_common.mcp_client import mcp_toolset
 from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
@@ -32,7 +33,7 @@ def serviceability_mcp_url() -> str:
 def build_agent(model: Optional[str | BaseLlm] = None) -> Agent:
     return Agent(
         name=AGENT_NAME,
-        model=model or model_name(),
+        model=model or agent_model(),
         description=SERVICEABILITY_SHORT_DESCRIPTION,
         static_instruction=SERVICEABILITY_AGENT_INSTRUCTION,
         instruction=JOURNEY_CONTEXT_INSTRUCTION,

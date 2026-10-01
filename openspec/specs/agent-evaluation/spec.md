@@ -66,3 +66,11 @@ Journey invocations SHALL keep function-call ids so ADK's judges can pair every 
 - **WHEN** a journey turn states data returned by a remote agent's tool
 - **THEN** `hallucinations_v1` sees the paired tool response and does not mark the claim unsupported
 
+### Requirement: Unscored judge results are retried
+
+When an agent group's only failures are metrics the judge did not evaluate, the eval SHALL retry that group once before reporting failure.
+
+#### Scenario: Judge returns no score
+- **WHEN** `hallucinations_v1` is "not evaluated" for a case and nothing else failed
+- **THEN** the group is evaluated again and the second result is reported
+

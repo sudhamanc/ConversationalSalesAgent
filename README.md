@@ -801,7 +801,7 @@ Every eval scores **both the trajectory (what the agent did) and the response (w
 |---|---|---|---|
 | **Agents** (52 cases) | each agent in-process with ADK's `AgentEvaluator` | `golden_trajectory_v1`: expected tool calls appear in order with matching arguments | `final_response_match_v2` (LLM judge: same meaning as the reference?), rubric quality (each rubric pass/fail), `hallucinations_v1` (every claim supported by tool output?) |
 | **Router** (58 cases) | `route_intent` on the exact input the gateway builds | the chosen agent equals the golden (≥ 95% overall, 100% on explicit routing rules) | valid `RouteDecision` JSON that was not cut off (`MAX_TOKENS` fails the run) |
-| **Journeys** (5) | the full stack over HTTP: UI API → gateway → A2A agents → MCP → PostgreSQL | answering agents per turn, tool calls (read from the gateway's stored session), required UI events (quote card, cart update), no errors | the same response metrics, per turn |
+| **Journeys** (5) | the full stack over HTTP: UI API → gateway → A2A agents → MCP → PostgreSQL | answering agents per turn, tool calls (read from the gateway's stored session), required UI events (quote card, cart update), no errors | reply match and rubrics, per turn |
 
 **LLM-as-judge.** Response metrics use a second model call (the judge, `gemini-3-flash-preview`, three samples each) to grade meaning rather than exact wording. Trajectory and routing checks are deterministic. Thresholds live in each `test_config.json`.
 
@@ -875,6 +875,18 @@ Offline checks run with every `pytest`. `evals/test_golden_valid.py` fails when:
 - seed data changed since review
 
 Replies that contain dates relative to today (installation slots, payment plans) skip the exact-reply comparison but keep their trajectory and rubric checks (`skip_metrics` in `MANIFEST.json`).
+
+### Baseline results
+
+Latest scored result per tier (`gemini-3-flash-preview`, judge `gemini-3-flash-preview`):
+
+| Tier | Result | Notes |
+|---|---|---|
+| Agents | **52 / 52 cases pass** every metric | greeting 4/4, faq 5/5, discovery 6/6, serviceability 6/6, product 7/7, offer_management 5/5, order 5/5, payment 5/5, service_fulfillment 5/5, customer_communication 4/4 |
+| Router | **58 / 58** (100%), explicit-rule cases 100% | no `MAX_TOKENS` truncation |
+| Journeys | **14 / 17 turns** with the correct agents, tool calls and UI events | the 3 other turns timed out waiting for slow model responses (no wrong behavior); s1 (9 turns) and s4 pass their rubric checks |
+
+Grounding (`hallucinations_v1`) is scored at the agent tier, where it is reliable. At journey level, replies combine several remote agents and the judge's scores were not meaningful, so journeys score trajectory, reply match and rubrics.
 
 More detail: [evals/README.md](evals/README.md) and the `agent-evaluation` spec in `openspec/specs/`.
 

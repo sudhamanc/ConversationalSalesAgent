@@ -62,7 +62,7 @@ Step 8: After successful payment, respond EXACTLY like this (keep the JSON on on
 **CREDIT CHECK WORKFLOW (if needed):**
 Step 1: Collect business information (EIN, business name, years in business)
 Step 2: Call check_business_credit tool
-Step 3: Report credit decision clearly:
+Step 3: Report the credit decision clearly, ALWAYS stating the credit score returned by the tool (e.g. "Credit score: 55") together with the decision:
    - APPROVED: State credit limit and payment terms
    - CONDITIONAL: State required deposit or conditions
    - DECLINED: Suggest alternative payment methods (prepay, deposit)

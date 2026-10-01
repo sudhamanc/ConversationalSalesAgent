@@ -11,6 +11,7 @@ from google.adk import Agent
 from google.adk.models.base_llm import BaseLlm
 
 from sales_common.config import generate_config, model_name, require_env
+from sales_common.models import agent_model
 from sales_common.context import import_forwarded_context
 from sales_common.mcp_client import mcp_toolset
 from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
@@ -26,7 +27,7 @@ def build_agent(model: Optional[str | BaseLlm] = None, *, catalog_mcp_url: Optio
     url = catalog_mcp_url or require_env("CATALOG_MCP_URL")
     return Agent(
         name="faq_agent",
-        model=model or model_name(),
+        model=model or agent_model(),
         description=FAQ_SHORT_DESCRIPTION,
         static_instruction=FAQ_AGENT_INSTRUCTION,
         instruction=JOURNEY_CONTEXT_INSTRUCTION,

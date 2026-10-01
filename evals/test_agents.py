@@ -28,6 +28,12 @@ from evals.golden_io import (
 pytestmark = [pytest.mark.eval, pytest.mark.asyncio]
 
 
+def _only_unscored(message: str) -> bool:
+    """True when every reported failure is a metric the judge did not evaluate."""
+    lines = [l.strip() for l in message.splitlines()[1:] if l.strip()]
+    return bool(lines) and all("was not evaluated" in l for l in lines if "for " in l)
+
+
 @pytest.mark.parametrize("agent", sorted(AGENT_PACKAGES))
 async def test_agent_golden_set(agent, results_dir):
     path = agent_set_path(agent)
@@ -51,15 +57,21 @@ async def test_agent_golden_set(agent, results_dir):
             update={"criteria": {k: v for k, v in config.criteria.items() if k not in skip}}
         )
         suffix = "" if not skip else "-skip-" + "-".join(skip)
-        try:
-            await AgentEvaluator.evaluate_eval_set(
-                agent_module=AGENT_PACKAGES[agent],
-                eval_set=eval_set.model_copy(update={"eval_cases": cases}),
-                eval_config=group_config,
-                num_runs=1,  # repetitions are separate eval.sh runs, each on a freshly reset database
-                print_detailed_results=True,
-                output_file=str(results_dir / f"agent-{agent}{suffix}.csv"),
-            )
-        except AssertionError as exc:
-            failures.append(str(exc))
+        for attempt in (1, 2):
+            try:
+                await AgentEvaluator.evaluate_eval_set(
+                    agent_module=AGENT_PACKAGES[agent],
+                    eval_set=eval_set.model_copy(update={"eval_cases": cases}),
+                    eval_config=group_config,
+                    num_runs=1,  # repetitions are separate eval.sh runs, each on a freshly reset database
+                    print_detailed_results=True,
+                    output_file=str(results_dir / f"agent-{agent}{suffix}.csv"),
+                )
+                break
+            except AssertionError as exc:
+                if attempt == 1 and _only_unscored(str(exc)):
+                    print(f"\n{agent}: judge produced no score; retrying the group once")
+                    continue
+                failures.append(str(exc))
+                break
     assert not failures, "\n\n".join(failures)

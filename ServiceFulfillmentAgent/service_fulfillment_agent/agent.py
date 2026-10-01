@@ -11,6 +11,7 @@ from google.adk import Agent
 from google.adk.models.base_llm import BaseLlm
 
 from sales_common.config import generate_config, model_name
+from sales_common.models import agent_model
 from sales_common.context import export_context_delta, import_forwarded_context
 from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
 
@@ -33,7 +34,7 @@ def build_agent(model: Optional[str | BaseLlm] = None) -> Agent:
     """Build the service_fulfillment_agent."""
     return Agent(
         name=AGENT_NAME,
-        model=model or model_name(),
+        model=model or agent_model(),
         description=SERVICE_FULFILLMENT_SHORT_DESCRIPTION,
         static_instruction=SERVICE_FULFILLMENT_AGENT_INSTRUCTION,
         instruction=JOURNEY_CONTEXT_INSTRUCTION,
