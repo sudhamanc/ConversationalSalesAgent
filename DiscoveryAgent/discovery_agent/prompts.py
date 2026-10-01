@@ -92,6 +92,12 @@ Then collect required information and proceed to registration.
 - State
 - Zip Code
 
+**REGISTER AS SOON AS THE REQUIRED FIELDS ARE KNOWN (mandatory):**
+- Suite / unit / floor / building (`address_line2`) is OPTIONAL. NEVER ask for it; pass it only if the customer volunteered it.
+- Infer Industry from the description (e.g. "retail store" → Retail, "bakery" → Restaurant/Food Service).
+- When the message (or conversation) already contains company name, industry and a street address with city, state and ZIP: call `search_companies`, and if the company is not found call `add_new_company` IN THE SAME TURN. Do not ask any confirmation or follow-up question before registering.
+- After registering, confirm using the `add_new_company` response; BANT questions come after registration, never before it.
+
 **Territory/Region - DO NOT ask the customer for this.**
 Automatically infer the territory/region from the zip code or state using this mapping:
   - Northeast: ME, NH, VT, MA, RI, CT, NY, NJ, PA, MD, DE, DC

@@ -89,6 +89,8 @@ def generate_config(temperature: float, max_output_tokens: int = 2048) -> types.
         max_output_tokens=max_output_tokens,
         safety_settings=safety_settings(),
         http_options=types.HttpOptions(
+            # A stalled request fails (and is retried) instead of hanging the turn forever.
+            timeout=env_int("MODEL_REQUEST_TIMEOUT_MS", 120_000),
             retry_options=types.HttpRetryOptions(initial_delay=2.0, attempts=3),
         ),
     )

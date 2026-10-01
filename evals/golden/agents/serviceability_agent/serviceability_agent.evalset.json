@@ -53,13 +53,6 @@
                 "textProperty": "It states the maximum speed reported by the tool (5 Gbps / 5000 Mbps)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r3",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }
@@ -114,13 +107,6 @@
               "rubricId": "r1",
               "rubricContent": {
                 "textProperty": "It says the address is serviceable over coax/HFC with speeds up to 1 Gbps."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }
@@ -283,13 +269,6 @@
                 "textProperty": "It lists service zones returned by the tool."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }
@@ -344,13 +323,6 @@
               "rubricId": "r1",
               "rubricContent": {
                 "textProperty": "It reports the Baltimore address as serviceable with fiber (FTTP)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }

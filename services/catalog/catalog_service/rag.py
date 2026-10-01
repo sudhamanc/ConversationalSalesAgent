@@ -1,6 +1,11 @@
-"""Product-knowledge retrieval (ChromaDB + sentence-transformers).
+"""Knowledge retrieval (ChromaDB + sentence-transformers) for two corpora.
 
-The index is read-only at runtime and deterministic from ``data/product_docs``.
+* product knowledge: ``data/product_docs`` -> collection ``product_knowledge``
+  (``search``; MCP ``search_product_knowledge``)
+* FAQ / policies: ``data/faq_docs`` -> collection ``faq_knowledge``
+  (``search_faq``; MCP ``search_faq``, used by the FAQ agent)
+
+Each index is read-only at runtime and deterministic from its docs directory.
 It is built at image build time (``scripts/ingest_knowledge.py``) or on first
 start when missing (``RAG_BUILD_ON_START``). When chromadb, the embedding model
 or the index is unavailable, :func:`search` returns ``available: false``
@@ -11,6 +16,11 @@ Environment:
 * ``CHROMA_PATH``           persistent Chroma directory (default ``services/catalog/data/embeddings``)
 * ``EMBEDDING_MODEL_PATH``  local sentence-transformers model directory (optional);
                             falls back to ``EMBEDDING_MODEL`` (default ``all-MiniLM-L6-v2``)
+* ``EMBEDDING_DEVICE``      torch device for embeddings (default ``cpu``). Apple's ``mps``
+                            backend segfaults when several threads encode at once.
+
+Both corpora share one embedder (one loaded model); ``encode`` is serialized with a lock
+because concurrent MCP requests and start-up warm-up call it from different threads.
 """
 
 from __future__ import annotations
@@ -23,7 +33,7 @@ import threading
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence
 
-from .models import KnowledgePassage, KnowledgeResult
+from .models import FaqPassage, FaqResult, KnowledgePassage, KnowledgeResult
 
 logger = logging.getLogger("catalog_service.rag")
 
@@ -32,6 +42,8 @@ DOCS_DIR = SERVICE_ROOT / "data" / "product_docs"
 DEFAULT_CHROMA_PATH = SERVICE_ROOT / "data" / "embeddings"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 COLLECTION_NAME = "product_knowledge"
+FAQ_DOCS_DIR = SERVICE_ROOT / "data" / "faq_docs"
+FAQ_COLLECTION_NAME = "faq_knowledge"
 
 #: Source document stem -> metadata attached to each chunk.
 DOC_METADATA: dict[str, dict[str, str]] = {
@@ -66,19 +78,35 @@ def embedding_model_name() -> str:
 
 
 class SentenceTransformerEmbedder:
-    def __init__(self, model: Optional[str] = None) -> None:
+    def __init__(self, model: Optional[str] = None, device: Optional[str] = None) -> None:
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
             raise RagUnavailable("sentence-transformers is not installed") from exc
         name = model or embedding_model_name()
+        self.device = device or os.getenv("EMBEDDING_DEVICE", "").strip() or "cpu"
         try:
-            self._model = SentenceTransformer(name)
+            self._model = SentenceTransformer(name, device=self.device)
         except Exception as exc:  # model download / load failure
             raise RagUnavailable(f"embedding model {name!r} could not be loaded: {exc}") from exc
+        self._encode_lock = threading.Lock()
 
     def encode(self, texts: Sequence[str]) -> list[list[float]]:
-        return self._model.encode(list(texts), show_progress_bar=False).tolist()
+        with self._encode_lock:
+            return self._model.encode(list(texts), show_progress_bar=False).tolist()
+
+
+_shared_embedder: Optional[SentenceTransformerEmbedder] = None
+_shared_embedder_lock = threading.Lock()
+
+
+def shared_embedder() -> SentenceTransformerEmbedder:
+    """The process-wide embedder used by both corpora (the model is loaded once)."""
+    global _shared_embedder
+    with _shared_embedder_lock:
+        if _shared_embedder is None:
+            _shared_embedder = SentenceTransformerEmbedder()
+        return _shared_embedder
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +160,19 @@ def _stable_id(filename: str, index: int) -> str:
     return "prod_" + hashlib.sha256(f"{filename}::chunk_{index:04d}".encode()).hexdigest()[:16]
 
 
+def iter_faq_chunks(docs_dir: Path = FAQ_DOCS_DIR):
+    """Yield ``(id, text, metadata)`` for every chunk of every FAQ document (topic = file stem)."""
+    for doc in sorted(docs_dir.glob("*.md")):
+        if doc.stem.upper() == "README":
+            continue
+        for idx, chunk in enumerate(chunk_document(doc)):
+            body = "\n".join(line for line in chunk["text"].splitlines() if not line.lstrip().startswith("#"))
+            if not body.strip():  # title-only preamble ("# Topic"): no answer to retrieve
+                continue
+            cid = "faq_" + hashlib.sha256(f"{doc.name}::chunk_{idx:04d}".encode()).hexdigest()[:16]
+            yield cid, chunk["text"], {"topic": doc.stem, "doc_file": doc.name, "section": chunk["section"]}
+
+
 def iter_chunks(docs_dir: Path = DOCS_DIR):
     """Yield ``(id, text, metadata)`` for every chunk of every product document."""
     for doc in sorted(docs_dir.glob("*.md")):
@@ -151,7 +192,13 @@ def iter_chunks(docs_dir: Path = DOCS_DIR):
 class KnowledgeIndex:
     """Chroma collection with caller-supplied embeddings."""
 
-    def __init__(self, path: Path | str, embedder: Embedder) -> None:
+    def __init__(
+        self,
+        path: Path | str,
+        embedder: Embedder,
+        collection: str = COLLECTION_NAME,
+        description: str = "Product knowledge base",
+    ) -> None:
         try:
             import chromadb
             from chromadb.config import Settings
@@ -163,9 +210,9 @@ class KnowledgeIndex:
             path=str(self.path), settings=Settings(anonymized_telemetry=False)
         )
         self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
+            name=collection,
             embedding_function=None,
-            metadata={"hnsw:space": "cosine", "description": "Product knowledge base"},
+            metadata={"hnsw:space": "cosine", "description": description},
         )
         self._embedder = embedder
 
@@ -179,7 +226,8 @@ class KnowledgeIndex:
             ids=ids, documents=texts, metadatas=metadatas, embeddings=self._embedder.encode(texts)
         )
 
-    def query(self, text: str, top_k: int) -> list[KnowledgePassage]:
+    def raw_query(self, text: str, top_k: int) -> list[tuple[str, dict[str, Any], Optional[float]]]:
+        """``(document, metadata, distance)`` for the nearest chunks."""
         total = self.count()
         if total == 0:
             return []
@@ -188,10 +236,11 @@ class KnowledgeIndex:
             n_results=min(top_k, total),
             include=["documents", "metadatas", "distances"],
         )
+        return list(zip(result["documents"][0], result["metadatas"][0], result["distances"][0]))
+
+    def query(self, text: str, top_k: int) -> list[KnowledgePassage]:
         passages = []
-        for doc, meta, dist in zip(
-            result["documents"][0], result["metadatas"][0], result["distances"][0]
-        ):
+        for doc, meta, dist in self.raw_query(text, top_k):
             meta = meta or {}
             ids = [p for p in str(meta.get("product_ids", "")).split(",") if p]
             passages.append(
@@ -213,7 +262,7 @@ def build_index(
     embedder: Optional[Embedder] = None,
 ) -> KnowledgeIndex:
     """Embed and upsert every document chunk (idempotent via stable ids)."""
-    index = KnowledgeIndex(path or chroma_path(), embedder or SentenceTransformerEmbedder())
+    index = KnowledgeIndex(path or chroma_path(), embedder or shared_embedder())
     ids, texts, metas = [], [], []
     for cid, text, meta in iter_chunks(docs_dir):
         ids.append(cid)
@@ -250,7 +299,7 @@ def get_index() -> KnowledgeIndex:
         if _error is not None:
             raise RagUnavailable(_error)
         try:
-            index = KnowledgeIndex(chroma_path(), SentenceTransformerEmbedder())
+            index = KnowledgeIndex(chroma_path(), shared_embedder())
             if index.count() == 0:
                 raise RagUnavailable(
                     f"knowledge index at {chroma_path()} is empty; run scripts/ingest_knowledge.py"
@@ -297,3 +346,95 @@ def search(query: str, top_k: int) -> KnowledgeResult:
     return KnowledgeResult(
         available=True, query=query, passages=passages, count=len(passages), message=message
     )
+
+
+# ---------------------------------------------------------------------------
+# FAQ corpus (separate collection and process-level singleton)
+# ---------------------------------------------------------------------------
+
+_faq_index: Optional[KnowledgeIndex] = None
+_faq_error: Optional[str] = None
+
+
+def _faq_index_at(path: Path, embedder: Embedder) -> KnowledgeIndex:
+    return KnowledgeIndex(path, embedder, collection=FAQ_COLLECTION_NAME, description="FAQ and policy knowledge base")
+
+
+def build_faq_index(
+    docs_dir: Path = FAQ_DOCS_DIR,
+    path: Optional[Path] = None,
+    embedder: Optional[Embedder] = None,
+) -> KnowledgeIndex:
+    """Embed and upsert every FAQ chunk (idempotent via stable ids)."""
+    index = _faq_index_at(path or chroma_path(), embedder or shared_embedder())
+    rows = list(iter_faq_chunks(docs_dir))
+    if not rows:
+        raise RagUnavailable(f"no FAQ documents found in {docs_dir}")
+    ids, texts, metas = (list(col) for col in zip(*rows))
+    index.upsert(ids, texts, metas)
+    logger.info("FAQ index at %s holds %d chunks", index.path, index.count())
+    return index
+
+
+def set_faq_index(index: Optional[KnowledgeIndex], error: Optional[str] = None) -> None:
+    global _faq_index, _faq_error
+    with _lock:
+        _faq_index, _faq_error = index, error
+
+
+def get_faq_index() -> KnowledgeIndex:
+    global _faq_index, _faq_error
+    with _lock:
+        if _faq_index is not None:
+            return _faq_index
+        if _faq_error is not None:
+            raise RagUnavailable(_faq_error)
+        try:
+            index = _faq_index_at(chroma_path(), shared_embedder())
+            if index.count() == 0:
+                raise RagUnavailable(f"FAQ index at {chroma_path()} is empty; run scripts/ingest_knowledge.py")
+        except RagUnavailable as exc:
+            _faq_error = str(exc)
+            logger.warning("FAQ search unavailable: %s", exc)
+            raise
+        _faq_index = index
+        return index
+
+
+def warm_up_faq(build_if_missing: bool = True) -> None:
+    try:
+        get_faq_index()
+    except RagUnavailable as exc:
+        if not build_if_missing or "is empty" not in str(exc):
+            return
+        try:
+            set_faq_index(build_faq_index())
+        except RagUnavailable as build_exc:
+            set_faq_index(None, str(build_exc))
+            logger.warning("FAQ index build failed: %s", build_exc)
+
+
+def faq_status() -> dict[str, Any]:
+    with _lock:
+        if _faq_index is not None:
+            return {"available": True, "chunks": _faq_index.count()}
+        return {"available": False, "reason": _faq_error or "not loaded"}
+
+
+def search_faq(query: str, top_k: int) -> FaqResult:
+    try:
+        rows = get_faq_index().raw_query(query, top_k)
+    except RagUnavailable as exc:
+        return FaqResult(available=False, query=query, message=f"FAQ search is unavailable: {exc}")
+    passages = [
+        FaqPassage(
+            text=doc,
+            topic=str((meta or {}).get("topic", "")),
+            section=str((meta or {}).get("section", "")),
+            doc_file=str((meta or {}).get("doc_file", "unknown")),
+            distance=float(dist) if dist is not None else None,
+        )
+        for doc, meta, dist in rows
+    ]
+    message = None if passages else "No relevant FAQ entry found"
+    return FaqResult(available=True, query=query, passages=passages, count=len(passages), message=message)

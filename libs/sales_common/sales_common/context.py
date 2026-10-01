@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date
 from typing import Any, Iterable, Optional
 
 logger = logging.getLogger("sales_common.context")
@@ -36,6 +37,8 @@ METADATA_KEY = "journey"
 TRANSCRIPT_STATE_KEY = "journey_transcript"
 PROFILE_STATE_KEY = "user_profile"
 SESSION_REF_STATE_KEY = "gateway_session_id"
+#: Today's date for the agent's instruction (``{current_date?}``), set on every turn.
+CURRENT_DATE_STATE_KEY = "current_date"
 
 MAX_TRANSCRIPT_CHARS = 2000
 
@@ -72,16 +75,25 @@ def _forwarded(callback_context) -> dict[str, Any]:
     return journey if isinstance(journey, dict) else {}
 
 
+def current_date_text(today: Optional[date] = None) -> str:
+    """ISO date plus weekday, e.g. ``2026-10-01 (Thursday)``."""
+    today = today or date.today()
+    return f"{today.isoformat()} ({today.strftime('%A')})"
+
+
 def import_forwarded_context(callback_context) -> None:
     """``before_agent_callback``: apply forwarded journey context to session state.
 
-    Only known journey keys are imported; values must be JSON objects. Returns
-    ``None`` so the agent always runs.
+    Only known journey keys are imported; values must be JSON objects. Also sets
+    ``current_date`` (e.g. "2026-10-01 (Thursday)") on every turn, with or without
+    forwarded metadata, so agents never guess today's date. Returns ``None`` so the
+    agent always runs.
     """
+    state = callback_context.state
+    state[CURRENT_DATE_STATE_KEY] = current_date_text()
     journey = _forwarded(callback_context)
     if not journey:
         return None
-    state = callback_context.state
     context = journey.get("context") or {}
     for key in JOURNEY_KEYS:
         value = context.get(key)

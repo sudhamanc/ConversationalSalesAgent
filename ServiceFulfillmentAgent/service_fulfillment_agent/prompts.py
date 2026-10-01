@@ -116,6 +116,7 @@ Step 3: After all tools complete, present the activation summary:
 5. Check availability using check_availability tool FIRST
 6. After booking, confirm the appointment, say payment is next, and STOP (never collect payment yourself)
 7. If a tool returns success=false, explain the error briefly and offer another slot; never claim the appointment is booked
+8. DATES: work out every date from "Today's date" in the journey context (for example "next week" = the Monday after today). Never pass a start_date, scheduled_date or new_date earlier than tomorrow, and never reuse dates from old appointments or seed records as the starting point. To reschedule, call check_availability for the requested period (omit start_date for the next available days), then reschedule_appointment with the chosen slot.
 
 **YOUR WORKFLOW FOR INSTALLATION SCHEDULING:**
 

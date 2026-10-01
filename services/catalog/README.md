@@ -19,9 +19,10 @@ services/catalog/
 │   ├── core.py         # business logic shared by REST and MCP (returns pydantic models)
 │   ├── models.py       # pydantic models
 │   ├── repository.py   # psycopg queries on `products`
-│   ├── rag.py          # ChromaDB knowledge index (chunking, build, search)
+│   ├── rag.py          # ChromaDB indexes: product knowledge + FAQ (chunking, build, search)
 │   └── mcp_server.py   # MCPServer with the 8 tools
-├── data/product_docs/  # knowledge source documents (markdown)
+├── data/product_docs/  # product knowledge source documents (markdown)
+├── data/faq_docs/      # FAQ / policy corpus for the FAQ agent (markdown, one topic per file)
 ├── scripts/ingest_knowledge.py
 ├── tests/
 ├── Dockerfile  pyproject.toml
@@ -34,7 +35,7 @@ Schema: `db/migrations/002_catalog.sql`. Seed: `db/seed/002_catalog.sql`, genera
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/healthz` | 200 `{status: ok, knowledge: {...}}`, 503 when the DB is unreachable |
+| GET | `/healthz` | 200 `{status: ok, knowledge: {...}, faq: {...}}`, 503 when the DB is unreachable |
 | GET | `/api/v1/products?category=` | available products; category aliases accepted (`fiber`, `sdwan`, `voice`, `mobile`, ...) |
 | GET | `/api/v1/products/{product_id}` | case-insensitive id; 404 when unknown |
 | GET | `/api/v1/products/search?speed=&technology=` | numeric download-speed filter: `1 Gbps` (exact), `>= 500 Mbps`, `at least 1 Gbps`, `under 500 Mbps`; technology is case-insensitive; 422 on an unparseable speed |
@@ -43,6 +44,7 @@ Schema: `db/migrations/002_catalog.sql`. Seed: `db/seed/002_catalog.sql`, genera
 | GET | `/api/v1/products/{product_id}/alternatives?criteria=` | `faster`, `similar`, `different_tech`, or omitted (same category); 422 for other values |
 | GET | `/api/v1/products/best-value?category=` | highest throughput (Mbps), optionally within a category. There is no budget parameter: pricing is not disclosed by the catalog (offer management handles budget fit) |
 | GET | `/api/v1/knowledge/search?q=&top_k=` | `top_k` 1..10 (default 4); `available: false` when the index is not available |
+| GET | `/api/v1/faq/search?q=&top_k=` | FAQ passages (`topic`, `section`, `doc_file`, `distance`); same limits and `available: false` behavior |
 
 Errors are JSON: `{"error": "not_found" | "invalid_input", "detail": ...}` with HTTP 404 / 422.
 OpenAPI docs: `/docs`.
@@ -62,6 +64,7 @@ Every result is a JSON object (`structuredContent`).
 | `suggest_alternatives` | `product_id`, `criteria?` | `{base_product, alternatives[], count, criteria}` |
 | `get_best_value_product` | `category?` | `{found, recommended, category, reason}` |
 | `search_product_knowledge` | `query`, `top_k?` | `{available, query, passages[{text, doc_file, section, product_ids, product_family, distance}], count, message}` |
+| `search_faq` | `query`, `top_k?` | `{available, query, passages[{text, topic, section, doc_file, distance}], count, message}`; used only by `faq_agent` (product agent filters it out) |
 
 MCP tools return input errors as data (`success: false, error`) instead of HTTP errors, so the model can recover.
 
@@ -83,6 +86,7 @@ Behaviour changes from the legacy ProductAgent tools:
 | `CHROMA_PATH` | no | `services/catalog/data/embeddings` (image: `/app/data/embeddings`) | persistent Chroma index |
 | `EMBEDDING_MODEL_PATH` | no | none (image: `/app/models/all-MiniLM-L6-v2`) | local sentence-transformers model directory |
 | `EMBEDDING_MODEL` | no | `all-MiniLM-L6-v2` | used when `EMBEDDING_MODEL_PATH` is not a directory |
+| `EMBEDDING_DEVICE` | no | `cpu` | torch device; one model is shared by both corpora and encoding is serialized (Apple `mps` segfaults under concurrent encodes) |
 | `RAG_BUILD_ON_START` | no | `true` (image: `false`) | build the index in a background thread when it is empty |
 | `DB_POOL_MAX`, `LOG_LEVEL` | no | see `sales_common` | |
 

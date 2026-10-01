@@ -89,6 +89,42 @@ def test_credit_and_billing_tools():
     assert plan["success"] is True and plan["installment_amount"] == 100.00
 
 
+def test_payment_plan_never_starts_in_the_past():
+    from datetime import date
+
+    past = setup_payment_plan(total_amount=1200.0, num_installments=4, start_date="2025-05-20")
+    assert past["success"] is False and "in the past" in past["error"]
+    plan = setup_payment_plan(total_amount=1200.0, num_installments=4)
+    first_due = date.fromisoformat(plan["installments"][0]["due_date"][:10])
+    assert first_due > date.today()
+
+
+@requires_db
+def test_payment_history_reads_payments_table(migrated_db):
+    from payment_agent.tools.billing_tools import get_payment_history
+
+    # Seed: CUST-20260427-152 has exactly one payment (ORD-20260427-518, 495.97, completed).
+    history = get_payment_history("CUST-20260427-152")
+    assert history["success"] is True and history["count"] == 1
+    (txn,) = history["transactions"]
+    assert txn["order_id"] == "ORD-20260427-518" and txn["amount"] == 495.97
+    assert txn["status"] == "completed" and history["total_amount"] == 495.97
+    assert txn["payment_method"] == "ACH bank transfer (token ending 7890)"
+    # Seed payment PAY-20260426213336-4854 has no customer_id; it belongs via its order.
+    via_order = get_payment_history("CUST-20260427-151")
+    assert [t["order_id"] for t in via_order["transactions"]] == ["ORD-20260426-370"]
+    assert get_payment_history("CUST-NOPE")["count"] == 0
+    assert get_payment_history("CUST-20260427-152", start_date="2030-01-01")["count"] == 0
+
+
+def test_describe_method_never_exposes_token():
+    from payment_agent.tools.billing_tools import _describe_method
+
+    assert _describe_method("tok_SECRETabcd", "credit_card", "visa", "1111") == "Visa card ending 1111"
+    assert _describe_method("tok_SECRETabcd", "ach", None, "6789") == "ACH bank transfer ending 6789"
+    assert "SECRET" not in _describe_method("tok_SECRETabcd")
+
+
 # --------------------------------------------------------------------------- PostgreSQL
 
 @requires_db

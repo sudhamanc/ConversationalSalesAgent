@@ -76,7 +76,11 @@ def events_to_turns(
         for part in parts:
             if part.function_call:
                 data.tool_uses.append(
-                    types.FunctionCall(name=part.function_call.name, args=dict(part.function_call.args or {}))
+                    types.FunctionCall(
+                        id=part.function_call.id,  # judges pair calls with responses by id
+                        name=part.function_call.name,
+                        args=dict(part.function_call.args or {}),
+                    )
                 )
             if part.function_response:
                 data.tool_responses.append(part.function_response)

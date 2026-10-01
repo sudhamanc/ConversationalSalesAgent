@@ -1,7 +1,7 @@
 # FAQAgent
 
-`faq_agent` as a standalone A2A service (ADK 2.10, PostgreSQL-backed sessions and tasks). answers common questions about products, contracts, SLAs, installation, support and policies as a phone script.
-No tools. The orchestrator (SuperAgent gateway) routes user turns here; this agent cannot transfer.
+`faq_agent` as a standalone A2A service (ADK 2.10, PostgreSQL-backed sessions and tasks). It answers policy and support questions (contracts, installation, support, SLAs, billing, cancellation) as a phone script, grounded in the Connectivity Max FAQ corpus.
+Retrieval: the `search_faq` MCP tool of the catalog service (`CATALOG_MCP_URL`), which searches `services/catalog/data/faq_docs` (ChromaDB). The agent states only what the returned passages say and otherwise offers a specialist follow-up. The orchestrator (SuperAgent gateway) routes user turns here; this agent cannot transfer.
 
 ## Run locally
 
@@ -9,7 +9,7 @@ No tools. The orchestrator (SuperAgent gateway) routes user turns here; this age
 uv pip install -e libs/sales_common -e FAQAgent
 GEMINI_MODEL=gemini-3-flash-preview GOOGLE_API_KEY=... \
 DATABASE_URL=postgresql://csa:<password>@127.0.0.1:5432/csa \
-PUBLIC_URL=http://127.0.0.1:8210 \
+PUBLIC_URL=http://127.0.0.1:8210 CATALOG_MCP_URL=http://127.0.0.1:8101/mcp/ \
 uvicorn faq_agent.server:app --port 8210
 ```
 

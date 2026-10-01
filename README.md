@@ -157,7 +157,7 @@ The system uses **ADK session state as a shared, structured memory layer** acros
 | Gateway (`sales_journey`) | `SuperAgent/` | 8000 | Orchestrator | `adk_memories`, `revoked_sessions` | ADK Runner, router LLM, React UI |
 | `greeting_agent` | `GreetingAgent/` | 8209 | Discovery | — | Prompt only |
 | `discovery_agent` | `DiscoveryAgent/` | 8201 | Discovery | `accounts`, `contacts`, `spend`, `opportunities`, `insights`, `actions` | PostgreSQL tools |
-| `faq_agent` | `FAQAgent/` | 8210 | Discovery | — | Prompt only |
+| `faq_agent` | `FAQAgent/` | 8210 | Discovery | — | MCP → catalog service `search_faq` (FAQ corpus RAG) |
 | `serviceability_agent` | `ServiceabilityAgent/` | 8202 | Configuration | — | MCP → serviceability service (`coverage_zones`) |
 | `product_agent` | `ProductAgent/` | 8203 | Configuration | — | MCP → catalog service (`products` + ChromaDB RAG) |
 | `offer_management_agent` | `OfferManagement/` | 8204 | Configuration | `quotes` | PostgreSQL tools, price book |
@@ -741,15 +741,142 @@ python scripts/e2e_test.py --base-url http://127.0.0.1:8000  # against a running
 
 DB-backed tests are skipped when `TEST_DATABASE_URL` is unset; use a scratch database. Agent tests use a scripted model and need no API key.
 
-### Evals (golden datasets, real Gemini)
+### Evals
 
-```bash
-scripts/eval.sh                                   # agents + router + journeys
-scripts/eval.sh --only discovery,router           # selected agents and/or tiers
-venv/bin/python -m evals.review --list --pending  # golden cases awaiting review
+Golden-dataset evals run the real model and score agent behavior. See [Evals: Measuring Agent Quality](#evals-measuring-agent-quality) below.
+
+---
+
+## Evals: Measuring Agent Quality
+
+### What evals are (and why tests are not enough)
+
+The **tests** in this repo check the plumbing. They replace Gemini with a scripted model, so they prove that tools return the right JSON, A2A and MCP calls work, and the gateway streams events. They never check what the real model *decides* to do.
+
+**Evals** run the real model and grade its behavior against **golden datasets**: hand-reviewed example conversations that record what a correct answer looks like. They answer different questions:
+
+| Question | Checked by |
+|---|---|
+| Does `add_new_company` write the right row? | unit tests (scripted model) |
+| Does the gateway stream SSE events correctly? | gateway and integration tests |
+| Given "We're Acme at 10 Elm St, Boston", does the discovery agent search, then register the company, with the right arguments? | **evals** |
+| Does the FAQ agent quote only real policy, never invented ones? | **evals** |
+| Does the router send "how much for Fiber 5G?" to the pricing agent? | **evals** |
+
+Evals catch the problems tests cannot. The first eval run found eight real defects, all now fixed:
+- The router's JSON was cut off by Gemini 3 thinking tokens.
+- The FAQ agent invented policies.
+- The product agent compared itself with competitors.
+- Fulfilled orders could be cancelled.
+- Payment history returned fake data.
+- Agents did not know today's date.
+- Discovery stalled on a suite-number question.
+- The router misrouted company introductions.
+
+### Golden datasets
+
+Goldens live in `evals/golden/` in Google ADK's `EvalSet` format:
+
+```
+evals/golden/
+  agents/<agent>/<agent>.evalset.json   52 cases across all 10 agents (+ test_config.json: metrics, thresholds)
+  router/router.evalset.json            58 routing cases (input → expected agent)
+  journeys/<scenario>.evalset.json      5 multi-turn end-to-end conversations
+  MANIFEST.json                         review status per case, Scenarios.md ids, seed-data hashes
+  tool_schemas.json                     snapshot of every agent's tool parameters
 ```
 
-Golden datasets in `evals/golden/` (ADK `EvalSet` format) record the expected trajectory (agents, tool calls with arguments) and a reference response per turn; every eval scores both. Runs use an isolated `csa_eval` database reset to seed data, and need a Gemini key with billing. See [evals/README.md](evals/README.md).
+Each golden turn records three things:
+- the user message
+- the **expected trajectory**: which agent answers and which tools it calls, in order, with the arguments that matter (for example `check_service_availability(zip_code="19103")`)
+- a **reference reply**, plus **rubrics**: plain-language checks such as "It does not state any price"
+
+Cases come from [Scenarios.md](Scenarios.md) and use seed data (real customer ids, orders, ZIP codes), so expected arguments are exact.
+
+### What gets scored
+
+Every eval scores **both the trajectory (what the agent did) and the response (what it said)**:
+
+| Tier | What runs | Trajectory | Response |
+|---|---|---|---|
+| **Agents** (52 cases) | each agent in-process with ADK's `AgentEvaluator` | `golden_trajectory_v1`: expected tool calls appear in order with matching arguments | `final_response_match_v2` (LLM judge: same meaning as the reference?), rubric quality (each rubric pass/fail), `hallucinations_v1` (every claim supported by tool output?) |
+| **Router** (58 cases) | `route_intent` on the exact input the gateway builds | the chosen agent equals the golden (≥ 95% overall, 100% on explicit routing rules) | valid `RouteDecision` JSON that was not cut off (`MAX_TOKENS` fails the run) |
+| **Journeys** (5) | the full stack over HTTP: UI API → gateway → A2A agents → MCP → PostgreSQL | answering agents per turn, tool calls (read from the gateway's stored session), required UI events (quote card, cart update), no errors | the same response metrics, per turn |
+
+**LLM-as-judge.** Response metrics use a second model call (the judge, `gemini-3-flash-preview`, three samples each) to grade meaning rather than exact wording. Trajectory and routing checks are deterministic. Thresholds live in each `test_config.json`.
+
+### How a run works
+
+```mermaid
+flowchart LR
+  G[(Golden datasets<br/>reviewed)] --> E[scripts/eval.sh]
+  E --> DB[(csa_eval database<br/>reset to seed data)]
+  E --> A[Agents tier<br/>ADK AgentEvaluator]
+  E --> R[Router tier]
+  E --> J[Journeys tier<br/>full stack over HTTP]
+  A --> M[Trajectory + response metrics<br/>LLM judge where needed]
+  R --> M
+  J --> M
+  M --> OUT[evals/results/&lt;timestamp&gt;/<br/>summary, CSV, JSON]
+```
+
+1. `scripts/eval.sh` installs the eval extras if needed (`evals/requirements.txt`, i.e. `google-adk[eval]`).
+2. It creates a separate **`csa_eval`** database and resets it to seed data. Your development database is never touched, and every run starts from identical data.
+3. **Agents and router:** each golden case runs against the real model in-process. The catalog and serviceability services are reused or started for MCP tools.
+4. **Journeys:** it resets the database again, starts the whole stack on `csa_eval`, sends each conversation through `/api/session` and `/api/chat`, then reads the gateway's stored session to recover every agent's tool calls.
+5. Each case gets a trajectory score and response scores. A case passes only when every metric meets its threshold.
+6. Results go to `evals/results/<timestamp>/`: a `summary.txt` table, per-agent CSVs with every metric, expected vs actual reply and tool calls, and router and journey JSON. The script exits non-zero on any failure.
+
+### Running evals
+
+Prerequisites:
+- PostgreSQL (`scripts/db.sh up`) and the venv (`scripts/setup_local.sh`).
+- A Gemini key **with billing**. A full run is roughly 1,000–1,500 model calls including judges; the free tier (20 requests/day) cannot run it.
+
+```bash
+scripts/eval.sh                                # everything: 10 agents + router + journeys
+scripts/eval.sh --only faq,product             # selected agents
+scripts/eval.sh --only router                  # routing only (~1 minute)
+scripts/eval.sh --only journeys                # end-to-end; stop the dev stack first (scripts/stop_local.sh)
+scripts/eval.sh --only journeys:s4             # one journey
+scripts/eval.sh --runs 3                       # 3 independent runs; a case must pass all of them
+pytest evals -q                                # offline golden validation (no key, runs in normal test suites)
+```
+
+Run evals after any change to a prompt, a tool, routing or the model. Reading a failure:
+- open the agent's CSV in `evals/results/<timestamp>/run-1/`
+- compare `expected_tool_calls` with `actual_tool_calls` for trajectory failures
+- compare `expected_response` with `actual_response` for response failures
+
+### Golden lifecycle: record → review → approve
+
+Goldens are reviewed data, like code. Only **approved** cases run.
+
+1. **Author** a case: user turns, expected tool calls (only arguments that are stable from run to run; never ids or dates created during the run) and rubrics, from a `Scenarios.md` row.
+2. **Record** the reference reply from the real model:
+   ```bash
+   EVAL_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_eval \
+     venv/bin/python -m evals.record_golden --set agents/<agent>/<agent>               # fill missing replies
+   venv/bin/python -m evals.record_golden --set agents/<agent>/<agent> --rerecord --case <id>   # after a fix
+   scripts/eval.sh --only journeys:<name> --record                                     # journeys
+   ```
+   It prints the tool calls the model actually made, for comparison with the golden.
+3. **Review and approve:**
+   ```bash
+   venv/bin/python -m evals.review --list --pending
+   venv/bin/python -m evals.review --show <case key>
+   venv/bin/python -m evals.review --approve <case key> --by "Your Name"
+   ```
+   Approve only when both the trajectory and the reply are what a correct agent should do. If the agent is wrong, fix the agent (through an OpenSpec change), not the golden.
+
+Offline checks run with every `pytest`. `evals/test_golden_valid.py` fails when:
+- a golden uses an unknown tool or parameter
+- a reviewed case has no reference reply
+- seed data changed since review
+
+Replies that contain dates relative to today (installation slots, payment plans) skip the exact-reply comparison but keep their trajectory and rubric checks (`skip_metrics` in `MANIFEST.json`).
+
+More detail: [evals/README.md](evals/README.md) and the `agent-evaluation` spec in `openspec/specs/`.
 
 ---
 

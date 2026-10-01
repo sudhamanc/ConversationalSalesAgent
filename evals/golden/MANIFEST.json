@@ -22,7 +22,7 @@
       "scenario_id": "11.6",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/customer_communication_agent/customer_communication_agent/order-confirmation": {
       "scenario_id": "11.1",
@@ -68,15 +68,15 @@
     },
     "agents/faq_agent/faq_agent/contract-lengths": {
       "scenario_id": "3.3",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "agents/faq_agent/faq_agent/installation-timeline": {
       "scenario_id": "3.2",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "agents/faq_agent/faq_agent/specific-pricing-redirect": {
       "scenario_id": "3.6",
@@ -86,9 +86,9 @@
     },
     "agents/faq_agent/faq_agent/support-hours": {
       "scenario_id": "3.4",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "agents/faq_agent/faq_agent/uptime-sla": {
       "scenario_id": "3.1",
@@ -100,61 +100,61 @@
       "scenario_id": "2.2",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/greeting_agent/greeting_agent/hello": {
       "scenario_id": "2.1",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/greeting_agent/greeting_agent/never-uses-company-name": {
       "scenario_id": "2.5",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/greeting_agent/greeting_agent/pricing-in-greeting": {
       "scenario_id": "2.6",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/offer_management_agent/offer_management_agent/bundle-two-items": {
       "scenario_id": "7.2",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/offer_management_agent/offer_management_agent/default-term": {
       "scenario_id": "7.13",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/offer_management_agent/offer_management_agent/existing-quotes": {
       "scenario_id": "7.9",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/offer_management_agent/offer_management_agent/invalid-product": {
       "scenario_id": "7.11",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/offer_management_agent/offer_management_agent/quote-24-month": {
       "scenario_id": "7.8",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/order_agent/order_agent/cancel-fulfilled-order": {
       "scenario_id": "9.11",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "agents/order_agent/order_agent/cancel-pending-order": {
       "scenario_id": "9.5",
@@ -200,15 +200,19 @@
     },
     "agents/payment_agent/payment_agent/payment-history": {
       "scenario_id": "8.6",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "agents/payment_agent/payment_agent/payment-plan": {
       "scenario_id": "8.5",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30",
+      "skip_metrics": [
+        "final_response_match_v2"
+      ],
+      "skip_reason": "reply contains dates relative to today; trajectory and rubrics are scored"
     },
     "agents/product_agent/product_agent/compare-fiber": {
       "scenario_id": "6.3",
@@ -218,9 +222,9 @@
     },
     "agents/product_agent/product_agent/declines-competitors": {
       "scenario_id": "6.10",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "agents/product_agent/product_agent/declines-pricing": {
       "scenario_id": "6.9",
@@ -238,7 +242,7 @@
       "scenario_id": "6.1",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-10-01"
     },
     "agents/product_agent/product_agent/non-existent-product": {
       "scenario_id": "6.8",
@@ -262,7 +266,11 @@
       "scenario_id": "10.1",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-09-30",
+      "skip_metrics": [
+        "final_response_match_v2"
+      ],
+      "skip_reason": "reply contains dates relative to today; trajectory and rubrics are scored"
     },
     "agents/service_fulfillment_agent/service_fulfillment_agent/fulfillment-status": {
       "scenario_id": "10.5",
@@ -272,15 +280,23 @@
     },
     "agents/service_fulfillment_agent/service_fulfillment_agent/reschedule": {
       "scenario_id": "10.6",
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30",
+      "skip_metrics": [
+        "final_response_match_v2"
+      ],
+      "skip_reason": "reply contains dates relative to today; trajectory and rubrics are scored"
     },
     "agents/service_fulfillment_agent/service_fulfillment_agent/schedule-installation": {
       "scenario_id": "10.2",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-09-30",
+      "skip_metrics": [
+        "final_response_match_v2"
+      ],
+      "skip_reason": "reply contains dates relative to today; trajectory and rubrics are scored"
     },
     "agents/serviceability_agent/serviceability_agent/coax-zone": {
       "scenario_id": "5.2",
@@ -368,7 +384,11 @@
       ],
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-09-30",
+      "skip_metrics": [
+        "final_response_match_v2"
+      ],
+      "skip_reason": "reply contains dates relative to today; trajectory and rubrics are scored"
     },
     "journeys/s2-existing-company-upgrade/s2-existing-company-upgrade": {
       "scenario_id": "E2E-2",
@@ -424,9 +444,9 @@
       "turn_events": [
         []
       ],
-      "reviewed": false,
-      "reviewed_by": null,
-      "reviewed_at": null
+      "reviewed": true,
+      "reviewed_by": "Claude (delegated by sudhamanc)",
+      "reviewed_at": "2026-09-30"
     },
     "journeys/s6-multi-product-bundle/s6-multi-product-bundle": {
       "scenario_id": "E2E-6",
@@ -475,14 +495,16 @@
       "target": "discovery_agent",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-09-30",
+      "rule": 2
     },
     "router/router/disc-company-only": {
       "scenario_id": null,
       "target": "discovery_agent",
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
-      "reviewed_at": "2026-09-30"
+      "reviewed_at": "2026-09-30",
+      "rule": 2
     },
     "router/router/disc-contact-details": {
       "scenario_id": null,
@@ -578,7 +600,7 @@
     "router/router/follow-date": {
       "scenario_id": null,
       "target": "service_fulfillment_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -586,7 +608,7 @@
     "router/router/follow-no-discovery": {
       "scenario_id": null,
       "target": "discovery_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -594,7 +616,7 @@
     "router/router/follow-number": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -606,7 +628,7 @@
         "discovery_agent",
         "serviceability_agent"
       ],
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -628,7 +650,7 @@
     "router/router/ful-ok-after-order": {
       "scenario_id": null,
       "target": "service_fulfillment_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -681,7 +703,7 @@
     "router/router/offer-yes-quote": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -735,7 +757,7 @@
     "router/router/order-thats-all": {
       "scenario_id": null,
       "target": "order_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -743,7 +765,7 @@
     "router/router/pay-ach": {
       "scenario_id": null,
       "target": "payment_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -751,7 +773,7 @@
     "router/router/pay-card": {
       "scenario_id": null,
       "target": "payment_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -784,7 +806,7 @@
     "router/router/pay-ok-after-scheduling": {
       "scenario_id": null,
       "target": "payment_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -792,7 +814,7 @@
     "router/router/price-bundle-total": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -800,7 +822,7 @@
     "router/router/price-discount": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -808,7 +830,7 @@
     "router/router/price-during-discovery": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -816,7 +838,7 @@
     "router/router/price-email-quote": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -824,7 +846,7 @@
     "router/router/price-how-much": {
       "scenario_id": "1.2",
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -832,7 +854,7 @@
     "router/router/price-quote-24": {
       "scenario_id": null,
       "target": "offer_management_agent",
-      "rule": 3,
+      "rule": 4,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -893,7 +915,7 @@
     "router/router/prod-yes-after-svc": {
       "scenario_id": null,
       "target": "product_agent",
-      "rule": 4,
+      "rule": 5,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -901,7 +923,7 @@
     "router/router/svc-check": {
       "scenario_id": null,
       "target": "serviceability_agent",
-      "rule": 2,
+      "rule": 3,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -909,7 +931,7 @@
     "router/router/svc-coverage": {
       "scenario_id": null,
       "target": "serviceability_agent",
-      "rule": 2,
+      "rule": 3,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -917,7 +939,7 @@
     "router/router/svc-mid-qualification": {
       "scenario_id": null,
       "target": "serviceability_agent",
-      "rule": 2,
+      "rule": 3,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"
@@ -925,7 +947,7 @@
     "router/router/svc-speeds-at-address": {
       "scenario_id": null,
       "target": "serviceability_agent",
-      "rule": 2,
+      "rule": 3,
       "reviewed": true,
       "reviewed_by": "Claude (delegated by sudhamanc)",
       "reviewed_at": "2026-09-30"

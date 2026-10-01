@@ -52,17 +52,24 @@ def check_availability(
     Args:
         service_address: Installation address
         service_type: Type of service to be installed
-        start_date: Start date to check (ISO format), defaults to tomorrow
+        start_date: Start date to check (ISO format, tomorrow or later), defaults to tomorrow
         num_days: Number of days to check for availability
 
     Returns:
         Available time slots
     """
     logger.info("Checking availability for %s", service_address)
+    tomorrow = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
-        start = datetime.fromisoformat(start_date) if start_date else datetime.now() + timedelta(days=1)
+        start = datetime.fromisoformat(start_date) if start_date else tomorrow
     except ValueError:
         return {"success": False, "error": "start_date must be an ISO date (YYYY-MM-DD)"}
+    if start < tomorrow:
+        return {
+            "success": False,
+            "error": f"start_date {start_date} is not in the future; today is {datetime.now().date().isoformat()}. "
+            f"The earliest bookable date is {tomorrow.date().isoformat()} (omit start_date to start there).",
+        }
 
     available_slots = []
     current_date = start

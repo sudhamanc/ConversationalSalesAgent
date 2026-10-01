@@ -43,13 +43,6 @@
                 "textProperty": "It confirms Beacon Wealth Advisors was found and states its address (234 Charles Street, Baltimore, MD) from the tool result."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }

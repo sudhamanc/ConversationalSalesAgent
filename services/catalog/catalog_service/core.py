@@ -26,6 +26,7 @@ from .models import (
     CompareResult,
     Comparison,
     ComparisonTable,
+    FaqResult,
     KnowledgeResult,
     ProductDetail,
     ProductList,
@@ -395,3 +396,12 @@ def search_product_knowledge(query: str, top_k: int = DEFAULT_TOP_K) -> Knowledg
     if not isinstance(top_k, int) or not 1 <= top_k <= MAX_TOP_K:
         raise InvalidInputError(f"top_k must be between 1 and {MAX_TOP_K}")
     return rag.search(query.strip(), top_k)
+
+
+def search_faq(query: str, top_k: int = DEFAULT_TOP_K) -> FaqResult:
+    """FAQ / policy passages for the FAQ agent (see rag.search_faq)."""
+    if not query or not query.strip():
+        raise InvalidInputError("query is required")
+    if not isinstance(top_k, int) or not 1 <= top_k <= MAX_TOP_K:
+        raise InvalidInputError(f"top_k must be between 1 and {MAX_TOP_K}")
+    return rag.search_faq(query.strip(), top_k)

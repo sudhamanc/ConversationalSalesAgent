@@ -28,6 +28,7 @@ from .models import (
     CategoryList,
     CompareRequest,
     CompareResult,
+    FaqResult,
     KnowledgeResult,
     ProductDetail,
     ProductList,
@@ -84,6 +85,14 @@ def _router() -> APIRouter:
         """Top-k passages from the product documents (``available: false`` if the index is down)."""
         return core.search_product_knowledge(q, top_k).model_dump()
 
+    @api.get("/faq/search", response_model=FaqResult)
+    def faq_search(
+        q: Annotated[str, Query(min_length=1, max_length=500)],
+        top_k: Annotated[int, Query(ge=1, le=core.MAX_TOP_K)] = core.DEFAULT_TOP_K,
+    ) -> Any:
+        """Top-k passages from the FAQ / policy documents (``available: false`` if the index is down)."""
+        return core.search_faq(q, top_k).model_dump()
+
     return api
 
 
@@ -102,7 +111,8 @@ def create_app(*, rag_warmup: Optional[bool] = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         setup_logging(SERVICE_NAME)
         if warmup:
-            threading.Thread(target=rag.warm_up, name="rag-warmup", daemon=True).start()
+            # One thread, sequentially: both indexes share one embedding model.
+            threading.Thread(target=lambda: (rag.warm_up(), rag.warm_up_faq()), name="rag-warmup", daemon=True).start()
         async with mcp.session_manager.run():
             yield
         db.close_pool()
@@ -133,7 +143,8 @@ def create_app(*, rag_warmup: Optional[bool] = None) -> FastAPI:
     def healthz() -> JSONResponse:
         healthy = db.ping()
         return JSONResponse(
-            {"status": "ok" if healthy else "degraded", "service": SERVICE_NAME, "knowledge": rag.status()},
+            {"status": "ok" if healthy else "degraded", "service": SERVICE_NAME, "knowledge": rag.status(),
+             "faq": rag.faq_status()},
             status_code=200 if healthy else 503,
         )
 

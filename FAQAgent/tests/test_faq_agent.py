@@ -16,10 +16,12 @@ from faq_agent.prompts import FAQ_AGENT_INSTRUCTION
 
 def test_construction():
     assert root_agent.name == "faq_agent"
-    assert root_agent.tools == []
+    (toolset,) = root_agent.tools
+    assert toolset.tool_filter == ["search_faq"]
     assert root_agent.static_instruction == FAQ_AGENT_INSTRUCTION
     assert root_agent.instruction == JOURNEY_CONTEXT_INSTRUCTION
-    assert root_agent.generate_content_config.temperature == 0.7
+    assert root_agent.generate_content_config.temperature == 0.2
+    assert "search_faq" in FAQ_AGENT_INSTRUCTION
     assert "transfer_to_agent" not in FAQ_AGENT_INSTRUCTION
 
 

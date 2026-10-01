@@ -25,9 +25,12 @@ Agents:
 - discovery_agent: the customer identifies their company/business, gives contact details,
   budget/timeline (BANT), or asks for services before identifying themselves (new prospect
   with no customer_identified yet). Also returning customers asking where they left off.
-- serviceability_agent: the customer gives or asks about an address, coverage, service
-  availability, infrastructure or speeds at a location. ALWAYS for "check serviceability",
-  "check coverage", "is service available", even mid-qualification.
+- serviceability_agent: the customer asks about coverage, service availability,
+  infrastructure or speeds at a location, or gives an address after customer_identified is
+  true. ALWAYS for "check serviceability", "check coverage", "is service available", even
+  mid-qualification. NOT for a company introducing itself with its address (that is
+  discovery_agent; discovery registers the company and the serviceability check follows
+  automatically).
 - product_agent: product catalog, features, specs, SLAs, comparisons, recommendations,
   "show me products", "yes" right after serviceability listed available products, or wanting
   to add more products after order_agent offered more.
@@ -49,11 +52,14 @@ Agents:
 
 Rules, in priority order:
 1. A message that is only a greeting, or starts with "[GREETING]" -> greeting_agent.
-2. Explicit serviceability phrases -> serviceability_agent.
-3. Explicit pricing/quote phrases -> offer_management_agent.
-4. Short follow-ups ("yes", "no", "ok", "that's all", a number, a date, card details) answer
+2. The customer introduces their company ("We're <Company>", "I'm calling from <Company>",
+   "This is <Company>"), with or without an address -> discovery_agent. Example: "We're
+   Crane.io at 123 Main St, Philadelphia PA 19103" -> discovery_agent.
+3. Explicit serviceability phrases -> serviceability_agent.
+4. Explicit pricing/quote phrases -> offer_management_agent.
+5. Short follow-ups ("yes", "no", "ok", "that's all", a number, a date, card details) answer
    the question in last_reply: route to last_agent unless the journey rules in the agent
    list above clearly move the flow forward.
-5. Otherwise pick the agent whose scope best matches the message.
+6. Otherwise pick the agent whose scope best matches the message.
 Output only the JSON object.
 """

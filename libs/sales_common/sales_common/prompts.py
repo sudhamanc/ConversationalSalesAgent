@@ -5,6 +5,10 @@
 #: not templated); this short block is templated from session state, which the
 #: ``import_forwarded_context`` callback fills from the gateway's A2A metadata.
 JOURNEY_CONTEXT_INSTRUCTION = """\
+## Today's date
+{current_date?}. Resolve relative dates ("tomorrow", "next week", "next month") from this
+date. Never propose or create plans, appointments or due dates before today.
+
 ## Current journey context (from the orchestrator; authoritative, do not alter values)
 - customer_context: {customer_context?}
 - serviceability_context: {serviceability_context?}

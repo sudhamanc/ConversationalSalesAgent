@@ -18,7 +18,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "We are more than happy to have you as a customer! I've got your address as 456 Mountain Rd in Helena. \n\nTo make sure we have the exact location for Summit Ridge Outfitters, is there a suite, floor, or unit number we should include?"
+                "text": "Welcome! I've registered **Summit Ridge Outfitters** at **456 Mountain Rd, Helena, MT 59601**. I'll check service availability for this address now.\n\nTo help us find the best options for your store, what's driving your interest in new service—are you setting up this location for the first time, or are you looking to upgrade your current connectivity?\n\nI've checked network infrastructure for 456 Mountain Rd, Helena, MT 59601.\n\n❌ Unfortunately, this location is not serviceable: we don't currently have network infrastructure deployed at this specific address.\n\nI appreciate your interest in our services for Summit Ridge Outfitters! While we don't currently serve this location, I'd love to help explore alternatives:\n\n1. **Checking a different address** if you have other store locations or a nearby office.\n2. **Adding you to our expansion notification list** for this area so we can reach out when coverage becomes available.\n3. **Checking nearby addresses** that might already have service.\n\nWe're constantly expanding our network, and I'd be happy to keep you informed. What would work best for you?"
               }
             ],
             "role": "model"

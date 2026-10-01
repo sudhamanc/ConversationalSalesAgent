@@ -1,6 +1,6 @@
 # Claude Code Instructions
 
-**📖 READ FIRST:** [openspec/BASELINE.md](openspec/BASELINE.md): the maintained system map (every service, port, agent, tool, context key, handoff rule, command, change recipe and known issue). Start every session there instead of re-discovering the codebase; then [AGENTS.md](AGENTS.md) for standards.
+**📖 READ FIRST:** [openspec/BASELINE.md](openspec/BASELINE.md): the maintained system map (every service, port, agent, tool, context key, handoff rule, knowledge corpus, command and change recipe; it describes the system as it is, never a bug list). Start every session there instead of re-discovering the codebase; then [AGENTS.md](AGENTS.md) for standards.
 
 All system architecture, agent development patterns, and technical guidelines are documented in AGENTS.md.
 
@@ -37,7 +37,7 @@ All system architecture, agent development patterns, and technical guidelines ar
 1. Create `openspec/changes/<change-name>/` with `proposal.md` (Why, What Changes, Capabilities, Non-goals, Impact), `design.md`, `specs/<capability>/spec.md` (delta: ADDED/MODIFIED/REMOVED requirements with scenarios) and `tasks.md`. Use `/opsx:propose` (or the `openspec-propose` skill); project rules are in [openspec/config.yaml](openspec/config.yaml).
 2. Validate: `openspec validate <change-name>` must pass.
 3. Implement against `tasks.md` (`/opsx:apply`), ticking each task only with its verification (test, command or observable behavior).
-4. Update [openspec/BASELINE.md](openspec/BASELINE.md) in the same change whenever a service, port, tool, context key, handoff rule, command or known issue changes (`pytest tests/test_baseline_doc.py` checks services, ports and tools).
+4. Update [openspec/BASELINE.md](openspec/BASELINE.md) in the same change whenever a service, port, tool, context key, handoff rule, knowledge corpus or command changes. Defects are fixed through OpenSpec changes, not recorded in the baseline (`pytest tests/test_baseline_doc.py` checks services, ports and tools).
 5. Commit the OpenSpec change together with the code it describes; archive it (`openspec archive <name> -y`) once complete so `openspec/specs/` stays the source of truth.
 
 ---

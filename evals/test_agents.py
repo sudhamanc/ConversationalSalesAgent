@@ -14,7 +14,16 @@ from __future__ import annotations
 import pytest
 from google.adk.evaluation.agent_evaluator import AgentEvaluator
 
-from evals.golden_io import AGENT_PACKAGES, agent_set_path, judge_overrides, load_config, load_manifest, load_set, reviewed_only
+from evals.golden_io import (
+    AGENT_PACKAGES,
+    agent_set_path,
+    case_meta,
+    judge_overrides,
+    load_config,
+    load_manifest,
+    load_set,
+    reviewed_only,
+)
 
 pytestmark = [pytest.mark.eval, pytest.mark.asyncio]
 
@@ -28,11 +37,29 @@ async def test_agent_golden_set(agent, results_dir):
     if not eval_set.eval_cases:
         pytest.skip(f"{agent}: no reviewed golden cases ({len(pending)} pending review)")
 
-    await AgentEvaluator.evaluate_eval_set(
-        agent_module=AGENT_PACKAGES[agent],
-        eval_set=eval_set,
-        eval_config=load_config(path, **judge_overrides()),
-        num_runs=1,  # repetitions are separate eval.sh runs, each on a freshly reset database
-        print_detailed_results=True,
-        output_file=str(results_dir / f"agent-{agent}.csv"),
-    )
+    # Cases whose reference reply depends on today's date skip final_response_match_v2
+    # (MANIFEST "skip_metrics"); their trajectory and rubrics are still scored.
+    manifest = load_manifest()
+    config = load_config(path, **judge_overrides())
+    groups: dict[tuple[str, ...], list] = {}
+    for case in eval_set.eval_cases:
+        skip = tuple(sorted(case_meta(manifest, eval_set.eval_set_id, case.eval_id).get("skip_metrics", [])))
+        groups.setdefault(skip, []).append(case)
+    failures = []
+    for skip, cases in groups.items():
+        group_config = config.model_copy(
+            update={"criteria": {k: v for k, v in config.criteria.items() if k not in skip}}
+        )
+        suffix = "" if not skip else "-skip-" + "-".join(skip)
+        try:
+            await AgentEvaluator.evaluate_eval_set(
+                agent_module=AGENT_PACKAGES[agent],
+                eval_set=eval_set.model_copy(update={"eval_cases": cases}),
+                eval_config=group_config,
+                num_runs=1,  # repetitions are separate eval.sh runs, each on a freshly reset database
+                print_detailed_results=True,
+                output_file=str(results_dir / f"agent-{agent}{suffix}.csv"),
+            )
+        except AssertionError as exc:
+            failures.append(str(exc))
+    assert not failures, "\n\n".join(failures)

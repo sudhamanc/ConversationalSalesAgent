@@ -56,13 +56,6 @@
                 "textProperty": "It reports the Baltimore address as serviceable with fiber."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r3",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         },
@@ -109,13 +102,6 @@
               "rubricId": "r2",
               "rubricContent": {
                 "textProperty": "It presents a 36-month quote for the fastest available fiber (Business Fiber 5 Gbps) with an OFF- id and the term discount."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r3",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }

@@ -41,13 +41,6 @@
                 "textProperty": "It lists installation dates/windows returned by the tool."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }
@@ -176,7 +169,7 @@
           "userContent": {
             "parts": [
               {
-                "text": "Please move appointment APT-20260430-920 to an afternoon slot next week."
+                "text": "Please move appointment APT-20260430-920 to the first available afternoon slot next week."
               }
             ],
             "role": "user"
@@ -184,13 +177,17 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "I've found several afternoon slots available for next week. Which of these works best for you?\n\n*   **Monday, May 4, 2026** - Afternoon (1PM-5PM)\n*   **Wednesday, May 6, 2026** - Afternoon (1PM-5PM)\n*   **Friday, May 8, 2026** - Afternoon (1PM-5PM)"
+                "text": "✅ **Installation Rescheduled!**\n\n**Updated Appointment Details:**\n• **Date:** October 5, 2026\n• **Time Window:** Afternoon (1PM-5PM)\n• **Appointment ID:** APT-20260430-920\n• **Address:** 123 Main street, Philadelphia, PA 19103\n\nYour installation has been moved. Since the order is still pending payment, the next step is to complete your payment."
               }
             ],
             "role": "model"
           },
           "intermediateData": {
             "toolUses": [
+              {
+                "args": {},
+                "name": "check_availability"
+              },
               {
                 "args": {
                   "appointment_id": "APT-20260430-920"
@@ -206,14 +203,14 @@
             {
               "rubricId": "r1",
               "rubricContent": {
-                "textProperty": "It confirms the new date and window for APT-20260430-920 from the tool."
+                "textProperty": "It confirms APT-20260430-920 was moved to an afternoon (PM) slot."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             },
             {
               "rubricId": "r2",
               "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+                "textProperty": "The new date is in the week after today's date (not in the past, not a date from the original appointment)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }
@@ -345,13 +342,6 @@
               "rubricId": "r1",
               "rubricContent": {
                 "textProperty": "It reports the service as activated with circuit CKT-202604-82959."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }

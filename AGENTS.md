@@ -7,7 +7,7 @@
 **BEFORE making ANY changes (config, code, structure), you MUST:**
 
 1. **Read the documentation first** - in this order:
-   - [openspec/BASELINE.md](openspec/BASELINE.md) (system map: services, ports, agents, tools, context keys, handoffs, commands, known issues)
+   - [openspec/BASELINE.md](openspec/BASELINE.md) (system map: services, ports, agents, tools, context keys, handoffs, knowledge corpora, commands)
    - [CLAUDE.md](CLAUDE.md)
    - This file (AGENTS.md)
    - Component-specific docs (e.g., `DiscoveryAgent/AGENTS.md`, `services/catalog/README.md`)
@@ -42,8 +42,9 @@ Behavioral specs live in `openspec/specs/<capability>/spec.md`; design history a
 | `catalog-serviceability-mcp` | Implemented | Catalog and serviceability as REST + MCP services |
 | `multi-service-scripts` | Implemented | `scripts/`, `docker-compose.yml`, per-service Dockerfiles, Cloud Run deployment |
 | `local-dev-reliability` | Implemented | `scripts/db.sh up`/`down` (Docker, Homebrew fallback), start preflight, router thinking budget, single root `.env` |
-| `agent-eval-suite` | Implemented (106/115 goldens reviewed; 9 pending on agent fixes) | Golden datasets + eval runners scoring trajectory and response for agents, router and journeys (`evals/`, `scripts/eval.sh`) |
+| `agent-eval-suite` | Implemented (115/115 goldens reviewed) | Golden datasets + eval runners scoring trajectory and response for agents, router and journeys (`evals/`, `scripts/eval.sh`) |
 | `project-baseline` | Implemented | `openspec/BASELINE.md` system map + `tests/test_baseline_doc.py` drift check; all implemented changes archived into `openspec/specs/` |
+| `fix-eval-defects` | Implemented | FAQ RAG (`search_faq` over `services/catalog/data/faq_docs`), competitor refusal, cancellation guard, real payment history, current date for all agents, discovery registration, company-introduction routing, catalog embedding crash fix, model request timeout |
 | `mcp-remaining-domains` | **Planned (not implemented)** | REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications |
 
 ---

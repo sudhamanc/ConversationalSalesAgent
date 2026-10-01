@@ -426,14 +426,21 @@ def generate_contract(order_id: str) -> Dict[str, Any]:
         }))
 
 
+#: Statuses after which an order can no longer be cancelled (service delivered or already cancelled).
+NON_CANCELLABLE_STATUSES = {"fulfilled", "activated", "installed", "completed", "cancelled"}
+
+
 def cancel_order(order_id: str, reason: str = None) -> Dict[str, Any]:
     """
-    Cancel an order.
-    
+    Cancel an order that has not been fulfilled yet.
+
+    Orders that are fulfilled, activated, installed, completed or already
+    cancelled are refused (``success: false`` with the current ``status``).
+
     Args:
         order_id: Order identifier
-        reason: Cancellation reason
-    
+        reason: Cancellation reason (optional; pass it only if the customer gave one)
+
     Returns:
         Cancellation result as JSON
     """
@@ -447,6 +454,17 @@ def cancel_order(order_id: str, reason: str = None) -> Dict[str, Any]:
                 "error": f"Order {order_id} not found"
             }))
         
+        status = str(order_dict.get("status") or "").lower()
+        if status in NON_CANCELLABLE_STATUSES:
+            message = (
+                f"Order {order_id} is already cancelled."
+                if status == "cancelled"
+                else f"Order {order_id} is {status}: service has already been delivered, so the order "
+                "cannot be cancelled. Ending an active service is handled as a contract termination."
+            )
+            return {"success": False, "order_id": order_id, "status": status, "cancellable": False,
+                    "error": message}
+
         now = db.now_iso()
         update_order_field(order_id, status=OrderStatus.CANCELLED, updated_at=now)
         

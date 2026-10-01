@@ -46,13 +46,6 @@
                 "textProperty": "It reports the credit decision and score from the tool."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }
@@ -258,7 +251,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "Yes, we can certainly set that up for you. I've created a payment plan for the **$1,200.00** total, split into **4 monthly installments of $300.00 each**.\n\nHere is your schedule:\n*   **Installment 1:** $300.00 due on May 20, 2025\n*   **Installment 2:** $300.00 due on June 19, 2025\n*   **Installment 3:** $300.00 due on July 19, 2025\n*   **Installment 4:** $300.00 due on August 18, 2025\n\nTo finalize this plan and process your first installment, I'll need your payment details. Would you like to use a **Credit Card** or **ACH/Bank Transfer**?"
+                "text": "Yes, I can certainly set that up for you. I've created a payment plan for the $1,200.00 total:\n\n**Payment Plan Summary:**\n- **Total Amount:** $1,200.00\n- **Installment Amount:** $300.00\n- **Number of Installments:** 4\n- **Frequency:** Monthly\n- **First Payment Due:** October 30, 2026\n\nTo finalize this and start your plan, I'll need to set up your payment method. Would you like to use a credit card or a bank account (ACH) for these installments?"
               }
             ],
             "role": "model"
@@ -281,14 +274,14 @@
             {
               "rubricId": "r1",
               "rubricContent": {
-                "textProperty": "It describes the installment schedule returned by the tool."
+                "textProperty": "It describes 4 installments of $300 from the tool's schedule."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             },
             {
               "rubricId": "r2",
               "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
+                "textProperty": "The first installment is due after today's date (no installment dates in the past)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }
@@ -319,7 +312,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "I've retrieved the payment history for customer **CUST-20260427-152**. Here are the most recent transactions:\n\n**Summary:**\n*   **Total Transactions:** 5\n*   **Total Amount Paid:** $3,000.00\n\n**Transaction Details:**\n1.  **Date:** 2026-09-30 | **Amount:** $500.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 1\n    *   *Method:* Credit Card (****1234)\n2.  **Date:** 2026-08-31 | **Amount:** $550.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 2\n    *   *Method:* Credit Card (****1234)\n3.  **Date:** 2026-08-01 | **Amount:** $600.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 3\n    *   *Method:* Credit Card (****1234)\n4.  **Date:** 2026-07-02 | **Amount:** $650.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 4\n    *   *Method:* Credit Card (****1234)\n5.  **Date:** 2026-06-02 | **Amount:** $700.00 | **Status:** Approved\n    *   *Description:* Monthly service payment - Month 5\n    *   *Method:* Credit Card (****1234)\n\nIs there anything else regarding these payments I can help you with?"
+                "text": "I've retrieved the payment history for customer **CUST-20260427-152**. There is one completed transaction on record:\n\n**Transaction Details:**\n*   **Date:** April 27, 2026\n*   **Amount:** $495.97 USD\n*   **Status:** Completed\n*   **Payment Method:** ACH bank transfer (ending in 7890)\n*   **Order ID:** ORD-20260427-518\n*   **Transaction ID:** TXN-7890-495\n\n**Summary:**\n*   **Total Completed Payments:** 1\n*   **Total Amount Paid:** $495.97"
               }
             ],
             "role": "model"
@@ -342,13 +335,6 @@
               "rubricId": "r1",
               "rubricContent": {
                 "textProperty": "It lists the payment for order ORD-20260427-518 ($495.97) from the tool."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }

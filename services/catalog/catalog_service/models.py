@@ -153,6 +153,22 @@ class KnowledgeResult(BaseModel):
     message: Optional[str] = None
 
 
+class FaqPassage(BaseModel):
+    text: str
+    topic: str
+    section: str
+    doc_file: str
+    distance: Optional[float] = None
+
+
+class FaqResult(BaseModel):
+    available: bool
+    query: str
+    passages: list[FaqPassage] = Field(default_factory=list)
+    count: int = 0
+    message: Optional[str] = None
+
+
 class ErrorBody(BaseModel):
     error: str
     detail: Any = None

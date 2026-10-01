@@ -2,8 +2,9 @@
 # Run the golden-dataset eval suite (agents, router, journeys) against real Gemini.
 #
 # Usage: scripts/eval.sh [--only LIST] [--runs N] [--record]
-#   --only    comma list of tiers (agents, router, journeys) and/or agent names
-#             (discovery, discovery_agent, ...). Default: agents,router,journeys
+#   --only    comma list of tiers (agents, router, journeys), agent names
+#             (discovery, discovery_agent, ...) and/or journeys:<name> (e.g. journeys:s4).
+#             Default: agents,router,journeys
 #   --runs N  repeat everything N times, resetting the eval database before each
 #             run; a case passes only if it passes in every run (default 1)
 #   --record  journeys only: write the streamed replies into the goldens as drafts
@@ -42,7 +43,7 @@ case "$RUNS" in ''|*[!0-9]*|0) die "--runs must be a positive integer" ;; esac
 # ---------------------------------------------------------------------------
 # Selection: tiers and agent filter
 # ---------------------------------------------------------------------------
-RUN_AGENTS=0; RUN_ROUTER=0; RUN_JOURNEYS=0; AGENT_FILTER=()
+RUN_AGENTS=0; RUN_ROUTER=0; RUN_JOURNEYS=0; AGENT_FILTER=(); JOURNEY_FILTER=()
 IFS=',' read -r -a ITEMS <<<"$ONLY"
 for item in "${ITEMS[@]}"; do
   item="$(printf '%s' "$item" | tr -d '[:space:]')"
@@ -51,6 +52,7 @@ for item in "${ITEMS[@]}"; do
     agents) RUN_AGENTS=1 ;;
     router) RUN_ROUTER=1 ;;
     journeys) RUN_JOURNEYS=1 ;;
+    journeys:*) RUN_JOURNEYS=1; JOURNEY_FILTER+=("${item#journeys:}") ;;
     *) RUN_AGENTS=1; AGENT_FILTER+=("${item%_agent}") ;;
   esac
 done
@@ -113,7 +115,8 @@ cleanup() {
   if [ "$STARTED_STACK" = "1" ]; then "$SCRIPTS_DIR/stop_local.sh" || true; fi
   if [ "$STARTED_TOOLS" = "1" ]; then "$SCRIPTS_DIR/stop_local.sh" --only catalog,serviceability || true; fi
 }
-trap cleanup EXIT
+# Keep the script's exit status: a failure must not be reported as success by the trap.
+trap 'rc=$?; cleanup; exit $rc' EXIT
 
 ensure_tool_services() {
   if http_ok http://127.0.0.1:8101/healthz && http_ok http://127.0.0.1:8102/healthz; then
@@ -154,7 +157,7 @@ for run_no in $(seq 1 "$RUNS"); do
       kexpr=(-k "${expr# or }")
     fi
     section "Run $run_no: agents/router"
-    pytest_run "$RUN_DIR" agents-router "${targets[@]}" "${kexpr[@]}" || FAILED=1
+    pytest_run "$RUN_DIR" agents-router "${targets[@]}" ${kexpr[@]+"${kexpr[@]}"} || FAILED=1
     if [ "$STARTED_TOOLS" = "1" ]; then
       "$SCRIPTS_DIR/stop_local.sh" --only catalog,serviceability || true
       STARTED_TOOLS=0
@@ -164,10 +167,19 @@ for run_no in $(seq 1 "$RUNS"); do
   if [ "$RUN_JOURNEYS" = "1" ]; then
     section "Run $run_no: journeys"
     port_in_use 8000 && die "port 8000 is in use: stop the dev stack (scripts/stop_local.sh) before journey evals"
+    if [ "$RUN_AGENTS" = "1" ] || [ "$RUN_ROUTER" = "1" ]; then
+      log_info "resetting the eval database so agent cases do not leak into journeys"
+      DATABASE_URL="$EVAL_DATABASE_URL" "$SCRIPTS_DIR/db.sh" reset --yes
+    fi
     DATABASE_URL="$EVAL_DATABASE_URL" DEBUG=true "$SCRIPTS_DIR/start_local.sh" --no-ui --skip-migrate
     STARTED_STACK=1
+    jexpr=()
+    if [ "${#JOURNEY_FILTER[@]}" -gt 0 ]; then
+      jx="$(printf ' or %s' "${JOURNEY_FILTER[@]}")"
+      jexpr=(-k "${jx# or }")
+    fi
     EVAL_RECORD="$( [ "$RECORD" = "1" ] && echo 1 || echo 0 )" pytest_run "$RUN_DIR" journeys \
-      "$REPO_ROOT/evals/test_journeys.py" || FAILED=1
+      "$REPO_ROOT/evals/test_journeys.py" ${jexpr[@]+"${jexpr[@]}"} || FAILED=1
     "$SCRIPTS_DIR/stop_local.sh" || true
     STARTED_STACK=0
   fi

@@ -233,9 +233,12 @@ services:
       <<: *db-env
       PORT: "8210"
       PUBLIC_URL: http://faq:8210
+      CATALOG_MCP_URL: http://catalog:8101/mcp/
     depends_on:
       db-init:
         condition: service_completed_successfully
+      catalog:
+        condition: service_healthy
 
   gateway:
     <<: *app

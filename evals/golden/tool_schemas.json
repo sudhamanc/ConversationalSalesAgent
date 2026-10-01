@@ -1,6 +1,15 @@
 {
   "greeting_agent": {},
-  "faq_agent": {},
+  "faq_agent": {
+    "search_faq": {
+      "query": {
+        "required": true
+      },
+      "top_k": {
+        "required": false
+      }
+    }
+  },
   "discovery_agent": {
     "add_new_company": {
       "company_name": {

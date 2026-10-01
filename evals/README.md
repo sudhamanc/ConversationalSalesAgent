@@ -39,6 +39,7 @@ scripts/eval.sh                                   # agents + router + journeys
 scripts/eval.sh --only discovery,serviceability   # selected agents
 scripts/eval.sh --only router
 scripts/eval.sh --only journeys                   # stop the dev stack first (scripts/stop_local.sh)
+scripts/eval.sh --only journeys:s4 --record       # one journey (name substring)
 scripts/eval.sh --runs 3                          # 3 independent runs; a case must pass in all
 ```
 
@@ -85,8 +86,19 @@ Thresholds start lenient. Record the first full run here, then tighten `test_con
 | Date | Model | Agents | Router | Journeys |
 |---|---|---|---|---|
 | 2026-09-30 | gemini-3-flash-preview (judge: same) | serviceability 6/6, all metrics 1.0 (other agents not yet scored) | 57/58 (98.3%), rule cases 100% | recorded and reviewed; scored run pending |
+| 2026-10-01 (after `fix-eval-defects`) | gemini-3-flash-preview (judge: same) | customer_communication 4/4, discovery 6/6, faq 5/5 pass every metric; greeting 4/4 trajectory (judges stopped by Gemini 402); other 6 agents not scored (402) | 58/58 (100%), rule cases 100% | trajectories correct for all 15 turns of s1–s4 (s6 not run); response scores pending a run with credits |
 
-Review status: 106 of 115 goldens approved; 9 pending because of agent defects listed in `openspec/changes/archive/*agent-eval-suite/tasks.md` (Follow-ups). `python -m evals.review --list --pending` shows them.
+The 2026-10-01 full run stopped when the Gemini project's prepaid credits ran out (402). Re-run `scripts/eval.sh` with credits to complete the baseline.
+
+Review status: all 115 goldens approved (2026-10-01).
+
+## Writing good goldens
+
+- **Independent cases.** A case must not depend on data another case writes in the same run: cases that create data use their own seeded customer (the offer cases use five different customers), and the eval database is reset before the journey tier.
+- **Rubrics a judge can check.** The rubric judge sees the user prompt and the reply, not tool outputs. Write rubrics about what the reply does ("It does not state any price", "It asks for the ZIP code"); grounding in tool data is `hallucinations_v1`'s job.
+- **Dates.** When the correct reply contains dates relative to today (installation slots, payment plans), add `"skip_metrics": ["final_response_match_v2"]` and a `skip_reason` to the case in MANIFEST.json; trajectory and rubrics are still scored.
+- **Stable arguments only** in expected tool calls (seed ids, ZIPs, product ids, amounts), never ids or dates created during the run.
+- **After an agent fix**, re-record only the affected replies (`record_golden --rerecord --case <id>`, `eval.sh --only journeys:<name> --record`), review, approve.
 
 ## Troubleshooting
 

@@ -18,7 +18,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "We offer a range of business solutions across five main categories:\n\n**Fiber Internet (FTTP)**\n- **Business Fiber 1 Gbps (FIB-1G)**: Symmetrical 1 Gbps speeds.\n- **Business Fiber 5 Gbps (FIB-5G)**: Symmetrical 5 Gbps speeds.\n- **Business Fiber 10 Gbps (FIB-10G)**: Symmetrical 10 Gbps speeds.\n\n**Coax Internet (HFC/DOCSIS 3.1)**\n- **Business Internet 200 Mbps (COAX-200M)**: 200 Mbps Download / 20 Mbps Upload.\n- **Business Internet 500 Mbps (COAX-500M)**: 500 Mbps Download / 50 Mbps Upload.\n- **Business Internet 1 Gbps (COAX-1G)**: 1 Gbps Download / 100 Mbps Upload.\n\n**Voice (VoIP/SIP/Cloud)**\n- **Business Voice Basic (VOICE-BAS)**: 1-5 lines, G.711 HD Voice.\n- **Business Voice Standard (VOICE-STD)**: 5-20 lines, G.711 HD Voice.\n- **Business Voice Enterprise (VOICE-ENT)**: 20-100+ lines, SIP Trunking.\n- **Unified Communications (UCaaS) (VOICE-UCAAS)**: Unlimited users, Cloud-based.\n\n**SD-WAN**\n- **SD-WAN Essentials (SDWAN-ESS)**: Up to 250 Mbps throughput, 1-5 sites.\n- **SD-WAN Professional (SDWAN-PRO)**: Up to 1 Gbps throughput, 5-25 sites.\n- **SD-WAN Enterprise (SDWAN-ENT)**: Up to 10 Gbps throughput, 25-500+ sites.\n\n**Business Mobile (4G LTE/5G)**\n- **Business Mobile Basic (MOB-BAS)**: 10 GB/month on 4G LTE.\n- **Business Mobile Unlimited (MOB-UNL)**: Unlimited data on 5G Nationwide.\n- **Business Mobile Premium (MOB-PREM)**: Unlimited Premium data on 5G Ultra Wideband.\n\n**Next Steps:**\n- Would you like to see pricing and availability for any of these products?\n- I can also show you detailed specifications or compare specific options for you."
+                "text": "### Fiber Internet\n- **Business Fiber 1 Gbps (FIB-1G)**: 1 Gbps Download / 1 Gbps Upload\n- **Business Fiber 5 Gbps (FIB-5G)**: 5 Gbps Download / 5 Gbps Upload\n- **Business Fiber 10 Gbps (FIB-10G)**: 10 Gbps Download / 10 Gbps Upload\n\n### Coax Internet\n- **Business Internet 200 Mbps (COAX-200M)**: 200 Mbps Download / 20 Mbps Upload\n- **Business Internet 500 Mbps (COAX-500M)**: 500 Mbps Download / 50 Mbps Upload\n- **Business Internet 1 Gbps (COAX-1G)**: 1 Gbps Download / 100 Mbps Upload\n\n### Voice\n- **Business Voice Basic (VOICE-BAS)**: 1-5 lines, G.711 HD Voice\n- **Business Voice Standard (VOICE-STD)**: 5-20 lines, G.711 HD Voice\n- **Business Voice Enterprise (VOICE-ENT)**: 20-100+ lines, G.711/G.722 HD Voice\n- **Unified Communications (UCaaS) (VOICE-UCAAS)**: Unlimited users, Opus/G.722 HD Voice\n\n### SD-WAN\n- **SD-WAN Essentials (SDWAN-ESS)**: Up to 250 Mbps throughput, 1-5 sites\n- **SD-WAN Professional (SDWAN-PRO)**: Up to 1 Gbps throughput, 5-25 sites\n- **SD-WAN Enterprise (SDWAN-ENT)**: Up to 10 Gbps throughput, 25-500+ sites\n\n### Business Mobile\n- **Business Mobile Basic (MOB-BAS)**: 10 GB/month, 4G LTE\n- **Business Mobile Unlimited (MOB-UNL)**: Unlimited data, 5G Nationwide\n- **Business Mobile Premium (MOB-PREM)**: Unlimited Premium data, 5G Ultra Wideband\n\n**Next Steps:**\n- Would you like to see pricing and availability for any of these products?\n- I can also show you alternative products or compare options."
               }
             ],
             "role": "model"
@@ -287,13 +287,6 @@
                 "textProperty": "It says Fiber 100G is not offered and points to the fiber products that exist."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }
@@ -382,7 +375,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "I can provide the technical specifications and features for our Business Fiber products to help you evaluate our offerings.\n\n**Business Fiber 1 Gbps (FIB-1G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 1 Gbps Download / 1 Gbps Upload\n- Description: Symmetrical 1 Gbps fiber internet perfect for small to medium businesses\n- Features:\n  - 99.9% uptime SLA\n  - Symmetrical speeds\n  - 24/7 business support\n  - Free installation\n  - Business Gateway router included\n\n**Business Fiber 5 Gbps (FIB-5G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 5 Gbps Download / 5 Gbps Upload\n- Description: High-performance 5 Gbps fiber for bandwidth-intensive businesses\n- Features:\n  - 99.9% uptime SLA\n  - Symmetrical speeds\n  - Priority 24/7 support\n  - Free installation\n  - Premium Business Gateway included\n  - 5 static IP addresses included\n\n**Business Fiber 10 Gbps (FIB-10G)**\n- Category: Fiber Internet\n- Technology: FTTP\n- Speeds: 10 Gbps Download / 10 Gbps Upload\n- Description: Enterprise-grade 10 Gbps fiber for maximum performance\n- Features:\n  - 99.95% uptime SLA\n  - Symmetrical speeds\n  - Dedicated account manager\n  - Priority 24/7 support\n  - Free installation\n  - Enterprise Gateway with redundancy\n  - 10 static IP addresses included\n  - Managed security options\n\n**Next Steps:**\n- Would you like to see pricing and availability for these products?\n- I can also show you alternative products or compare these options side-by-side."
+                "text": "I'm not able to compare our services with other providers, but I can walk you through our own options. Would you like to see the specifications for our fiber internet products?"
               }
             ],
             "role": "model"

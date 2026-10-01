@@ -155,4 +155,4 @@ def test_mcp_accepts_non_localhost_host_header(client):
     )
     assert resp.status_code == 200, resp.text
     names = {t["name"] for t in resp.json()["result"]["tools"]}
-    assert len(names) == 8 and "search_product_knowledge" in names
+    assert len(names) == 9 and {"search_product_knowledge", "search_faq"} <= set(names)

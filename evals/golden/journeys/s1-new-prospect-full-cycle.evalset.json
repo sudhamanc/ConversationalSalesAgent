@@ -100,13 +100,6 @@
                 "textProperty": "In the same turn it reports the address as serviceable with fiber."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r3",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         },
@@ -194,13 +187,6 @@
               "rubricId": "r1",
               "rubricContent": {
                 "textProperty": "It presents a quote with an OFF- id and the 24-month monthly total."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }

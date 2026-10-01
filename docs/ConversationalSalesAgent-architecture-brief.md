@@ -265,8 +265,8 @@ graph TD
 - Every agent attaches `before_agent_callback=import_forwarded_context`, which copies the forwarded journey keys, `journey_transcript` and `user_profile` into its own session state. It also attaches `after_tool_callback=export_context_delta`, which appends `_context_update` to tool results that changed a journey key.
 - **Tool placement:**
   - Six agents run deterministic tools in-process against PostgreSQL through `sales_common.db` (psycopg pool): discovery, offer management, order, payment, service fulfillment, and customer communication.
-  - `serviceability_agent` and `product_agent` hold no tools. They consume the tool services through `McpToolset` (streamable HTTP, 15 s timeout, 300 s tool-list cache).
-  - `greeting_agent` and `faq_agent` are prompt-only.
+  - `serviceability_agent`, `product_agent` and `faq_agent` hold no in-process tools. They consume the tool services through `McpToolset` (streamable HTTP, 15 s timeout, 300 s tool-list cache); `faq_agent` uses only the catalog service's `search_faq` (RAG over the FAQ corpus in `services/catalog/data/faq_docs`).
+  - `greeting_agent` is prompt-only.
 - `customer_communication_agent` also runs the outbox dispatcher in its lifespan. Every `NOTIFY_POLL_SECONDS` (default 10) it claims `notifications` rows with `status='pending'` using `FOR UPDATE SKIP LOCKED`, de-duplicates them via `dedup_cache`, and sends email by SMTP or simulates delivery.
 
 **REST + MCP tool services (private `csa-catalog`, `csa-serviceability`)**

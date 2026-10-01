@@ -185,8 +185,9 @@ async def test_journey(path, results_dir):
                 failures.append(f"{where}: error events {row['errors']}")
 
         # Response: ADK metrics per turn against the golden reply
+        skip = {"golden_trajectory_v1", *meta.get("skip_metrics", [])}
         results = await _score_response_metrics(
-            config.model_copy(update={"criteria": {k: v for k, v in config.criteria.items() if k != "golden_trajectory_v1"}}),
+            config.model_copy(update={"criteria": {k: v for k, v in config.criteria.items() if k not in skip}}),
             actual,
             golden_turns,
         )

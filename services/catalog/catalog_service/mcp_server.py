@@ -1,4 +1,4 @@
-"""MCP server exposing the catalog as the 8 legacy product-agent tools.
+"""MCP server exposing the catalog as the 8 product-agent tools plus search_faq (FAQ agent).
 
 Tools are thin wrappers over :mod:`catalog_service.core`; every result is a
 JSON object (``structuredContent``). Input errors and unknown products are
@@ -25,7 +25,10 @@ TOOL_NAMES = (
     "suggest_alternatives",
     "get_best_value_product",
     "search_product_knowledge",
+    "search_faq",
 )
+#: Tools the product agent uses (everything except the FAQ agent's search_faq).
+PRODUCT_TOOL_NAMES = TOOL_NAMES[:-1]
 
 
 async def _call(fn: Callable[..., Any], *args: Any) -> dict[str, Any]:
@@ -191,6 +194,31 @@ def build_mcp() -> MCPServer:
         """
         try:
             return await _call(core.search_product_knowledge, query, top_k)
+        except InvalidInputError as exc:
+            return {"available": True, "success": False, "error": str(exc), "passages": [], "count": 0}
+
+    @mcp.tool()
+    async def search_faq(query: str, top_k: int = core.DEFAULT_TOP_K) -> dict[str, Any]:
+        """Search Connectivity Max's FAQ and policy documents: contract terms, renewals,
+        quote validity, installation process and windows, support hours and channels,
+        SLA and service credits, payment methods and payment plans, cancellation,
+        early termination and order changes.
+
+        These passages are the only approved source for policy answers. Answer only
+        with facts they contain; if no passage answers the question, say a specialist
+        will follow up.
+
+        Args:
+            query: The customer's question in natural language.
+            top_k: Number of passages to return (1-10, default 4).
+
+        Returns:
+            dict with ``available``, ``passages`` (text, topic, section, doc_file,
+            distance) and ``count``. ``available: false`` means the FAQ index is not
+            reachable.
+        """
+        try:
+            return await _call(core.search_faq, query, top_k)
         except InvalidInputError as exc:
             return {"available": True, "success": False, "error": str(exc), "passages": [], "count": 0}
 

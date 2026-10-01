@@ -1,4 +1,4 @@
-"""Build the product-knowledge ChromaDB index from ``data/product_docs``.
+"""Build the ChromaDB indexes: product knowledge (``data/product_docs``) and FAQ (``data/faq_docs``).
 
 Run at image build time (see Dockerfile) or whenever the docs change::
 
@@ -35,6 +35,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Index build failed: {exc}", file=sys.stderr)
         return 1
     print(f"Ingestion complete. Total chunks in store: {index.count()}")
+    try:
+        faq = rag.build_faq_index(path=path)
+    except rag.RagUnavailable as exc:
+        print(f"FAQ index build failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"FAQ ingestion complete. Total FAQ chunks: {faq.count()}")
     return 0
 
 

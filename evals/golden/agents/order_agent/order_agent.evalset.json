@@ -119,13 +119,6 @@
                 "textProperty": "It reports the order status pending_payment from the tool."
               },
               "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
             }
           ]
         }
@@ -177,13 +170,6 @@
               "rubricId": "r1",
               "rubricContent": {
                 "textProperty": "It summarizes the contract for ORD-20260427-222 from the tool result."
-              },
-              "type": "FINAL_RESPONSE_QUALITY"
-            },
-            {
-              "rubricId": "r2",
-              "rubricContent": {
-                "textProperty": "Every company, address, product, price, id or date it states appears in a tool result (nothing invented)."
               },
               "type": "FINAL_RESPONSE_QUALITY"
             }
@@ -267,7 +253,7 @@
           "finalResponse": {
             "parts": [
               {
-                "text": "I can certainly help you with that. Could you please provide the reason for cancelling order **ORD-20260427-065**?"
+                "text": "Order ORD-20260427-065 is fulfilled: service has already been delivered, so the order cannot be cancelled. Ending an active service is handled as a contract termination."
               }
             ],
             "role": "model"

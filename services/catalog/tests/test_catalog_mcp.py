@@ -54,7 +54,7 @@ def test_tools_list(mcp_url):
 
     tools = asyncio.run(run())
     assert set(tools) == set(TOOL_NAMES)
-    assert len(tools) == 8
+    assert len(tools) == 9
     for tool in tools.values():
         decl = tool._get_declaration()
         assert decl.description

@@ -26,7 +26,8 @@ context: |
     - Documentation-first: AGENTS.md, component AGENTS.md, README.md stay in sync with code
 
   System map: openspec/BASELINE.md (read it first; it lists every service, port, agent,
-  tool, journey-context key, handoff rule, command and known issue). Behavioral specs:
+  tool, journey-context key, handoff rule, knowledge corpus and command; it describes the
+  system as it is and carries no bug list). Behavioral specs:
   openspec/specs/<capability>/spec.md. A change that alters anything BASELINE.md lists
   must update it (tests/test_baseline_doc.py checks services, ports and tools).
 

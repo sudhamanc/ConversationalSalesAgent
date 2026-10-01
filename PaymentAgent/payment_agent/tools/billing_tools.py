@@ -8,6 +8,10 @@ import json
 from typing import Dict, Any, List
 from datetime import datetime, timedelta
 import logging
+
+import psycopg
+
+from sales_common import db
 from sales_common.ids import new_id
 
 logger = logging.getLogger(__name__)
@@ -98,6 +102,26 @@ def generate_invoice(
         }
 
 
+def _describe_method(token, payment_type=None, card_brand=None, last_four=None) -> str | None:
+    """Masked, typed description of a payment method (never the full token).
+
+    Uses the saved method (customer_payment_methods) when the token is on file,
+    else the token prefix (seed tokens look like ``tok_ach_7890``).
+    """
+    if not token:
+        return None
+    token = str(token)
+    kind = (payment_type or "").lower()
+    if not kind:
+        kind = "ach" if token.startswith("tok_ach") else "credit_card" if token.startswith(("tok_card", "tok_cc")) else ""
+    if kind == "ach":
+        return f"ACH bank transfer ending {last_four}" if last_four else f"ACH bank transfer (token ending {token[-4:]})"
+    if kind in ("credit_card", "card", "debit_card"):
+        brand = f"{card_brand.title()} " if card_brand else ""
+        return f"{brand}card ending {last_four}" if last_four else f"Card (token ending {token[-4:]})"
+    return f"Saved payment method (token ending {token[-4:]})"
+
+
 def get_payment_history(
     customer_id: str,
     start_date: str = None,
@@ -105,55 +129,82 @@ def get_payment_history(
     limit: int = 10
 ) -> Dict[str, Any]:
     """
-    Retrieves payment history for a customer.
-    
+    Retrieves a customer's payment history from the payments table, newest first.
+
+    A payment belongs to the customer when its own customer_id matches or, for
+    older rows without one, when its order's customer_id matches.
+
     Args:
-        customer_id: Unique customer identifier
-        start_date: Start date for history (ISO format)
-        end_date: End date for history (ISO format)
-        limit: Maximum number of transactions to return
-    
+        customer_id: Unique customer identifier (CUST-...)
+        start_date: Only payments created on or after this date (YYYY-MM-DD, optional)
+        end_date: Only payments created on or before this date (YYYY-MM-DD, optional)
+        limit: Maximum number of transactions to return (1-100, default 10)
+
     Returns:
-        Payment history with transactions
+        Payment history: transactions (payment_id, transaction_id, order_id, date,
+        amount, currency, status, payment_method masked, failure_reason), count and
+        total_amount of completed payments
     """
     logger.info(f"Retrieving payment history for customer: {customer_id}")
-    
+    if not customer_id or not str(customer_id).strip():
+        return {"success": False, "error": "customer_id is required"}
     try:
-        # Simulate fetching payment history
-        # In production: Query from database
-        
-        # Generate sample transactions
-        transactions = []
-        for i in range(min(limit, 5)):
-            date = datetime.now() - timedelta(days=30 * i)
-            transactions.append({
-                "transaction_id": f"TXN-{date.strftime('%Y%m%d')}-{i:03d}",
-                "date": date.isoformat(),
-                "amount": 500.00 + (i * 50),
-                "status": "approved",
-                "payment_method": "Credit Card (****1234)",
-                "description": f"Monthly service payment - {'Month ' + str(i+1)}"
-            })
-        
-        # Calculate summary
-        total_paid = sum(t['amount'] for t in transactions)
-        
-        return {
-            "success": True,
-            "customer_id": customer_id,
-            "transactions": transactions,
-            "count": len(transactions),
-            "total_amount": total_paid,
-            "start_date": start_date,
-            "end_date": end_date
+        limit = max(1, min(int(limit or 10), 100))
+        for label, value in (("start_date", start_date), ("end_date", end_date)):
+            if value:
+                datetime.fromisoformat(str(value))
+    except ValueError:
+        return {"success": False, "error": "start_date/end_date must be ISO dates (YYYY-MM-DD) and limit a number"}
+
+    sql = [
+        """SELECT p.payment_id, p.transaction_id, p.order_id, p.amount, p.currency, p.status,
+                  p.payment_method, p.failure_reason, p.created_at,
+                  m.payment_type, m.card_brand, m.last_four
+           FROM payments p
+           LEFT JOIN orders o ON o.order_id = p.order_id
+           LEFT JOIN customer_payment_methods m ON m.token = p.payment_method
+           WHERE COALESCE(NULLIF(p.customer_id, ''), o.customer_id) = %s"""
+    ]
+    params: list = [customer_id.strip()]
+    if start_date:
+        sql.append("AND p.created_at >= %s")
+        params.append(str(start_date))
+    if end_date:
+        sql.append("AND p.created_at < %s")
+        params.append((datetime.fromisoformat(str(end_date)) + timedelta(days=1)).date().isoformat())
+    sql.append("ORDER BY p.created_at DESC LIMIT %s")
+    params.append(limit)
+    try:
+        rows = db.fetch_all(" ".join(sql), tuple(params))
+    except psycopg.Error as exc:
+        logger.error(f"Error retrieving payment history: {type(exc).__name__}")
+        return {"success": False, "error": f"Error retrieving payment history: {type(exc).__name__}"}
+
+    transactions = [
+        {
+            "payment_id": r["payment_id"],
+            "transaction_id": r["transaction_id"],
+            "order_id": r["order_id"],
+            "date": r["created_at"],
+            "amount": float(r["amount"]) if r["amount"] is not None else None,
+            "currency": r["currency"] or "USD",
+            "status": r["status"],
+            "payment_method": _describe_method(r["payment_method"], r["payment_type"], r["card_brand"], r["last_four"]),
+            "failure_reason": r["failure_reason"],
         }
-    
-    except Exception as e:
-        logger.error(f"Error retrieving payment history: {e}")
-        return {
-            "success": False,
-            "error": f"Error retrieving payment history: {str(e)}"
-        }
+        for r in rows
+    ]
+    total_paid = round(sum(t["amount"] or 0 for t in transactions if str(t["status"]).lower() == "completed"), 2)
+    return {
+        "success": True,
+        "customer_id": customer_id.strip(),
+        "transactions": transactions,
+        "count": len(transactions),
+        "total_amount": total_paid,
+        "start_date": start_date,
+        "end_date": end_date,
+        "message": None if transactions else "No payments found for this customer",
+    }
 
 
 def setup_payment_plan(
@@ -192,11 +243,21 @@ def setup_payment_plan(
         # Calculate installment amount
         installment_amount = total_amount / num_installments
         
-        # Parse or set start date
+        # Parse or set start date (never in the past)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         if start_date:
-            start_date_obj = datetime.fromisoformat(start_date)
+            try:
+                start_date_obj = datetime.fromisoformat(str(start_date))
+            except ValueError:
+                return {"success": False, "error": "start_date must be an ISO date (YYYY-MM-DD)"}
+            if start_date_obj < today:
+                return {
+                    "success": False,
+                    "error": f"start_date {start_date} is in the past; today is {today.date().isoformat()}. "
+                    "Use today or a later date, or omit it to start in 30 days.",
+                }
         else:
-            start_date_obj = datetime.now() + timedelta(days=30)
+            start_date_obj = today + timedelta(days=30)
         
         # Determine interval
         interval_days = {

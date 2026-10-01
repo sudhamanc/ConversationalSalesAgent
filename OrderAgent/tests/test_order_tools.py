@@ -95,6 +95,18 @@ def test_create_order_links_quote_and_enqueues(pg, quote):
     cancelled = cancel_order(order_id, reason="test")
     assert cancelled["status"] == "cancelled"
     assert db.fetch_one("SELECT status FROM orders WHERE order_id=%s", (order_id,))["status"] == "cancelled"
+    again = cancel_order(order_id)
+    assert again["success"] is False and again["status"] == "cancelled" and "already cancelled" in again["error"]
+
+
+def test_cancel_refuses_fulfilled_order(pg):
+    from sales_common import db
+
+    # Seed order ORD-20260427-065 (Coke Inc) is fulfilled: service is active.
+    result = cancel_order("ORD-20260427-065", reason="changed our minds")
+    assert result["success"] is False and result["cancellable"] is False
+    assert result["status"] == "fulfilled" and "cannot be cancelled" in result["error"]
+    assert db.fetch_one("SELECT status FROM orders WHERE order_id=%s", ("ORD-20260427-065",))["status"] == "fulfilled"
 
 
 def test_create_order_unknown_offer_is_dropped(pg):

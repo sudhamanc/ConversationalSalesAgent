@@ -157,3 +157,20 @@ def test_eval_configs_load(path):
     for name, custom in (config.custom_metrics or {}).items():
         module, _, function = custom.code_config.name.rpartition(".")
         assert callable(getattr(importlib.import_module(module), function)), f"{name}: bad code_config"
+
+
+def test_skip_metrics_name_real_criteria():
+    problems = []
+    for path in SET_PATHS:
+        if path.parent.name == "router":
+            continue
+        criteria = set(load_config(path).criteria)
+        eval_set = load_set(path)
+        for case in eval_set.eval_cases:
+            meta = MANIFEST["cases"][case_key(eval_set.eval_set_id, case.eval_id)]
+            for metric in meta.get("skip_metrics", []):
+                if metric not in criteria or metric == "golden_trajectory_v1":
+                    problems.append(f"{case.eval_id}: cannot skip {metric!r}")
+            if meta.get("skip_metrics") and not meta.get("skip_reason"):
+                problems.append(f"{case.eval_id}: skip_metrics needs a skip_reason")
+    assert not problems, "\n".join(problems)

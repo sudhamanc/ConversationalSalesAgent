@@ -34,6 +34,18 @@ def _notifications(order_id, notification_type):
 # ---------------------------------------------------------------------------
 
 
+def test_check_availability_rejects_past_start_date():
+    past = check_availability("123 Main St, Philadelphia, PA 19107", "FIB-1G", start_date="2026-05-04")
+    if date.today() > date(2026, 5, 4):
+        assert past["success"] is False and "today is" in past["error"]
+    today = check_availability("123 Main St, Philadelphia, PA 19107", "FIB-1G", start_date=date.today().isoformat())
+    assert today["success"] is False
+    ok = check_availability("123 Main St, Philadelphia, PA 19107", "FIB-1G",
+                            start_date=(date.today() + timedelta(days=1)).isoformat())
+    assert ok["success"] is True
+    assert all(slot["date"] > date.today().isoformat() for slot in ok["available_slots"])
+
+
 def test_check_availability_weekdays_only():
     result = check_availability("123 Main St, Philadelphia, PA 19107", "Business Fiber 1 Gbps")
     assert result["success"] is True

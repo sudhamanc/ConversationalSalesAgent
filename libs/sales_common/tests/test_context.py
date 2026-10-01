@@ -1,7 +1,9 @@
+from datetime import date
 from types import SimpleNamespace
 
 from sales_common.context import (
     CONTEXT_UPDATE_KEY,
+    current_date_text,
     build_forwarded_metadata,
     export_context_delta,
     extract_context_updates,
@@ -32,10 +34,21 @@ def test_import_ignores_non_dict_values():
     assert "offer_context" not in ctx.state
 
 
-def test_import_without_metadata_is_noop():
+def test_import_without_metadata_only_sets_current_date():
     ctx = SimpleNamespace(state={}, run_config=None)
     assert import_forwarded_context(ctx) is None
-    assert ctx.state == {}
+    assert ctx.state == {"current_date": current_date_text()}
+
+
+def test_current_date_text():
+    assert current_date_text(date(2026, 10, 1)) == "2026-10-01 (Thursday)"
+    assert current_date_text().startswith(date.today().isoformat())
+
+
+def test_journey_instruction_includes_current_date():
+    from sales_common.prompts import JOURNEY_CONTEXT_INSTRUCTION
+
+    assert "{current_date?}" in JOURNEY_CONTEXT_INSTRUCTION
 
 
 def test_export_adds_update_only_for_journey_keys():

@@ -15,6 +15,10 @@ Usage (from the repo root, with the venv and a billed GOOGLE_API_KEY):
       Fill in reference responses (``final_response``) for cases that have none.
       Hand-authored trajectories are kept.
 
+  venv/bin/python -m evals.record_golden --set agents/discovery_agent --rerecord --case ID
+      Replace the reference responses of the given cases (trajectories kept), e.g.
+      after fixing an agent defect. The cases become unreviewed again.
+
   venv/bin/python -m evals.record_golden --set agents/discovery_agent --refresh --case ID
       Overwrite both trajectory and response with what the model does now
       (intentional behavior change; review the diff before committing).
@@ -110,7 +114,7 @@ def _tier_and_agent(set_id: str) -> tuple[str, str]:
     return tier, rest.split("/")[0]
 
 
-async def record(set_id: str, case_ids: list[str], refresh: bool, dry_run: bool) -> int:
+async def record(set_id: str, case_ids: list[str], refresh: bool, dry_run: bool, rerecord: bool = False) -> int:
     from google.adk.evaluation.eval_case import IntermediateData
 
     from evals.agent_runner import run_agent_case, run_router_case
@@ -125,7 +129,7 @@ async def record(set_id: str, case_ids: list[str], refresh: bool, dry_run: bool)
     selected = [c for c in eval_set.eval_cases if not case_ids or c.eval_id in case_ids]
     todo = [
         c for c in selected
-        if refresh or any(not "".join(p.text or "" for p in (inv.final_response.parts if inv.final_response else []) or []).strip()
+        if refresh or (rerecord and case_ids) or any(not "".join(p.text or "" for p in (inv.final_response.parts if inv.final_response else []) or []).strip()
                           for inv in c.conversation or [])
     ]
     for case in todo:
@@ -170,6 +174,7 @@ def main() -> int:
     parser.add_argument("--set", dest="set_id")
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument("--rerecord", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     _env()
@@ -180,7 +185,9 @@ def main() -> int:
         return 0
     if not args.set_id:
         parser.error("--set or --snapshot-tools is required")
-    return asyncio.run(record(args.set_id, args.case, args.refresh, args.dry_run))
+    if args.rerecord and not args.case:
+        parser.error("--rerecord needs at least one --case")
+    return asyncio.run(record(args.set_id, args.case, args.refresh, args.dry_run, args.rerecord))
 
 
 if __name__ == "__main__":

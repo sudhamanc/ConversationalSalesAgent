@@ -18,9 +18,10 @@ def get_coverage(zip_code: str) -> Optional[dict]:
 
 
 def list_service_zones() -> list[str]:
-    """Distinct service zones of serviceable ZIPs, sorted."""
+    """Distinct service zones of serviceable ZIPs, sorted by code point (independent of
+    the database collation, so results are identical on every PostgreSQL install)."""
     rows = db.fetch_all(
         "SELECT DISTINCT service_zone FROM coverage_zones "
-        "WHERE serviceable AND service_zone IS NOT NULL ORDER BY service_zone"
+        "WHERE serviceable AND service_zone IS NOT NULL"
     )
-    return [row["service_zone"] for row in rows]
+    return sorted(row["service_zone"] for row in rows)
