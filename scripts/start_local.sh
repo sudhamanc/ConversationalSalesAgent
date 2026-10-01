@@ -8,7 +8,7 @@
 #
 # Order: migrations + seed, tool services, agents, gateway, Vite dev server.
 # Env: .env at the repo root is loaded without overriding variables already set.
-# Required: DATABASE_URL, GEMINI_MODEL. SESSION_SECRET_KEY is generated for this
+# Required: DATABASE_URL (reachable; scripts/db.sh up starts a local one), GEMINI_MODEL. SESSION_SECRET_KEY is generated for this
 # run (with a warning) when missing.
 # Logs: logs/<name>.log   PIDs: logs/pids/<name>.pid   Stop: scripts/stop_local.sh
 set -euo pipefail
@@ -58,6 +58,10 @@ if [ -z "${SESSION_SECRET_KEY:-}" ]; then
   log_warn "SESSION_SECRET_KEY not set; generated an ephemeral key for this run (sessions end on restart). Set it in .env to persist sessions."
 fi
 [ -x "$PYTHON" ] || die "venv python not found at $PYTHON; run scripts/setup_local.sh first"
+if ! db_check; then
+  die "PostgreSQL at DATABASE_URL is not reachable (error above).
+  Start a local one with: scripts/db.sh up   (Docker, or Homebrew if Docker Hub is unreachable)"
+fi
 CLIENT_DIR="$REPO_ROOT/SuperAgent/client"
 if [ "$START_UI" = "1" ] && [ ! -x "$CLIENT_DIR/node_modules/.bin/vite" ]; then
   die "client dependencies missing ($CLIENT_DIR/node_modules); run scripts/setup_local.sh or use --no-ui"

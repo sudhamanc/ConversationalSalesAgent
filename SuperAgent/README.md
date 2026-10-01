@@ -51,7 +51,7 @@ graph TD
 ```
 
 1. **`prepare_turn`** records the user message (`turn_user_message`, `transcript`) and resets `handoff_hops`. A pure greeting ("hi", "good morning", or a `[GREETING]` prefix) goes straight to `greeting_agent` with no router call. Otherwise it searches memory and builds the router input: message, `last_agent`, last reply excerpt, journey flags, company name, memories.
-2. **`route_intent`** is an `LlmAgent` (`mode="single_turn"`, `include_contents="none"`, temperature 0, `output_schema=RouteDecision{target, reason}`) with `ROUTER_INSTRUCTION` as its static instruction.
+2. **`route_intent`** is an `LlmAgent` (`mode="single_turn"`, `include_contents="none"`, temperature 0, `output_schema=RouteDecision{target, reason}`, `max_output_tokens=1024`, `thinking_level=MINIMAL` on `gemini-3*` models because thinking tokens count toward the output limit) with `ROUTER_INSTRUCTION` as its static instruction.
 3. **`dispatch`** validates the target (an unknown target falls back to `faq_agent`), sets `last_agent`, and writes the user message to `a2a_outbound_message`, which is the only text sent to the remote agent.
 4. **Agent node:** a `RemoteA2aAgent` (from `sales_common.a2a_client.remote_agent`) sends the message plus forwarded metadata (journey context, transcript, user profile). The gateway session id is used as the remote context id.
 5. **`handoff_policy`** (`HandoffPolicyNode`, a custom `google.adk.workflow.Node`) applies `evaluate_handoff()`:
@@ -111,7 +111,7 @@ Only when `DEBUG=true` (otherwise 403). Requires the Bearer token and returns th
 
 ## Environment Variables
 
-The shared template is the repo-root [`.env.example`](../.env.example). `super_agent/config.py` loads the repo-root `.env` (or `SuperAgent/server/.env`) without overriding variables already set.
+The shared template is the repo-root [`.env.example`](../.env.example). `super_agent/config.py` loads the repo-root `.env` without overriding variables already set.
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|

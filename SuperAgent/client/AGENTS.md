@@ -42,24 +42,31 @@
 ```
 client/
 ├── src/
-│   ├── App.jsx                 # Root component
-│   ├── main.jsx                # React entry point
-│   ├── components/             # UI components
-│   │   ├── ChatWindow.jsx      # Main chat container
-│   │   ├── ChatInput.jsx       # User input field
-│   │   ├── MessageBubble.jsx   # Message display
-│   │   └── TypingIndicator.jsx # Loading state
-│   ├── hooks/                  # Custom React hooks
-│   │   └── useSSE.js           # SSE connection hook
-│   ├── styles/                 # Global CSS
-│   │   └── index.css           # Tailwind imports
-│   └── utils/                  # Helper functions
-│       └── api.js              # API client
-├── public/                     # Static assets
-├── index.html                  # HTML entry point
-├── package.json                # Dependencies
-├── vite.config.js              # Vite configuration
-└── tailwind.config.js          # Tailwind configuration
+│   ├── App.jsx                     # Root layout: journey sidebar, chat, cart panel
+│   ├── main.jsx                    # React entry point
+│   ├── components/
+│   │   ├── ChatWindow.jsx          # Message list + streaming reply
+│   │   ├── ChatInput.jsx           # User input field
+│   │   ├── MessageBubble.jsx       # Message display (agent label, markdown)
+│   │   ├── TypingIndicator.jsx     # Loading state
+│   │   ├── SuggestionCard.jsx      # Suggested next replies
+│   │   ├── JourneySidebar.jsx      # Sales journey progress (JourneyStep.jsx)
+│   │   ├── CartPanel.jsx           # Cart (CartItem.jsx)
+│   │   └── *Card.jsx               # Structured cards: Serviceability, ProductDetails, Quote, Order, Payment
+│   ├── contexts/ChatContext.jsx    # Chat, cart and journey state (useChatContext)
+│   ├── hooks/useChat.js            # Chat actions hook
+│   ├── styles/index.css            # Tailwind imports
+│   └── utils/
+│       ├── api.js                  # Session + streaming chat client (see API Communication)
+│       ├── remoteLog.js            # Forwards client logs to /api/client-log
+│       ├── agentLabels.js          # Agent display names
+│       ├── responseFormatters.js   # Reply formatting
+│       ├── suggestions.js          # Suggestion helpers
+│       └── pdfExport.js            # Quote/order PDF export
+├── index.html                      # HTML entry point
+├── package.json                    # Dependencies
+├── vite.config.js                  # Vite config (proxies /api to :8000)
+└── tailwind.config.js              # Tailwind configuration
 ```
 
 ---
@@ -285,85 +292,23 @@ function ChatInput({ onSend }) {
 
 ## 🌐 API Communication
 
-### Server-Sent Events (SSE)
+All calls go through `src/utils/api.js` with relative URLs (`/api/...`); the Vite dev server proxies `/api` to the gateway on `:8000`, and in containers the gateway serves the built UI itself. Never hardcode `http://localhost:8000`.
 
-**Custom Hook:**
-```jsx
-// hooks/useSSE.js
-import { useEffect, useRef } from 'react';
+1. **Session:** `POST /api/session` with `{client_id}` returns a bearer `token` (cached by `getToken()`).
+2. **Chat:** `streamChat(message, callbacks...)` sends `POST /api/chat` with `Authorization: Bearer <token>` and body `{message}`. The response is an SSE stream read with `res.body.getReader()` (not `EventSource`, which cannot POST). A `401` creates a new session and retries once.
+3. **Events** (`data: {...}` lines):
 
-export function useSSE(url, onMessage) {
-  const eventSourceRef = useRef(null);
+| `type` | Handler | Meaning |
+|---|---|---|
+| `token` | `onToken(content, author)` | Streamed reply text; `author` is the answering agent |
+| `cart_update` | `onCartUpdate(data)` | Cart contents changed |
+| `activity_update` | `onActivityUpdate(payload)` | Agent/tool activity for the activity panel |
+| `structured_card` | `onStructuredCard(...)` | Rich card (products, quote, order, ...) |
+| `suggestions` | `onSuggestions(...)` | Suggested next replies |
+| `error` | `onError(message)` | Agent or model failure (e.g. Gemini quota `429`) |
+| `done` | `onDone()` | Turn finished |
 
-  useEffect(() => {
-    const eventSource = new EventSource(url);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    };
-
-    eventSource.onerror = () => {
-      console.error('SSE connection error');
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [url, onMessage]);
-
-  return eventSourceRef;
-}
-```
-
-**Usage:**
-```jsx
-function ChatWindow() {
-  const { addMessage } = useChat();
-
-  useSSE('http://localhost:8000/api/chat/stream', (message) => {
-    addMessage({ text: message.content, sender: 'agent' });
-  });
-
-  return <div>...</div>;
-}
-```
-
-### POST Requests
-
-```jsx
-// utils/api.js
-export async function sendMessage(text, sessionId) {
-  const response = await fetch('http://localhost:8000/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: text, session_id: sessionId }),
-  });
-
-  if (!response.ok) throw new Error('Failed to send message');
-  return response.json();
-}
-```
-
-**Component:**
-```jsx
-import { sendMessage } from '../utils/api';
-
-function ChatInput() {
-  const handleSend = async (text) => {
-    try {
-      await sendMessage(text, sessionId);
-    } catch (error) {
-      console.error('Send failed:', error);
-      // Show error toast/message
-    }
-  };
-
-  return <input onSubmit={handleSend} />;
-}
-```
+Client logs are forwarded with `src/utils/remoteLog.js` to `POST /api/client-log`.
 
 ---
 
@@ -507,20 +452,11 @@ export default function TypingIndicator() {
 
 ## 🚨 Common Pitfalls
 
-### 1. SSE Connection Not Closing
+### 1. Stream Not Fully Consumed
 
-**Symptom:** Memory leak, multiple connections
+**Symptom:** Missing final tokens, or the UI stays "typing" after a reply
 
-**Fix:** Always cleanup in `useEffect`:
-```jsx
-useEffect(() => {
-  const eventSource = new EventSource(url);
-
-  return () => {
-    eventSource.close();  // ← Critical
-  };
-}, [url]);
-```
+**Fix:** Keep the partial last line in a buffer between reads (`buffer = lines.pop()`), and always end the turn on `done` *or* `error`, as `streamChat` in `src/utils/api.js` does.
 
 ### 2. Infinite Re-renders
 

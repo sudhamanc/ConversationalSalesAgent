@@ -290,6 +290,45 @@ db_url_is_local() {
   esac
 }
 
+db_url_parts() {
+  # db_url_parts <url> -> sets DB_USER_PART, DB_PASSWORD_PART, DB_PORT_PART, DB_NAME_PART
+  # (defaults: csa / csa / 5432 / csa).
+  local py="$PYTHON" parts
+  [ -x "$py" ] || py="$(command -v python3 || true)"
+  [ -n "$py" ] || die "python3 is required to parse DATABASE_URL"
+  parts="$(DB_URL_TO_PARSE="$1" "$py" - <<'PY'
+import os
+from urllib.parse import unquote, urlsplit
+parts = urlsplit(os.environ["DB_URL_TO_PARSE"])
+print(unquote(parts.username or "csa"))
+print(unquote(parts.password or "csa"))
+print(parts.port or 5432)
+print(unquote(parts.path.lstrip("/")) or "csa")
+PY
+)"
+  DB_USER_PART="$(printf '%s\n' "$parts" | sed -n 1p)"
+  DB_PASSWORD_PART="$(printf '%s\n' "$parts" | sed -n 2p)"
+  DB_PORT_PART="$(printf '%s\n' "$parts" | sed -n 3p)"
+  DB_NAME_PART="$(printf '%s\n' "$parts" | sed -n 4p)"
+}
+
+db_check() {
+  # db_check [quiet] : true when DATABASE_URL accepts a connection (3 s timeout).
+  # Prints the driver error to stderr unless "quiet" is given. Needs the venv.
+  local quiet="${1:-}"
+  DB_CHECK_QUIET="$quiet" "$PYTHON" - <<'PY'
+import os, sys
+import psycopg
+from sales_common.db import database_url
+try:
+    psycopg.connect(database_url(), connect_timeout=3).close()
+except Exception as exc:  # noqa: BLE001 - report any connection failure
+    if not os.environ.get("DB_CHECK_QUIET"):
+        print(f"  {type(exc).__name__}: {str(exc).strip().splitlines()[0]}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # ---------------------------------------------------------------------------
 # Google Cloud defaults (override with environment variables)
 # ---------------------------------------------------------------------------

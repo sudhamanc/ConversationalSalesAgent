@@ -22,9 +22,21 @@ All system architecture, agent development patterns, and technical guidelines ar
    - Orchestration / routing / handoffs → [SuperAgent/README.md](SuperAgent/README.md) + [openspec/changes/adk2-workflow-orchestration/design.md](openspec/changes/adk2-workflow-orchestration/design.md)
    - Tool services (catalog, serviceability) → `services/<name>/README.md`
    - Database schema → [db/README.md](db/README.md) (migrations and seed files, table ownership)
-   - Running or deploying → [README.md](README.md#getting-started-local) and [GCP_DEPLOY.md](GCP_DEPLOY.md)
+   - Running or deploying → [README.md](README.md#getting-started-local) (`scripts/setup_local.sh`, `scripts/db.sh up`, `scripts/start_local.sh`) and [GCP_DEPLOY.md](GCP_DEPLOY.md)
+   - Any change → an OpenSpec change first (see below) + [openspec/config.yaml](openspec/config.yaml)
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
+
+---
+
+## 🟣 MANDATORY: OpenSpec-First Changes
+
+**Every new change starts with an OpenSpec change, before any code, config, script or doc is edited.** This applies to features, bug fixes, script changes and doc restructures alike.
+
+1. Create `openspec/changes/<change-name>/` with `proposal.md` (Why, What Changes, Capabilities, Non-goals, Impact), `design.md`, `specs/<capability>/spec.md` (delta: ADDED/MODIFIED/REMOVED requirements with scenarios) and `tasks.md`. Use `/opsx:propose` (or the `openspec-propose` skill); project rules are in [openspec/config.yaml](openspec/config.yaml).
+2. Validate: `openspec validate <change-name>` must pass.
+3. Implement against `tasks.md` (`/opsx:apply`), ticking each task only with its verification (test, command or observable behavior).
+4. Commit the OpenSpec change together with the code it describes; archive it (`/opsx:archive`) once complete.
 
 ---
 
@@ -46,6 +58,7 @@ See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete detail
 
 ## 🚨 Before Any Code Changes
 
+0. Create and validate the OpenSpec change (`openspec/changes/<name>/`, `openspec validate <name>`)
 1. Read relevant section in [AGENTS.md](AGENTS.md)
 2. Check subdirectory AGENTS.md / README.md if working in a specific agent, service or the UI
 3. Follow established patterns (reference implementations in AGENTS.md and the agent service guide)
@@ -65,13 +78,14 @@ When working in specific directories, also read:
 - **Database:** [db/README.md](db/README.md)
 - **UI Development:** `SuperAgent/client/AGENTS.md`
 - **Bootstrap Template:** `BootStrapAgent/AGENTS.md`
-- **Design decisions and specs:** `openspec/changes/*/{proposal,design}.md` (`mcp-remaining-domains` is a planned follow-up, not implemented)
+- **Design decisions and specs:** `openspec/changes/*/{proposal,design,tasks}.md` + `specs/` (`mcp-remaining-domains` is a planned follow-up, not implemented)
 - **Operations scripts:** `scripts/` (service list in `scripts/services.conf`)
 
 ---
 
 ## ✅ Quick Checks
 
+- [ ] OpenSpec change created first and `openspec validate <name>` passes
 - [ ] Read AGENTS.md relevant section
 - [ ] Follow ADK Bootstrap Template pattern (`build_agent()`, `root_agent`, `server.py` with `create_a2a_app`)
 - [ ] Agent talks to other agents only through the gateway workflow (A2A), never by import
@@ -79,6 +93,7 @@ When working in specific directories, also read:
 - [ ] New service registered in `scripts/services.conf` (+ `docker-compose.yml`, + gateway registry for agents)
 - [ ] Tests pass
 - [ ] Documentation updated
+- [ ] OpenSpec `tasks.md` ticked with verification and committed with the code
 
 ---
 

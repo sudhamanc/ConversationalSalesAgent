@@ -40,8 +40,6 @@ User → React UI → Gateway (FastAPI → ADK Runner → sales_journey Workflow
 
 Responses stream back to the browser via Server-Sent Events (SSE). A per-service overview with the full node graph is in [AGENTS.md](AGENTS.md#system-architecture).
 
-> `architecture-diagram.png` and `architecture.html` show the earlier single-process (ADK 1.x) architecture and are kept for presentation history.
-
 ### Architectural Layers
 
 ```
@@ -677,13 +675,22 @@ scripts/setup_local.sh
 # 2. Edit .env: GOOGLE_API_KEY, GEMINI_MODEL, DATABASE_URL (default postgresql://csa:csa@localhost:5432/csa)
 #    and optionally SESSION_SECRET_KEY (an ephemeral one is generated if empty)
 
-# 3. A PostgreSQL 16 database matching DATABASE_URL, e.g. a throwaway container:
-docker run -d --name csa-pg -e POSTGRES_USER=csa -e POSTGRES_PASSWORD=csa -e POSTGRES_DB=csa \
-  -p 127.0.0.1:5432:5432 postgres:16
+# 3. Local PostgreSQL 16 for DATABASE_URL, then migrations + seed (details below)
+scripts/db.sh up
 
 # 4. Start everything: migrations + seed, 2 tool services, 10 agents, gateway, Vite UI
 scripts/start_local.sh
 ```
+
+`scripts/db.sh up` decides how PostgreSQL runs, in this order:
+
+1. `DATABASE_URL` already accepts connections: it is used as is (your own server, a shared dev database, a previous `up`).
+2. Docker is installed: the engine must be running. If Rancher Desktop / Docker Desktop is closed, `up` stops and tells you which app to start (`open -a "Rancher Desktop"`); if the app is still booting it waits up to 2 minutes. It then runs container `csa-postgres` (image `postgres:16`, volume `csa-pgdata`, bound to `127.0.0.1`).
+3. The `postgres:16` image cannot be pulled (typically a corporate proxy that the Docker VM does not use), or Docker is not installed: it falls back to Homebrew `postgresql@16` (`brew services`), creating the role and database from `DATABASE_URL`.
+
+`scripts/db.sh up --native` skips Docker; `scripts/db.sh down` stops whichever one is running (data is kept). `start_local.sh` refuses to start when the database is unreachable and points to `db.sh up`.
+
+> **Behind a corporate proxy?** Docker Desktop and Rancher Desktop run the engine in a VM that does not use the Mac's proxy auto-config, so pulls from Docker Hub can time out even though the browser works. Either configure the proxy in the engine's settings, or let `db.sh up` fall back to Homebrew.
 
 - UI: `http://localhost:3000` (Vite proxies `/api` to the gateway)
 - Gateway health: `http://localhost:8000/health`
@@ -692,7 +699,7 @@ scripts/start_local.sh
 
 Useful flags: `scripts/start_local.sh --only catalog,product,gateway`, `--no-ui`, `--skip-migrate`.
 
-> The `postgres` service in `docker-compose.yml` is not published on the host, so native processes need their own PostgreSQL (as above).
+> The `postgres` service in `docker-compose.yml` is not published on the host, so native processes use the database from `scripts/db.sh up` (as above).
 
 ### Option B: Everything in containers
 
@@ -715,6 +722,8 @@ docker compose down                       # containers
 ### Database Operations
 
 ```bash
+scripts/db.sh up                 # start local PostgreSQL 16 (Docker, Homebrew fallback) + migrate + seed
+scripts/db.sh down               # stop it (data kept)
 scripts/db.sh migrate            # apply pending migrations
 scripts/db.sh seed               # migrations + seed files (each applied once)
 scripts/db.sh reset --yes        # drop and recreate the schema, then migrate + seed (local hosts only)

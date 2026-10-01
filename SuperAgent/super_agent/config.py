@@ -1,8 +1,7 @@
 """Gateway configuration (environment variables; fail fast on critical values).
 
-Local development loads ``.env`` from the repository root or ``SuperAgent/server/.env``
-if present (without overriding variables already set by the shell, compose or
-Cloud Run).
+Local development loads ``.env`` from the repository root if present (without
+overriding variables already set by the shell, compose or Cloud Run).
 """
 
 from __future__ import annotations
@@ -13,10 +12,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_SUPERAGENT_DIR = Path(__file__).resolve().parent.parent
-for _candidate in (_SUPERAGENT_DIR.parent / ".env", _SUPERAGENT_DIR / "server" / ".env"):
-    if _candidate.is_file():
-        load_dotenv(_candidate, override=False)
+_ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+if _ROOT_ENV.is_file():
+    load_dotenv(_ROOT_ENV, override=False)
 
 
 def _int(name: str, default: int) -> int:

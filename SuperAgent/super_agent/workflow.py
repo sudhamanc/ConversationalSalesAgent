@@ -27,6 +27,7 @@ from typing import Any, AsyncGenerator, Mapping, Optional
 from google.adk import Agent, Context, Event, Workflow
 from google.adk.agents import BaseAgent
 from google.adk.workflow import Node
+from google.genai import types
 from pydantic import BaseModel, Field
 
 from sales_common.a2a_client import OUTBOUND_MESSAGE_KEY
@@ -245,6 +246,11 @@ def finish_turn(ctx: Context, node_input: Any):
 
 
 def build_router(model) -> Agent:
+    # Thinking tokens count toward max_output_tokens. Gemini 3 thinks by default and
+    # used ~250-700 tokens per routing call, truncating the JSON; routing needs none.
+    config = generate_config(temperature=0.0, max_output_tokens=1024)
+    if isinstance(model, str) and model.startswith("gemini-3"):
+        config.thinking_config = types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL)
     return Agent(
         name="route_intent",
         model=model,
@@ -253,7 +259,7 @@ def build_router(model) -> Agent:
         static_instruction=ROUTER_INSTRUCTION,
         include_contents="none",
         output_schema=RouteDecision,
-        generate_content_config=generate_config(temperature=0.0, max_output_tokens=256),
+        generate_content_config=config,
     )
 
 

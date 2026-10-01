@@ -146,7 +146,7 @@ fi
 cat >&2 <<EOF
 
 Next steps:
-  1. Edit .env (GOOGLE_API_KEY, GEMINI_MODEL, DATABASE_URL for a PostgreSQL 16 database)
-  2. scripts/db.sh seed            # apply migrations + seed data
+  1. Edit .env (GOOGLE_API_KEY; GEMINI_MODEL and DATABASE_URL defaults work locally)
+  2. scripts/db.sh up              # local PostgreSQL 16 (Docker, Homebrew fallback) + migrations + seed
   3. scripts/start_local.sh        # start all services + UI
 EOF

@@ -18,9 +18,19 @@
    - Orchestration, routing, handoffs → [SuperAgent/README.md](SuperAgent/README.md)
    - Tool services → `services/<name>/README.md`
    - Database → [db/README.md](db/README.md)
+   - Local run → [README.md](README.md#getting-started-local): `scripts/setup_local.sh`, `scripts/db.sh up`, `scripts/start_local.sh`
    - Deployment → [GCP_DEPLOY.md](GCP_DEPLOY.md)
 
 3. **DO NOT "explore to figure it out"** - The documentation exists to prevent this!
+
+## 🟣 MANDATORY: OpenSpec-First Changes
+
+**Every new change starts with an OpenSpec change, before any code, config, script or doc is edited.** This applies to features, bug fixes, script changes and doc restructures alike.
+
+1. Create `openspec/changes/<change-name>/` with `proposal.md` (Why, What Changes, Capabilities, Non-goals, Impact), `design.md`, `specs/<capability>/spec.md` (delta: ADDED/MODIFIED/REMOVED requirements with scenarios) and `tasks.md`. Use `/opsx:propose` (or the `openspec-propose` skill); project rules are in [openspec/config.yaml](openspec/config.yaml).
+2. Validate: `openspec validate <change-name>` must pass.
+3. Implement against `tasks.md` (`/opsx:apply`), ticking each task only with its verification (test, command or observable behavior).
+4. Commit the OpenSpec change together with the code it describes; archive it (`/opsx:archive`) once complete.
 
 Design history and rationale for the current architecture live in `openspec/changes/`:
 
@@ -30,6 +40,7 @@ Design history and rationale for the current architecture live in `openspec/chan
 | `a2a-agent-services` | Implemented | One A2A service per agent, PostgreSQL, notification outbox, no importlib/`sys.modules` |
 | `catalog-serviceability-mcp` | Implemented | Catalog and serviceability as REST + MCP services |
 | `multi-service-scripts` | Implemented | `scripts/`, `docker-compose.yml`, per-service Dockerfiles, Cloud Run deployment |
+| `local-dev-reliability` | Implemented | `scripts/db.sh up`/`down` (Docker, Homebrew fallback), start preflight, router thinking budget, single root `.env` |
 | `mcp-remaining-domains` | **Planned (not implemented)** | REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications |
 
 ---
@@ -288,7 +299,7 @@ graph TD
 | Node | Kind | Responsibility |
 |---|---|---|
 | `prepare_turn` | function node | Stores `turn_user_message`, resets `handoff_hops`, appends to `transcript`. Pure greetings take the **fast path** to `greeting_agent` (no LLM). Otherwise searches memory and builds a compact router input: message, `last_agent`, last reply excerpt (≤ 400 chars), journey flags, company name, memories. |
-| `route_intent` | `LlmAgent` (`mode="single_turn"`, `include_contents="none"`, temperature 0) | Returns `RouteDecision{target, reason}`. Routing rules are in `SuperAgent/super_agent/prompts.py` (`ROUTER_INSTRUCTION`). |
+| `route_intent` | `LlmAgent` (`mode="single_turn"`, `include_contents="none"`, temperature 0, `max_output_tokens=1024`, `thinking_level=MINIMAL` on `gemini-3*`) | Returns `RouteDecision{target, reason}`. Routing rules are in `SuperAgent/super_agent/prompts.py` (`ROUTER_INSTRUCTION`). |
 | `dispatch` | function node | Validates the target against the registry (unknown → `faq_agent`), writes `last_agent` and `a2a_outbound_message`, routes to that agent node. |
 | agent nodes | `RemoteA2aAgent` × 10 | Run the domain agent as a remote A2A call. |
 | `handoff_policy` | `HandoffPolicyNode(Node)` | Applies `evaluate_handoff()` rules; appends the reply to the transcript; routes to the next agent or `end`. |
@@ -427,9 +438,9 @@ The router prompt (`ROUTER_INSTRUCTION`) classifies intent in this priority orde
 
 | Option | Command | Notes |
 |---|---|---|
-| Native processes | `scripts/setup_local.sh` then `scripts/start_local.sh` | Needs a PostgreSQL 16 at `DATABASE_URL`. Runs migrations + seed, starts tools, agents, gateway (`:8000`) and the Vite UI (`:3000`). Logs in `logs/<name>.log`; stop with `scripts/stop_local.sh`. |
+| Native processes | `scripts/setup_local.sh` then `scripts/start_local.sh` | Needs a PostgreSQL 16 at `DATABASE_URL`; `scripts/db.sh up` starts one (Docker, Homebrew fallback). Runs migrations + seed, starts tools, agents, gateway (`:8000`) and the Vite UI (`:3000`). Logs in `logs/<name>.log`; stop with `scripts/stop_local.sh`. |
 | Containers | `docker compose up --build` | PostgreSQL 16, one-shot `db-init`, 2 tool services, 10 agents, gateway on a private network; only the gateway is published (`http://localhost:8000` serves UI + API). |
-| Database ops | `scripts/db.sh migrate`, `seed`, `reset --yes` | `reset` refuses non-local hosts unless `--allow-remote`. |
+| Database ops | `scripts/db.sh up`, `down`, `migrate`, `seed`, `reset --yes` | `reset` refuses non-local hosts unless `--allow-remote`. |
 
 ### Google Cloud
 

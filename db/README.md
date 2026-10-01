@@ -10,7 +10,7 @@ libraries create themselves).
 ```bash
 python -m sales_common.migrate            # migrations only
 python -m sales_common.migrate --seed     # migrations + demo seed (each file applied once)
-scripts/db.sh migrate | seed | reset --yes
+scripts/db.sh up | down | migrate | seed | reset --yes   # up: local PostgreSQL (Docker, Homebrew fallback)
 ```
 
 Applied files are recorded in `schema_migrations` and `seed_versions`; re-runs are no-ops.

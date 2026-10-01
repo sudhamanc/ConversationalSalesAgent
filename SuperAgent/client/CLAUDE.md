@@ -26,11 +26,12 @@ All React/Vite UI development guidelines (Tailwind CSS, state management, SSE) a
 
 ## Key Rules
 
+0. **OpenSpec first** - every change starts with an OpenSpec change ([root CLAUDE.md](/CLAUDE.md#-mandatory-openspec-first-changes))
 1. **Read AGENTS.md** for complete UI development guide
 2. **Tailwind CSS ONLY** - No inline styles, no CSS modules
 3. **Functional components** - No class components
 4. **React Context** - State management (no Redux/MobX)
-5. **SSE** - Server-Sent Events for streaming chat
+5. **SSE** - streamed chat over `POST /api/chat` (fetch + stream reader in `src/utils/api.js`)
 6. **Test before commit**
 
 ---
@@ -39,8 +40,8 @@ All React/Vite UI development guidelines (Tailwind CSS, state management, SSE) a
 
 **Tech Stack:** React 19, Vite 6, Tailwind CSS 3.4
 **State:** React Context (`contexts/ChatContext.jsx`)
-**API:** SSE streaming from `http://localhost:8000/api/chat/stream`
-**Dev Server:** `npm run dev` → http://localhost:3000
+**API:** `POST /api/session` (bearer token), then `POST /api/chat` streaming SSE events; Vite proxies `/api` to the gateway on :8000
+**Dev Server:** `scripts/start_local.sh` (whole stack) or `npm run dev` → http://localhost:3000
 
 ---
 
