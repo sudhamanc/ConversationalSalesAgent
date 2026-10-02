@@ -2,7 +2,7 @@
 
 A2A service `payment_agent` (ADK 2.10, PostgreSQL). It handles credit checks, payment method
 validation/tokenization, and payment processing for an order. Details: [AGENTS.md](AGENTS.md).
-Service contract: [docs/agent-service-guide.md](../docs/agent-service-guide.md).
+Service contract: [README: Agent Service Guide](../README.md#agent-service-guide).
 
 ## Scope
 

@@ -1,7 +1,7 @@
 # Discovery Agent
 
 **Type:** Domain agent (Discovery phase), served as an A2A service
-**Framework:** Google ADK 2.10 + `sales_common` (see [docs/agent-service-guide.md](../docs/agent-service-guide.md))
+**Framework:** Google ADK 2.10 + `sales_common` (see [README: Agent Service Guide](../README.md#agent-service-guide))
 **Package:** `discovery_agent`
 **A2A app:** `discovery_agent.server:app` (port 8201 in local compose)
 

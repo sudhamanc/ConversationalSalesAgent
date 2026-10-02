@@ -2,7 +2,7 @@
 # Conversational Sales Agent - Production Requirements
 # =============================================================================
 # NOTE: This file is for Docker/Cloud Run deployment.
-# For local dev with eval/testing extras, install BootStrapAgent/bootstrap_agent/requirements.txt
+# Golden-eval extras: evals/requirements.txt (scripts/eval.sh installs them)
 # separately.
 
 # --- Core Web Framework ---

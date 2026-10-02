@@ -14,7 +14,7 @@ It has two parts:
   dispatch it immediately, so the reply reports the real delivery status.
 
 Architecture details, template args and statuses are in [AGENTS.md](AGENTS.md). Service
-conventions are in [docs/agent-service-guide.md](../docs/agent-service-guide.md).
+conventions are in [README: Agent Service Guide](../README.md#agent-service-guide).
 
 ## Run locally
 

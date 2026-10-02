@@ -4,7 +4,7 @@
 **Framework:** Google ADK 2.10 (A2A service)
 **Package:** `offer_management` (project `offer-management-agent`)
 **A2A name:** `offer_management_agent` (hardcoded) · local port 8204
-**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
+**Contract:** [README: Agent Service Guide](../README.md#agent-service-guide)
 
 ---
 

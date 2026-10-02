@@ -3,7 +3,7 @@
 **Type:** A2A agent service + notification outbox dispatcher
 **Framework:** Google ADK 2.10 (`sales_common`), PostgreSQL
 **Package:** `customer_communication_agent` (distribution `customer-communication-agent`)
-**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
+**Contract:** [README: Agent Service Guide](../README.md#agent-service-guide)
 
 ---
 

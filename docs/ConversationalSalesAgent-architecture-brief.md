@@ -803,7 +803,7 @@ All services get `--add-cloudsql-instances`, `DATABASE_URL` on the `/cloudsql/<c
 | Document | ConversationalSalesAgent Architecture Brief |
 | Scope | Target architecture after ADK 2.x / A2A / MCP rewrite (openspec changes `adk2-workflow-orchestration`, `a2a-agent-services`, `catalog-serviceability-mcp`, `multi-service-scripts`) |
 | Baseline | Single container, SQLite, `importlib` isolation, ADK 1.x (commit `b3cb18a`); see [Architecture Evolution](#architecture-evolution) |
-| Sources analysed | `openspec/changes/*`, `docs/agent-service-guide.md`, `libs/sales_common/`, `SuperAgent/super_agent/`, `SuperAgent/server/`, `services/catalog/`, `services/serviceability/`, the 10 agent directories, `db/migrations/001-004`, `db/README.md`, `scripts/`, `docker-compose.yml`, Dockerfiles, `tests/integration/test_local_stack.py` |
+| Sources analysed | `openspec/changes/*`, README "Agent Service Guide", `libs/sales_common/`, `SuperAgent/super_agent/`, `SuperAgent/server/`, `services/catalog/`, `services/serviceability/`, the 10 agent directories, `db/migrations/001-004`, `db/README.md`, `scripts/`, `docker-compose.yml`, Dockerfiles, `tests/integration/test_local_stack.py` |
 | Generated with | `architecture-brief` skill v0.5.2 |
 | Date | 2026-09-30 |
-| Related | `AGENTS.md`, `GCP_DEPLOY.md`, `db/README.md`, `docs/agent-service-guide.md`, `openspec/changes/mcp-remaining-domains/` |
+| Related | `AGENTS.md`, `GCP_DEPLOY.md`, `db/README.md`, README "Agent Service Guide", `openspec/changes/mcp-remaining-domains/` |

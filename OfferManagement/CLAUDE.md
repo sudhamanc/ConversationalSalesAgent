@@ -16,7 +16,7 @@ All Offer Management Agent documentation (price book, discount tiers, quote sche
    - [Root AGENTS.md](/AGENTS.md)
 
 2. **Common tasks → Required reading:**
-   - Configuration / service contract → [docs/agent-service-guide.md](/docs/agent-service-guide.md)
+   - Configuration / service contract → [README: Agent Service Guide](../README.md#agent-service-guide)
    - Price book changes → [AGENTS.md - Product Price Book](AGENTS.md#product-price-book)
    - Discount changes → [AGENTS.md - Discount System](AGENTS.md#discount-system)
    - Quote schema → [AGENTS.md - Quote Output Schema](AGENTS.md#quote-output-schema)

@@ -2,7 +2,7 @@
 
 **Order lifecycle management and contract generation for the B2B Conversational Sales Agent**, served as an independent **A2A service** (`order_agent`).
 
-See [AGENTS.md](AGENTS.md) for tools, tables, journey context and output formats, and [docs/agent-service-guide.md](../docs/agent-service-guide.md) for the service contract.
+See [AGENTS.md](AGENTS.md) for tools, tables, journey context and output formats, and [README: Agent Service Guide](../README.md#agent-service-guide) for the service contract.
 
 ## Overview
 

@@ -28,7 +28,7 @@ All Discovery Agent documentation (tools, database schema, intelligent inference
 
 When working on Discovery Agent:
 
-1. **Read AGENTS.md** and [docs/agent-service-guide.md](/docs/agent-service-guide.md)
+1. **Read AGENTS.md** and [README: Agent Service Guide](../README.md#agent-service-guide)
 2. **Package:** `discovery_agent/` (agent.py, prompts.py, tools/, server.py)
 3. **Database:** PostgreSQL via `sales_common.db` (quoted columns such as `"Company Name"`)
 4. **Intelligent inference** - minimize questions by inferring industry, address, region
@@ -47,4 +47,4 @@ When working on Discovery Agent:
 
 **Primary Reference:** [AGENTS.md](AGENTS.md)
 **Root Architecture:** [/AGENTS.md](/AGENTS.md)
-**Service guide:** [/docs/agent-service-guide.md](/docs/agent-service-guide.md)
+**Service guide:** [README: Agent Service Guide](../README.md#agent-service-guide)

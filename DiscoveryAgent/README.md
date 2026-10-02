@@ -2,7 +2,7 @@
 
 Discovery-phase agent for company identification, prospect lookup/registration and conversational BANT qualification. It runs as an independent A2A service (`discovery_agent`) behind the SuperAgent gateway and stores data in PostgreSQL.
 
-See [AGENTS.md](AGENTS.md) for tools, tables and the `customer_context` contract, and [docs/agent-service-guide.md](../docs/agent-service-guide.md) for the service conventions.
+See [AGENTS.md](AGENTS.md) for tools, tables and the `customer_context` contract, and [README: Agent Service Guide](../README.md#agent-service-guide) for the service conventions.
 
 ## Scope
 

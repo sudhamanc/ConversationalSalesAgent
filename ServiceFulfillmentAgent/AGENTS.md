@@ -4,7 +4,7 @@
 **Framework:** Google ADK 2.10 (`google-adk==2.10.0` via `sales-common`)
 **Package:** `service_fulfillment_agent` (distribution `service-fulfillment-agent`)
 **Runtime:** independent A2A service (`uvicorn service_fulfillment_agent.server:app`), port 8207 locally
-**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
+**Contract:** [README: Agent Service Guide](../README.md#agent-service-guide)
 
 ---
 

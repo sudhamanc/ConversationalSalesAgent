@@ -2,7 +2,7 @@
 
 Deterministic PRE-SALE coverage and infrastructure validation agent, served over
 A2A. Details: [AGENTS.md](AGENTS.md). Build conventions:
-[docs/agent-service-guide.md](../docs/agent-service-guide.md).
+[README: Agent Service Guide](../README.md#agent-service-guide).
 
 ## Scope
 

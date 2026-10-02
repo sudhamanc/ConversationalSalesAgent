@@ -3,7 +3,7 @@
 **Type:** Product catalog agent (configuration phase)
 **Framework:** Google ADK 2.10, served over A2A (`sales_common.a2a_server`)
 **Package:** `product_agent`. **Agent name:** `product_agent` (hardcoded; the gateway routes by it)
-**Build guide:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
+**Build guide:** [README: Agent Service Guide](../README.md#agent-service-guide)
 
 ---
 

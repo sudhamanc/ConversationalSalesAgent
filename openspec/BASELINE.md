@@ -47,7 +47,7 @@ Health: agents/tools `GET /healthz`, gateway `GET /health`; agent cards `GET /.w
 
 ## 3. Agents
 
-Every agent package `<Dir>/<package>/` has `agent.py` (`build_agent(model=None)`, `root_agent`), `prompts.py`, `server.py` (A2A app), `tools/`; tests in `<Dir>/tests/` (scripted `ScriptLlm`, no key); golden evals in `evals/golden/agents/<agent>/`. Pattern: [docs/agent-service-guide.md](../docs/agent-service-guide.md).
+Every agent package `<Dir>/<package>/` has `agent.py` (`build_agent(model=None)`, `root_agent`), `prompts.py`, `server.py` (A2A app), `tools/`; tests in `<Dir>/tests/` (scripted `ScriptLlm`, no key); golden evals in `evals/golden/agents/<agent>/`. Pattern: [README: Agent Service Guide](../README.md#agent-service-guide).
 
 | Agent (package) | Tools (parameters: `evals/golden/tool_schemas.json`) | Writes context | Owns tables |
 |---|---|---|---|
@@ -123,7 +123,7 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START → prepare_turn �
 - **Change an agent's behavior:** edit `<Dir>/<package>/prompts.py` (or `tools/`), update its tests, run `scripts/eval.sh --only <agent>` (+ `router` if scope words change); refresh and re-review affected goldens.
 - **Add or change a tool:** implement in `tools/` returning a JSON dict (no LLM); register in `agent.py`; if it changes journey state write `tool_context.state[<JOURNEY_KEY>]`; add tool tests; `python -m evals.record_golden --snapshot-tools`; add golden cases; update §3 here.
 - **Change routing or handoffs:** `SuperAgent/super_agent/prompts.py` / `workflow.py`; `pytest SuperAgent/tests`; `scripts/eval.sh --only router,journeys`; update §5.
-- **Add an agent:** follow docs/agent-service-guide.md; add to `scripts/services.conf`, `docker-compose.yml`, gateway registry (`super_agent/registry.py`), `evals/golden_io.py AGENT_PACKAGES`, golden set; update §2–3.
+- **Add an agent:** follow the README "Agent Service Guide"; add to `scripts/services.conf`, `docker-compose.yml`, gateway registry (`super_agent/registry.py`), `evals/golden_io.py AGENT_PACKAGES`, golden set; update §2–3.
 - **Schema change:** new `db/migrations/00N_*.sql` (never edit applied ones); update ownership in db/README.md and §6.
 - **Config variable:** `.env.example` (+ SuperAgent/README.md table for gateway vars).
 - **FAQ / policy answer:** edit `services/catalog/data/faq_docs/*.md` (not the FAQ prompt), restart catalog (or `python services/catalog/scripts/ingest_knowledge.py`), then `scripts/eval.sh --only faq`.

@@ -19,7 +19,7 @@ All system architecture, agent development patterns, and technical guidelines ar
 
 2. **Common tasks → Required reading:**
    - Configuration changes → [.env.example](.env.example) (shared variables) and [SuperAgent/README.md](SuperAgent/README.md) (gateway variables)
-   - Agent development → [docs/agent-service-guide.md](docs/agent-service-guide.md) + the component's AGENTS.md
+   - Agent development → [README: Agent Service Guide](README.md#agent-service-guide) + the component's AGENTS.md
    - Orchestration / routing / handoffs → [SuperAgent/README.md](SuperAgent/README.md) + [openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md](openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md)
    - Tool services (catalog, serviceability) → `services/<name>/README.md`
    - Database schema → [db/README.md](db/README.md) (migrations and seed files, table ownership)
@@ -50,8 +50,8 @@ See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete detail
 
 **Critical Requirements:**
 
-1. ADK Bootstrap Template structure (`build_agent()` + `root_agent` + `server.py`)
-2. Each agent is an A2A service: see [docs/agent-service-guide.md](docs/agent-service-guide.md). No `importlib` isolation, no `sys.modules` lookups, no imports of another agent's package
+1. Agent service structure (`build_agent()` + `root_agent` + `server.py`; see README "Agent Service Guide")
+2. Each agent is an A2A service: see [README: Agent Service Guide](README.md#agent-service-guide). No `importlib` isolation, no `sys.modules` lookups, no imports of another agent's package
 3. Deterministic tools via MCP services (`services/*`, consumed with `McpToolset`) or in-process `FunctionTool`s that return JSON dicts. No LLM calls inside tools
 4. No inline styles in React (Tailwind CSS only)
 5. Test before committing (per-service `pytest`, gateway tests, `tests/integration`); after prompt, model, tool or routing changes also run the golden evals (`scripts/eval.sh`, see [evals/README.md](evals/README.md))
@@ -73,13 +73,12 @@ See [AGENTS.md - The Golden Rule](AGENTS.md#the-golden-rule) for complete detail
 
 When working in specific directories, also read:
 
-- **Agent Development:** [docs/agent-service-guide.md](docs/agent-service-guide.md) and `[AgentName]/AGENTS.md` (e.g., `DiscoveryAgent/AGENTS.md`)
+- **Agent Development:** [README: Agent Service Guide](README.md#agent-service-guide) and `[AgentName]/AGENTS.md` (e.g., `DiscoveryAgent/AGENTS.md`)
 - **Gateway / Orchestration:** [SuperAgent/README.md](SuperAgent/README.md)
 - **Tool services (REST + MCP):** [services/catalog/README.md](services/catalog/README.md), [services/serviceability/README.md](services/serviceability/README.md)
 - **Shared library:** `libs/sales_common/sales_common/` (module docstrings; overview in `__init__.py`)
 - **Database:** [db/README.md](db/README.md)
 - **UI Development:** `SuperAgent/client/AGENTS.md`
-- **Bootstrap Template:** `BootStrapAgent/AGENTS.md`
 - **System map:** [openspec/BASELINE.md](openspec/BASELINE.md)
 - **Behavioral specs (source of truth):** `openspec/specs/<capability>/spec.md`; history in `openspec/changes/archive/`; open changes in `openspec/changes/` (`mcp-remaining-domains` is planned, not implemented)
 - **Operations scripts:** `scripts/` (service list in `scripts/services.conf`)
@@ -91,7 +90,7 @@ When working in specific directories, also read:
 - [ ] Read openspec/BASELINE.md before exploring code
 - [ ] OpenSpec change created first and `openspec validate <name>` passes
 - [ ] Read AGENTS.md relevant section
-- [ ] Follow ADK Bootstrap Template pattern (`build_agent()`, `root_agent`, `server.py` with `create_a2a_app`)
+- [ ] Follow the agent service pattern (README "Agent Service Guide") (`build_agent()`, `root_agent`, `server.py` with `create_a2a_app`)
 - [ ] Agent talks to other agents only through the gateway workflow (A2A), never by import
 - [ ] No LLM hallucination for deterministic data (use tools; tools return JSON)
 - [ ] New service registered in `scripts/services.conf` (+ `docker-compose.yml`, + gateway registry for agents)
@@ -105,5 +104,5 @@ When working in specific directories, also read:
 
 **Primary Reference:** [AGENTS.md](AGENTS.md)
 **Project Overview:** [README.md](README.md)
-**Agent Service Guide:** [docs/agent-service-guide.md](docs/agent-service-guide.md)
+**Agent Service Guide:** [README: Agent Service Guide](README.md#agent-service-guide)
 **Test Scenarios:** [Scenarios.md](Scenarios.md)

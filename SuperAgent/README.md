@@ -6,7 +6,7 @@ The SuperAgent is the **gateway** of the Conversational Sales Agent. It hosts:
 - the FastAPI API (`server/`): session tokens, SSE chat, rate limiting;
 - the ADK 2.x orchestration **workflow** `sales_journey` (`super_agent/`): a router LLM, deterministic handoffs, durable sessions and long-term memory.
 
-Domain agents are **not** part of this process. Each one is a separate A2A service (ports 8201-8210) that the workflow calls through `RemoteA2aAgent`. See [../AGENTS.md](../AGENTS.md) for the whole system and [../docs/agent-service-guide.md](../docs/agent-service-guide.md) for agent services.
+Domain agents are **not** part of this process. Each one is a separate A2A service (ports 8201-8210) that the workflow calls through `RemoteA2aAgent`. See [../AGENTS.md](../AGENTS.md) for the whole system and [README: Agent Service Guide](../README.md#agent-service-guide) for agent services.
 
 ## Layout
 
@@ -176,7 +176,7 @@ System-level tests: `tests/integration/` (all services as real processes with a 
 
 ## Adding a New Agent
 
-1. Build the agent service per [../docs/agent-service-guide.md](../docs/agent-service-guide.md).
+1. Build the agent service per [README: Agent Service Guide](../README.md#agent-service-guide).
 2. Add an `AgentSpec` to `super_agent/registry.py` (the workflow adds its node and edges automatically).
 3. Add a row to `scripts/services.conf` and a block to `docker-compose.yml`.
 4. Describe when to route to it in `ROUTER_INSTRUCTION` (`super_agent/prompts.py`).

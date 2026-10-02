@@ -16,7 +16,7 @@ uvicorn faq_agent.server:app --port 8210
 - Agent card: `GET /.well-known/agent-card.json`
 - Health: `GET /healthz`
 
-Environment variables: see `docs/agent-service-guide.md` section 10.
+Environment variables: see the README "Agent Service Guide" (environment variables).
 
 ## Docker
 

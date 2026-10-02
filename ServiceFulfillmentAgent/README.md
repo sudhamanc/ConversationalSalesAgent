@@ -3,7 +3,7 @@
 A2A service `service_fulfillment_agent`: installation scheduling for created orders, equipment
 provisioning, technician dispatch and service activation (prospect → customer). Details and
 the tool/table/journey-key matrix are in [AGENTS.md](AGENTS.md); the shared service contract is
-[docs/agent-service-guide.md](../docs/agent-service-guide.md).
+[README: Agent Service Guide](../README.md#agent-service-guide).
 
 ## Scope
 

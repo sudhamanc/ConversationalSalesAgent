@@ -2,7 +2,7 @@
 
 Deterministic pricing, discounts and quotes for the Conversational Sales Agent, served as an independent **A2A service** (`offer_management_agent`).
 
-See [AGENTS.md](AGENTS.md) for tools, pricing rules and journey context, and [docs/agent-service-guide.md](../docs/agent-service-guide.md) for the service contract.
+See [AGENTS.md](AGENTS.md) for tools, pricing rules and journey context, and [README: Agent Service Guide](../README.md#agent-service-guide) for the service contract.
 
 ## Run locally
 

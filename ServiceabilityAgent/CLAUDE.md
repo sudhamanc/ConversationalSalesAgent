@@ -57,4 +57,4 @@ DO NOT confuse the two.
 
 **Primary Reference:** [AGENTS.md](AGENTS.md)
 **Root Architecture:** [/AGENTS.md](/AGENTS.md)
-**Service guide:** [/docs/agent-service-guide.md](/docs/agent-service-guide.md)
+**Service guide:** [README: Agent Service Guide](../README.md#agent-service-guide)

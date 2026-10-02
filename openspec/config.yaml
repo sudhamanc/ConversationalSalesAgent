@@ -17,7 +17,7 @@ context: |
     - Deployment: Docker, docker compose (local), Google Cloud Run (one service per container)
 
   Conventions:
-    - Every agent follows the ADK Bootstrap Template layout (see AGENTS.md)
+    - Every agent follows the agent service layout (README.md "Agent Service Guide")
     - Deterministic business data comes from tools/APIs only, never from LLM generation
     - Tools return structured JSON with explicit field names
     - No hardcoded secrets; config via environment variables; fail fast on missing

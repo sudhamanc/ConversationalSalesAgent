@@ -1,6 +1,6 @@
 # GreetingAgent - agent notes
 
-Follows `docs/agent-service-guide.md` (ADK 2.x + A2A + PostgreSQL).
+Follows the README "Agent Service Guide" (ADK 2.x + A2A + PostgreSQL).
 
 - Agent name: `greeting_agent` (hardcoded; the gateway routes by it). Default port 8209.
 - `greeting_agent/prompts.py`: domain prompt, used as `static_instruction`; `instruction` is the shared `JOURNEY_CONTEXT_INSTRUCTION`.

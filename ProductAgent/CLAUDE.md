@@ -28,7 +28,7 @@
 2. **Infrastructure-aware** - Filter products by Fiber/Coax constraints
 3. **Temperature = 0.0** - Deterministic for factual accuracy
 4. **8 MCP tools** - Catalog, comparison and knowledge search (names unchanged)
-5. **Build pattern:** [docs/agent-service-guide.md](/docs/agent-service-guide.md) (A2A service, `server.py`)
+5. **Build pattern:** [README: Agent Service Guide](../README.md#agent-service-guide) (A2A service, `server.py`)
 
 ---
 

@@ -15,7 +15,7 @@
 
 2. **Common tasks → Required reading:**
    - Configuration changes → [.env.example](.env.example) and [SuperAgent/README.md](SuperAgent/README.md)
-   - Agent development → [docs/agent-service-guide.md](docs/agent-service-guide.md) + the component's AGENTS.md
+   - Agent development → [README: Agent Service Guide](README.md#agent-service-guide) + the component's AGENTS.md
    - Orchestration, routing, handoffs → [SuperAgent/README.md](SuperAgent/README.md)
    - Tool services → `services/<name>/README.md`
    - Database → [db/README.md](db/README.md)
@@ -175,9 +175,9 @@ Shared runtime code lives in `libs/sales_common/sales_common/` (`config`, `db`, 
 
 ## The Golden Rule
 
-**All agents MUST strictly follow ADK standards.** The full, authoritative rules and templates are in **[docs/agent-service-guide.md](docs/agent-service-guide.md)**. Summary:
+**All agents MUST strictly follow ADK standards.** The full, authoritative rules and templates are in **[README: Agent Service Guide](README.md#agent-service-guide)**. Summary:
 
-### 1. ADK Bootstrap Template Structure + A2A server
+### 1. Agent Service Structure + A2A server
 
 ```text
 OrderAgent/
@@ -540,7 +540,7 @@ The router prompt (`ROUTER_INSTRUCTION`) classifies intent in this priority orde
 
 ### Adding a New Agent
 
-1. **Create the service** following [docs/agent-service-guide.md](docs/agent-service-guide.md): `NewAgent/pyproject.toml`, `new_agent/{__init__,agent,prompts,server}.py`, `tools/`, `tests/`, `Dockerfile` (build context = repo root).
+1. **Create the service** following [README: Agent Service Guide](README.md#agent-service-guide): `NewAgent/pyproject.toml`, `new_agent/{__init__,agent,prompts,server}.py`, `tools/`, `tests/`, `Dockerfile` (build context = repo root).
 2. **Register it in the gateway:** add an `AgentSpec("new_agent", "<routing description>", "http://localhost:82NN")` to `SuperAgent/super_agent/registry.py`. `build_workflow` adds the node and its edges from the registry.
 3. **Add a row to `scripts/services.conf`** (`name|dir|module|port|agent|csa-agent-<name>|new_agent|<mcp deps>`) so `setup_local.sh`, `start_local.sh`, `stop_local.sh` and `deploy_cloud.sh` pick it up (the gateway gets `AGENT_URL_NEW_AGENT` automatically), and add a matching block to `docker-compose.yml`.
 4. **Update the router prompt** (`ROUTER_INSTRUCTION` in `SuperAgent/super_agent/prompts.py`) with when to choose `new_agent`.
@@ -584,7 +584,7 @@ Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by Fa
 ## References
 
 - **Project README:** [README.md](README.md)
-- **Agent Service Guide:** [docs/agent-service-guide.md](docs/agent-service-guide.md)
+- **Agent Service Guide:** [README: Agent Service Guide](README.md#agent-service-guide)
 - **Gateway:** [SuperAgent/README.md](SuperAgent/README.md)
 - **Database:** [db/README.md](db/README.md)
 - **Tool services:** [services/catalog/README.md](services/catalog/README.md), [services/serviceability/README.md](services/serviceability/README.md)

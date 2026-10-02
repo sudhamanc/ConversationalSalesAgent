@@ -4,7 +4,7 @@
 **Framework:** Google ADK 2.10 (A2A service)
 **Package:** `payment_agent` (project `payment-agent`)
 **A2A name:** `payment_agent` (hardcoded) - local port 8206
-**Contract:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
+**Contract:** [README: Agent Service Guide](../README.md#agent-service-guide)
 
 ---
 

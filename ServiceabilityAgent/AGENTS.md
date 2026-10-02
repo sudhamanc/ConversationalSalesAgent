@@ -3,7 +3,7 @@
 **Type:** Deterministic PRE-SALE agent (A2A service)
 **Framework:** Google ADK 2.10 + A2A, tools over MCP
 **Package:** `serviceability_agent`
-**Build guide:** [docs/agent-service-guide.md](../docs/agent-service-guide.md)
+**Build guide:** [README: Agent Service Guide](../README.md#agent-service-guide)
 
 ---
 
