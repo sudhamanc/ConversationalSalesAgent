@@ -15,13 +15,14 @@ from .config import ContextSettings
 logger = logging.getLogger("sales_common.adk_app")
 
 
-def compaction_config(settings: ContextSettings) -> EventsCompactionConfig:
+def compaction_config(settings: ContextSettings, summarizer=None) -> EventsCompactionConfig:
     """Sliding-window + token-threshold compaction (token-based takes priority)."""
     return EventsCompactionConfig(
         compaction_interval=settings.compaction_interval,
         overlap_size=settings.compaction_overlap,
         token_threshold=settings.compaction_token_threshold,
         event_retention_size=settings.compaction_retention,
+        summarizer=summarizer,
     )
 
 
@@ -39,17 +40,19 @@ def build_app(
     *,
     plugins: Optional[Sequence[BasePlugin]] = None,
     settings: Optional[ContextSettings] = None,
+    summarizer=None,
 ) -> App:
     """Build an ``App`` with compaction and caching enabled.
 
-    ``name`` must match ``^[a-zA-Z][a-zA-Z0-9_-]*$``.
+    ``name`` must match ``^[a-zA-Z][a-zA-Z0-9_-]*$``. ``summarizer`` is required when the root
+    is a ``Workflow`` (no root ``LlmAgent`` for ADK to borrow a model from).
     """
     settings = settings or ContextSettings.from_env()
     app = App(
         name=name,
         root_agent=root_agent,
         plugins=list(plugins or []),
-        events_compaction_config=compaction_config(settings),
+        events_compaction_config=compaction_config(settings, summarizer),
         context_cache_config=cache_config(settings),
     )
     logger.info(

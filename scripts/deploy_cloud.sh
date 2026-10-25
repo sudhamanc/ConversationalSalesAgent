@@ -101,6 +101,17 @@ require_url() {
 
 join_by() { local d="$1"; shift; local out="" x; for x in "$@"; do out="${out:+$out$d}$x"; done; printf '%s' "$out"; }
 
+predicted_url() {
+  # predicted_url <cloud_run_name> -> placeholder PUBLIC_URL so a new agent can start; replaced by status.url after deploy
+  local num
+  if ! have_gcloud && is_dry_run; then
+    printf 'https://%s-dryrun.%s.run.app' "$1" "$REGION"
+    return 0
+  fi
+  num="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+  printf 'https://%s-%s.%s.run.app' "$1" "$num" "$REGION"
+}
+
 section "Plan"
 log_info "project=$PROJECT_ID region=$REGION tag=$TAG build=$BUILD_MODE$(is_dry_run && echo ' (dry run)' || true)"
 for kind in tool agent gateway; do
@@ -159,7 +170,7 @@ if [ "$MIGRATE" = "yes" ] || { [ "$MIGRATE" = "auto" ] && is_selected gateway; }
   if is_selected gateway; then JOB_IMAGE="$(image_for gateway "$TAG")"; else JOB_IMAGE="$(image_for gateway latest)"; fi
   run gcloud run jobs deploy "$DB_JOB" --image="$JOB_IMAGE" --region="$REGION" --project="$PROJECT_ID" \
     --service-account="$SA_GATEWAY" --set-cloudsql-instances="$SQL_CONNECTION" \
-    --set-env-vars="^@^DATABASE_URL=${DATABASE_URL_CLOUD}@DB_DIR=/app/db@LOG_LEVEL=INFO" \
+    --set-env-vars="^#^DATABASE_URL=${DATABASE_URL_CLOUD}#DB_DIR=/app/db#LOG_LEVEL=INFO" \
     --set-secrets="PGPASSWORD=DB_PASSWORD:latest" \
     --command=python --args=-m,sales_common.migrate,--seed \
     --tasks=1 --max-retries=0 --task-timeout=600s --quiet
@@ -204,7 +215,7 @@ deploy_service() {
       sa="$SA_AGENTS"
       envs+=("GEMINI_MODEL=$GEMINI_MODEL")
       secrets+=("GOOGLE_API_KEY=GOOGLE_API_KEY:latest")
-      if [ -n "$existing_url" ]; then envs+=("PUBLIC_URL=$existing_url"); fi
+      if [ -n "$existing_url" ]; then envs+=("PUBLIC_URL=$existing_url"); else envs+=("PUBLIC_URL=$(predicted_url "$cloud")"); fi
       if [ -n "${SVC_MCP[$i]}" ]; then
         IFS=',' read -r -a deps <<<"${SVC_MCP[$i]}"
         for dep in "${deps[@]}"; do
@@ -243,7 +254,7 @@ deploy_service() {
   run gcloud run deploy "$cloud" --image="$(image_for "$name" "$TAG")" \
     --region="$REGION" --project="$PROJECT_ID" --platform=managed \
     --service-account="$sa" --add-cloudsql-instances="$SQL_CONNECTION" \
-    --set-env-vars="^@^$(join_by @ "${envs[@]}")" \
+    --set-env-vars="^#^$(join_by '#' "${envs[@]}")" \
     --set-secrets="$(join_by , "${secrets[@]}")" \
     --memory="$memory" --cpu=1 --min-instances="$min_instances" --max-instances="$MAX_INSTANCES" \
     --timeout=300 --execution-environment=gen2 "$auth" --quiet
@@ -251,7 +262,7 @@ deploy_service() {
   url="$(service_url "$cloud")"
   [ -n "$url" ] || die "could not read the URL of $cloud after deploy"
 
-  # Second pass for a brand-new service: its own URL is only known after the first deploy.
+  # Second pass for a brand-new service: PUBLIC_URL must equal the URL the gateway uses, which is status.url.
   if [ -z "$existing_url" ]; then
     case "$kind" in
       agent) pass2=("PUBLIC_URL=$url") ;;
@@ -259,7 +270,7 @@ deploy_service() {
     esac
     if [ "${#pass2[@]}" -gt 0 ]; then
       run gcloud run services update "$cloud" --region="$REGION" --project="$PROJECT_ID" \
-        --update-env-vars="^@^$(join_by @ "${pass2[@]}")" --quiet
+        --update-env-vars="^#^$(join_by '#' "${pass2[@]}")" --quiet
     fi
   fi
 

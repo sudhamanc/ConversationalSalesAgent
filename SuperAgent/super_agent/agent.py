@@ -11,6 +11,9 @@ from typing import Mapping, Optional
 
 from google.adk.agents import BaseAgent
 from google.adk.apps import App
+from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+from google.adk.models import Gemini
+from google.adk.models.base_llm import BaseLlm
 
 from sales_common.a2a_client import remote_agent
 from sales_common.adk_app import build_app
@@ -53,4 +56,10 @@ def build_gateway_app(
 ) -> App:
     """Build the gateway App. Tests pass in-process agents and a scripted router model."""
     workflow = build_workflow(agents or build_remote_agents(), router_model or model_name())
-    return build_app(settings.agent.app_name, workflow, plugins=[ContextBridgePlugin()])
+    summary_llm = router_model if isinstance(router_model, BaseLlm) else Gemini(model=model_name())
+    return build_app(
+        settings.agent.app_name,
+        workflow,
+        plugins=[ContextBridgePlugin()],
+        summarizer=LlmEventSummarizer(llm=summary_llm),
+    )
