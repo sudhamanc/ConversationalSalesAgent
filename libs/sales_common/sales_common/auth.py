@@ -72,3 +72,24 @@ class ServiceAuth(httpx.Auth):
             token = get_id_token(audience_for(str(request.url)))
             request.headers["Authorization"] = f"Bearer {token}"
         yield request
+
+
+try:  # the mcp SDK's HTTP client is httpx2 (a separate package from httpx)
+    import httpx2
+
+    class ServiceAuthHttpx2(httpx2.Auth):
+        """``ServiceAuth`` for httpx2 clients (MCP): ID token per request, no-op when disabled.
+
+        Used through the MCP client factory so that every MCP request carries the
+        token, including tool listing on a cold instance, where ADK does not call
+        ``McpToolset(header_provider=...)`` (it needs a request context).
+        """
+
+        def auth_flow(self, request):
+            if auth_mode() != "none":
+                token = get_id_token(audience_for(str(request.url)))
+                request.headers["Authorization"] = f"Bearer {token}"
+            yield request
+
+except ImportError:  # pragma: no cover - mcp always installs httpx2
+    ServiceAuthHttpx2 = None  # type: ignore[assignment,misc]

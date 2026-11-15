@@ -6,9 +6,20 @@ import json
 from typing import Any, Optional, Sequence
 
 from google.adk.tools.mcp_tool import McpToolset, StreamableHTTPConnectionParams
+from mcp.shared._httpx_utils import create_mcp_http_client
 
-from .auth import service_headers
+from .auth import ServiceAuthHttpx2
 from .config import env_int
+
+
+def authed_mcp_http_client(headers=None, timeout=None, auth=None):
+    """MCP HTTP client factory that authenticates every request (``SERVICE_AUTH``).
+
+    ADK applies ``McpToolset(header_provider=...)`` only when a request context
+    exists, so tool listing on a cold Cloud Run instance went out without a token
+    (HTTP 403). The auth flow on the client covers every request instead.
+    """
+    return create_mcp_http_client(headers=headers, timeout=timeout, auth=auth or ServiceAuthHttpx2())
 
 
 def mcp_toolset(url: str, *, tool_filter: Optional[Sequence[str]] = None) -> McpToolset:
@@ -17,10 +28,10 @@ def mcp_toolset(url: str, *, tool_filter: Optional[Sequence[str]] = None) -> Mcp
         connection_params=StreamableHTTPConnectionParams(
             url=url,
             timeout=float(env_int("MCP_TIMEOUT_SECONDS", 15)),
+            httpx_client_factory=authed_mcp_http_client,
         ),
         tool_filter=list(tool_filter) if tool_filter else None,
         tool_list_cache_ttl_seconds=env_int("MCP_TOOL_CACHE_SECONDS", 300),
-        header_provider=lambda _ctx: service_headers(url),
     )
 
 
