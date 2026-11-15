@@ -22,7 +22,8 @@ RUN pip install /app/services/catalog
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2').save('${EMBEDDING_MODEL_PATH}')" \
  && python /app/services/catalog/scripts/ingest_knowledge.py --chroma-path "${CHROMA_PATH}"
 
-RUN useradd --create-home --uid 10001 app && chown -R app /app/data
+# The model files are written root-only (0600); the service runs as "app".
+RUN useradd --create-home --uid 10001 app && chown -R app /app/data && chmod -R a+rX /app/models
 USER app
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 RAG_BUILD_ON_START=false
 WORKDIR /app/services/catalog

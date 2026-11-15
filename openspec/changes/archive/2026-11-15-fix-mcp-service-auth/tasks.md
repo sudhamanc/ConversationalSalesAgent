@@ -6,5 +6,5 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Deploy the MCP consumers (`scripts/deploy_cloud.sh --only product,faq,serviceability-agent`). Verify: no `403` from the tool services in the agents' logs after a cold start, and an FAQ turn ("What is your cancellation policy?") is answered from `search_faq`, with an MCP `tools/call search_faq` span in its Langfuse trace.
-- [ ] 2.2 `openspec validate fix-mcp-service-auth` passes. Commit, then `openspec archive fix-mcp-service-auth -y`.
+- [x] 2.1 Deploy the MCP consumers (`scripts/deploy_cloud.sh --only product,faq,serviceability-agent`). Verify: no `403` from the tool services in the agents' logs after a cold start, and an FAQ turn ("What is your cancellation policy?") is answered from `search_faq`, with an MCP `tools/call search_faq` span in its Langfuse trace.
+- [x] 2.2 `openspec validate fix-mcp-service-auth` passes. Commit, then `openspec archive fix-mcp-service-auth -y`.
