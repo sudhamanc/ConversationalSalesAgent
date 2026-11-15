@@ -29,6 +29,9 @@ graph TD
     TS --> PG
     GW -->|router| GEM(("Gemini API"))
     AG -->|agents| GEM
+    GW -.->|OTLP traces, optional| LF(("Langfuse"))
+    AG -.-> LF
+    TS -.-> LF
 ```
 
 ```
@@ -36,7 +39,7 @@ User → React UI → Gateway (FastAPI → ADK Runner → sales_journey Workflow
      → RemoteA2aAgent → Agent service (ADK agent → tools / MCP) → PostgreSQL
 ```
 
-Responses stream back to the browser via Server-Sent Events (SSE). A per-service overview with the full node graph is in [AGENTS.md](AGENTS.md#system-architecture).
+Responses stream back to the browser via Server-Sent Events (SSE). When Langfuse keys are set, every service also exports OpenTelemetry traces, one trace per turn across all hops ([Agent Observability](#agent-observability-langfuse)). A per-service overview with the full node graph is in [AGENTS.md](AGENTS.md#system-architecture).
 
 ### Architectural Layers
 
@@ -55,6 +58,8 @@ Responses stream back to the browser via Server-Sent Events (SSE). A per-service
 │  TOOL SERVICES   catalog: REST+MCP+RAG · serviceability: REST+MCP   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  DATA            PostgreSQL 16 (Cloud SQL in GCP) · SMTP · Gemini   │
+├─────────────────────────────────────────────────────────────────────┤
+│  OBSERVABILITY   OpenTelemetry → Langfuse (optional, all services)   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -66,7 +71,7 @@ Responses stream back to the browser via Server-Sent Events (SSE). A per-service
 | **Zero-hallucination for critical data** | Addresses, prices, orders always come from deterministic tools |
 | **Router-only orchestrator** | The gateway classifies intent and dispatches; it never writes customer-facing domain answers |
 | **Deterministic handoffs** | Mandatory next steps (Discovery → Serviceability, Scheduling → Payment) are Python rules in the workflow |
-| **Temperature-stratified agents** | Greeting/FAQ 0.7; transactional agents and the router 0.0 |
+| **Temperature-stratified agents** | Greeting 0.7, fulfillment 0.3, FAQ 0.2; the router and all other agents 0.0 |
 | **Structured data contracts** | Tools return JSON (not prose) to prevent LLM rephrasing of critical values |
 | **Shared journey-state contracts** | Agents publish authoritative context into ADK session state; it crosses the A2A boundary through metadata and `_context_update` |
 | **A2A service per agent** | No in-process coupling: no `importlib` loading or `sys.modules` calls between agents (see [Agent Service Guide](#agent-service-guide)) |
@@ -94,7 +99,7 @@ User message → Gateway workflow (sales_journey)
 - **Gateway → agent** is A2A. Each domain node in the workflow is a `RemoteA2aAgent` that fetches the agent's card (`/.well-known/agent-card.json`) and sends only the directed message for that agent, with the gateway session id as the A2A context id.
 - **Shared journey state is the data plane.** The five journey keys (`customer_context`, `serviceability_context`, `offer_context`, `order_context`, `payment_context`) travel to the agent as A2A request metadata. `import_forwarded_context` (a `before_agent_callback`) copies them into the agent's session state so its tools and templated instructions can use them.
 - **Agent → gateway.** A2A does not return remote state changes, so `export_context_delta` (an `after_tool_callback`) adds `_context_update` to a tool's response. The gateway's `ContextBridgePlugin` merges it into the session before the handoff node runs.
-- **Deterministic handoffs.** `HandoffPolicyNode` checks the merged state after each agent and routes to the next agent within the same turn. This replaces the former `after_agent_callback` transfers and the synthetic "Proceed to payment" re-run.
+- **Deterministic handoffs.** `HandoffPolicyNode` checks the merged state after each agent and routes to the next agent within the same turn.
 - **Cross-domain side effects** do not call other agents. Notifications are written to a transactional **outbox** (`notifications` rows with `status='pending'`) that the customer communication service dispatches; quote status updates and customer-state lookups use shared SQL helpers (`sales_common.repositories`).
 
 ### Session State, Sessions and Memory
@@ -166,7 +171,7 @@ The system uses **ADK session state as a shared, structured memory layer** acros
 
 | Tool service | Directory | Port | Tables owned | Interfaces |
 |---|---|---|---|---|
-| Catalog | `services/catalog/` | 8101 | `products` | REST `/api/v1`, MCP `/mcp/` (8 tools), ChromaDB knowledge index |
+| Catalog | `services/catalog/` | 8101 | `products` | REST `/api/v1`, MCP `/mcp/` (9 tools: 8 product tools + `search_faq`), ChromaDB knowledge index |
 | Serviceability | `services/serviceability/` | 8102 | `coverage_zones` | REST `/api/v1`, MCP `/mcp/` (6 tools), optional upstream GIS |
 
 The service manifest used by all scripts is [`scripts/services.conf`](scripts/services.conf); the gateway's routing registry is `SuperAgent/super_agent/registry.py`.
@@ -192,7 +197,7 @@ The router (`route_intent`) picks one agent per turn in this priority order:
 
 ## Agent Service Guide
 
-This section defines how every domain agent is built, served and tested after the ADK 2.x / A2A rewrite. It replaces the old "importlib isolation" pattern. Background decisions are in `openspec/changes/archive/2026-10-01-a2a-agent-services/design.md` and `openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md`.
+This section defines how every domain agent is built, served and tested. Background decisions are in `openspec/changes/archive/2026-10-01-a2a-agent-services/design.md` and `openspec/changes/archive/2026-10-01-adk2-workflow-orchestration/design.md`.
 
 ### 1. Layout
 
@@ -267,7 +272,7 @@ app = create_a2a_app(root_agent)   # uses_database=False for agents without DB t
 
 Run with `uvicorn order_agent.server:app --host 0.0.0.0 --port $PORT`.
 
-- `create_a2a_app` builds an ADK `App` with context compaction and context caching, `DatabaseSessionService` sessions, an a2a-sdk `DatabaseTaskStore`, and `GET /healthz`.
+- `create_a2a_app` builds an ADK `App` with context compaction and context caching, `DatabaseSessionService` sessions, an a2a-sdk `DatabaseTaskStore`, and `GET /healthz`. It also initializes tracing (`sales_common.telemetry`, a no-op without Langfuse keys) and extracts incoming trace headers, so the agent's spans join the gateway's trace.
 - The agent card is served at `/.well-known/agent-card.json` and advertises `PUBLIC_URL`.
 
 ### 4. Journey context (state across A2A)
@@ -290,16 +295,7 @@ with db.transaction() as conn:                       # commit on success, rollba
                           customer_id=cid, args={...template args...}, conn=conn)
 ```
 
-SQLite → PostgreSQL translation:
-
-| SQLite | PostgreSQL |
-|---|---|
-| `?` | `%s` (named: `%(name)s`) |
-| `INSERT OR REPLACE` | `INSERT ... ON CONFLICT (pk) DO UPDATE SET ...` |
-| `INSERT OR IGNORE` | `ON CONFLICT DO NOTHING` |
-| `cursor.lastrowid` | `RETURNING id` |
-| `PRAGMA ...`, `sqlite3.Row` | remove; rows are dicts |
-| `datetime('now')` | pass `db.now_iso()` (timestamps are ISO TEXT) |
+SQL conventions: psycopg 3 placeholders `%s` / `%(name)s`, upserts with `INSERT ... ON CONFLICT ...`, generated ids via `RETURNING`, rows are dicts, timestamps are ISO text (`db.now_iso()`).
 
 - **Quoting:** the `accounts` table uses quoted, case-sensitive columns `"Company Name"`, `"Industry"`, `"Street"`, `"City"`, `"State"`, `"Website"`, `"Existing Customer"`, and so on. Always double-quote them in SQL; unquoted `Street` folds to `street` and fails.
 - **Schema:** lives in `db/migrations/*.sql`. Agents never create tables at runtime.
@@ -313,8 +309,8 @@ SQLite → PostgreSQL translation:
 
 ### 7. Prompts
 
-- Remove every instruction to `transfer_to_agent` or to hand off to a named peer agent. Agents cannot transfer; the gateway workflow routes each user turn and runs the deterministic handoffs (Discovery→Serviceability, Scheduling→Payment).
-- Keep domain behaviour and output formats unchanged. The UI parses some formats, such as the order and payment JSON blocks and the serviceability key:value lines.
+- Prompts never tell the model to `transfer_to_agent` or hand off to a named peer agent. Agents cannot transfer; the gateway workflow routes each user turn and runs the deterministic handoffs (Discovery→Serviceability, Scheduling→Payment).
+- Keep output formats stable. The UI parses some of them, such as the order and payment JSON blocks and the serviceability key:value lines.
 
 ### 8. Tests
 
@@ -371,15 +367,16 @@ CMD ["sh", "-c", "exec uvicorn order_agent.server:app --host 0.0.0.0 --port ${PO
 | `MODEL_REQUEST_TIMEOUT_MS` | no | per-request Gemini timeout, default `120000` |
 | `CATALOG_MCP_URL` / `SERVICEABILITY_MCP_URL` | for MCP agents | tool service MCP endpoint (product and faq → catalog; serviceability → serviceability); set by the scripts and compose |
 | `COMPACTION_*`, `CONTEXT_CACHE_*` | no | see `sales_common.config.ContextSettings` |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`, `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_CAPTURE_CONTENT`, `TELEMETRY_FLUSH_PER_REQUEST` | no | tracing to Langfuse (off without keys); `create_a2a_app` wires it, no agent code needed. See [Agent Observability](#agent-observability-langfuse) |
 
 ---
 
 ## Database Architecture (PostgreSQL)
 
-All services share **one PostgreSQL 16 database** (a `postgres:16` container or your own server locally, Cloud SQL in GCP). It replaces the earlier SQLite `sales_agent.db` and its GCS sync.
+All services share **one PostgreSQL 16 database** (a `postgres:16` container or your own server locally, Cloud SQL in GCP).
 
 - **Schema** is managed only by versioned SQL migrations in `db/migrations/` (`001_sales_schema.sql` 19 sales tables, `002_catalog.sql` `products`, `003_platform.sql` `adk_memories` + `revoked_sessions`, `004_coverage.sql` `coverage_zones`, `005_notifications_seq.sql` outbox insertion order). Services never create business tables at runtime.
-- **Seed data** in `db/seed/` (demo accounts exported from the legacy SQLite database, 16 SKUs, 38 coverage ZIPs) is applied once per database.
+- **Seed data** in `db/seed/` (165 demo accounts with contacts, quotes, orders and fulfillments; 16 SKUs; 38 coverage ZIPs) is applied once per database.
 - **Apply** with `scripts/db.sh migrate | seed | reset --yes` or `python -m sales_common.migrate [--seed]`. Applied files are tracked in `schema_migrations` / `seed_versions`.
 - **Library-managed tables:** ADK session tables (`sessions`, `events`, `app_states`, `user_states`) are created by `DatabaseSessionService`, and `a2a_tasks` by the a2a-sdk `DatabaseTaskStore`.
 - **Access:** agent tools use `sales_common.db` (psycopg 3 connection pool, dict rows, `transaction()`); ADK sessions and tasks use SQLAlchemy + asyncpg.
@@ -744,6 +741,7 @@ Product data and product knowledge live in the **catalog service** (`services/ca
 |-------------|-------|-----------|
 | **`products` table** (PostgreSQL, 16 SKUs) | `get_product_by_id`, `list_available_products`, `compare_products`, `search_products_by_criteria`, `suggest_alternatives`, `get_best_value_product`, `get_product_categories` | Product lookups, comparisons, filtering by speed/category |
 | **ChromaDB vector store** (RAG) | `search_product_knowledge` | Documentation-level questions: SLA specifics, installation requirements, codec details, use-case fit |
+| **ChromaDB FAQ collection** (RAG, used by `faq_agent`) | `search_faq` | Policy and general questions; the FAQ agent answers only from retrieved passages |
 
 > **Key nuance:** "Compare Fiber 1G vs 5G" reads the **catalog table**, not RAG. RAG is used only when the question needs documentation-level depth (e.g., "What codec does Business Voice use?"). Prices are never returned by the catalog service; they come only from the offer management agent.
 
@@ -758,10 +756,10 @@ User question
   → agent composes a grounded answer
 ```
 
-- **Sources:** `services/catalog/data/product_docs/*.md` (fiber, coax, voice, SD-WAN, mobile).
+- **Sources:** `services/catalog/data/product_docs/*.md` (fiber, coax, voice, SD-WAN, mobile) for `search_product_knowledge`, and `services/catalog/data/faq_docs/*.md` (billing and payments, cancellation and changes, contracts and terms, installation, service levels, support) for `search_faq`, the FAQ agent's only source. One shared embedder serves both collections.
 - **Index:** `CHROMA_PATH` (default `services/catalog/data/embeddings`, gitignored). Build it with `python services/catalog/scripts/ingest_knowledge.py`, or let the service build it in the background on first start (`RAG_BUILD_ON_START=true`).
 - **Docker / Cloud Run:** the catalog image installs CPU-only PyTorch, pre-stages the embedding model at `EMBEDDING_MODEL_PATH` and builds the index at image build time; at runtime it works offline.
-- **Degraded mode:** when the model or index is unavailable, `search_product_knowledge` returns `available: false` and the rest of the catalog keeps working. (In the build sandbox used for the rewrite the model download was blocked, so this path was the one exercised.)
+- **Degraded mode:** when the model or index is unavailable, `search_product_knowledge` / `search_faq` return `available: false` and the rest of the catalog keeps working.
 
 Details: [services/catalog/README.md](services/catalog/README.md).
 
@@ -796,6 +794,7 @@ Typical end-to-end flow:
 | Streaming | Server-Sent Events (SSE) |
 | Database | PostgreSQL 16 (psycopg 3, SQLAlchemy 2.1 + asyncpg), versioned SQL migrations |
 | RAG | ChromaDB + sentence-transformers (catalog service) |
+| Observability | OpenTelemetry (OTLP/HTTP) + OpenInference ADK instrumentation → Langfuse Cloud (traces, sessions, scores, datasets) |
 | Deployment | Docker Compose locally; Cloud Run + Cloud SQL + Secret Manager on GCP |
 
 ---
@@ -809,8 +808,9 @@ ConversationalSalesAgent/
 ├── GCP_DEPLOY.md                    # Multi-service Cloud Run deployment guide
 ├── .env.example                     # Shared environment template (copied to .env)
 ├── docker-compose.yml               # Full local stack in containers
-├── openspec/changes/                # Design proposals and specs for the rewrite
-├── libs/sales_common/               # Shared runtime library (config, db, A2A, MCP, memory, outbox)
+├── openspec/                        # BASELINE.md (system map), specs/ (behavior), changes/ (proposals + archive)
+├── docs/                            # Presentation decks, architecture brief, issue write-ups
+├── libs/sales_common/               # Shared runtime library (config, db, A2A, MCP, memory, outbox, telemetry)
 ├── db/                              # migrations/ + seed/ (PostgreSQL), README with table ownership
 ├── scripts/                         # services.conf + setup/start/stop/db/deploy/eval scripts, e2e_test.py
 ├── evals/                           # Golden datasets (ADK EvalSet) + eval runners (agents, router, journeys)
@@ -819,7 +819,7 @@ ConversationalSalesAgent/
 │   └── serviceability/              # Address + coverage REST + MCP (port 8102)
 ├── SuperAgent/                      # Gateway (port 8000)
 │   ├── super_agent/                 #   sales_journey workflow, registry, router prompt, plugins
-│   ├── server/                      #   FastAPI app: session, chat (SSE), debug endpoints
+│   ├── server/                      #   FastAPI app: session, chat (SSE), feedback, debug endpoints
 │   ├── client/                      #   React UI
 │   └── tests/
 ├── DiscoveryAgent/                  # A2A agent services (ports 8201-8210), each with
@@ -832,7 +832,8 @@ ConversationalSalesAgent/
 ├── CustomerCommunicationAgent/
 ├── GreetingAgent/
 ├── FAQAgent/
-└── tests/integration/               # Multi-process integration test (scripted fake model)
+├── tests/                           # Cross-cutting tests: integration/ (multi-process, scripted model), baseline doc check
+└── .certs/                          # (gitignored, optional) local CA bundle for TLS-intercepting proxies
 ```
 
 ---
@@ -872,6 +873,8 @@ scripts/start_local.sh
 `scripts/db.sh up --native` skips Docker; `scripts/db.sh down` stops whichever one is running (data is kept). `start_local.sh` refuses to start when the database is unreachable and points to `db.sh up`.
 
 > **Behind a corporate proxy?** Docker Desktop and Rancher Desktop run the engine in a VM that does not use the Mac's proxy auto-config, so pulls from Docker Hub can time out even though the browser works. Either configure the proxy in the engine's settings, or let `db.sh up` fall back to Homebrew.
+>
+> **Rancher Desktop never becomes ready?** If its log says `The k3s cache is empty and there is no network connection`, Kubernetes is enabled and k3s cannot be downloaded through the proxy. This project needs only Docker: `rdctl start --kubernetes.enabled=false --container-engine.name=moby`. If `docker info` still fails, the CLI may point at another engine's socket: `docker context use rancher-desktop` (or `export DOCKER_HOST=unix://$HOME/.rd/docker.sock`).
 
 - UI: `http://localhost:3000` (Vite proxies `/api` to the gateway)
 - Gateway health: `http://localhost:8000/health`
@@ -890,6 +893,10 @@ docker compose up --build
 ```
 
 Starts PostgreSQL 16, a one-shot `db-init` (migrations + seed), both tool services, all 10 agents and the gateway on a private network. Only the gateway is published: `http://localhost:8000` serves the built UI and the API.
+
+### Observability (Langfuse)
+
+Optional tracing of every turn to Langfuse: put `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` in `.env` and restart. See [Agent Observability (Langfuse)](#agent-observability-langfuse) for what you get, how it works and what to look for in the dashboard.
 
 ### Logs and Stopping
 
@@ -927,10 +934,10 @@ Tests live **next to the code they test**. Each package (the shared library, eve
 
 | Where | What it tests | Model | Needs | Run |
 |---|---|---|---|---|
-| `libs/sales_common/tests/` | Shared library: config, DB helpers, migrations, journey context, A2A/MCP factories, model wrapper | none | DB for some tests | `pytest libs/sales_common/tests -q` |
+| `libs/sales_common/tests/` | Shared library: config, DB helpers, migrations, journey context, A2A/MCP factories, model wrapper, tracing (masking, filters, A2A/MCP trace propagation, ADK instrumentation) | none | DB for some tests | `pytest libs/sales_common/tests -q` |
 | `<Agent>/tests/` (e.g. `OrderAgent/tests/`) | One agent: its tools against PostgreSQL, and its behavior with a scripted model (`sales_common.testing.ScriptLlm`) | scripted | DB for tool tests | `pytest OrderAgent/tests -q` |
 | `services/catalog/tests/`, `services/serviceability/tests/` | One tool service: REST API, MCP tools, RAG indexes | none | DB; the embedding model for some RAG tests | `pytest services/catalog/tests -q` |
-| `SuperAgent/tests/` | Gateway: routing workflow with in-process fake agents, handoff rules, SSE mapping, auth, API | scripted | DB for some tests | `pytest SuperAgent/tests -q` |
+| `SuperAgent/tests/` | Gateway: routing workflow with in-process fake agents, handoff rules, SSE mapping, auth, API, `chat_turn` tracing and `/api/feedback` | scripted | DB for some tests | `pytest SuperAgent/tests -q` |
 | `tests/integration/` | **Cross-service:** all 13 services as real processes over A2A, MCP and PostgreSQL | scripted (`fake-sales`) | DB | `pytest tests/integration -q -s` |
 | `tests/test_baseline_doc.py` | **Repo-wide:** `openspec/BASELINE.md` lists every service, port and agent tool | none | nothing | `pytest tests/test_baseline_doc.py -q` |
 | `evals/` | Real-model quality against golden datasets; `test_golden_valid.py` / `test_metrics.py` also run offline | **real Gemini** (live tests) | billed key, DB | `scripts/eval.sh` (offline checks: `pytest evals -q`) |
@@ -1028,7 +1035,8 @@ flowchart LR
 3. **Agents and router:** each golden case runs against the real model in-process. The catalog and serviceability services are reused or started for MCP tools.
 4. **Journeys:** it resets the database again, starts the whole stack on `csa_eval`, sends each conversation through `/api/session` and `/api/chat`, then reads the gateway's stored session to recover every agent's tool calls.
 5. Each case gets a trajectory score and response scores. A case passes only when every metric meets its threshold.
-6. Results go to `evals/results/<timestamp>/`: a `summary.txt` table, per-agent CSVs with every metric, expected vs actual reply and tool calls, and router and journey JSON. The script exits non-zero on any failure.
+6. Results go to `evals/results/<timestamp>/`: a `summary.txt` table, per-agent CSVs with every metric, expected vs actual reply and tool calls, router and journey JSON, and `run-<n>/cases.jsonl` (one line per case, the input for the Langfuse export). The script exits non-zero on any failure.
+7. With `--langfuse`, the run is then exported to Langfuse as dataset experiment runs with per-metric scores ([Agent Observability](#agent-observability-langfuse)). Without it nothing is sent, even when `.env` has Langfuse keys.
 
 ### Running evals
 
@@ -1043,6 +1051,7 @@ scripts/eval.sh --only router                  # routing only (~1 minute)
 scripts/eval.sh --only journeys                # end-to-end; stop the dev stack first (scripts/stop_local.sh)
 scripts/eval.sh --only journeys:s4             # one journey
 scripts/eval.sh --runs 3                       # 3 independent runs; a case must pass all of them
+scripts/eval.sh --only router --langfuse       # also export results to Langfuse (Datasets → csa-golden-*)
 pytest evals -q                                # offline golden validation (no key, runs in normal test suites)
 ```
 
@@ -1095,38 +1104,123 @@ More detail: [evals/README.md](evals/README.md) and the `agent-evaluation` spec 
 
 ---
 
+## Agent Observability (Langfuse)
+
+Every chat turn can be traced end to end in [Langfuse](https://langfuse.com), an open-source LLM observability platform. Tracing is **optional**: it turns on when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set, and is off otherwise (tests and plain eval runs never send anything). The project uses **Langfuse Cloud** for every environment (local, docker compose, Cloud Run), so there is nothing to host.
+
+### What you get
+
+| In Langfuse | What it shows for this system |
+|---|---|
+| **Trace** (one per chat turn, named `chat_turn`) | The whole turn across processes: gateway workflow (`prepare_turn`, `route_intent`, `dispatch`, `handoff_policy`, `finish_turn`) → the remote agent (A2A) → its Gemini calls → its tools → the MCP tool service (`catalog` / `serviceability`). Input = the user message, output = the streamed reply |
+| **Observations** inside a trace | `AGENT` (agent invocations), `GENERATION` (every Gemini call: model, prompt, response, tokens, cost, latency), `TOOL` (function and MCP tool calls with arguments and results), `CHAIN` (workflow nodes), `SPAN` (`chat_turn`, other steps) |
+| **Session** | One conversation (all turns of one gateway session) |
+| **User** | The customer id (`CUST-...`) once discovery has identified the company; before that, the browser's anonymous id |
+| **Scores** | `user_feedback` (thumbs up/down in the chat UI, 1/0 on that turn's trace); golden-eval metrics and `passed` (from `scripts/eval.sh --langfuse`) |
+| **Datasets** | `csa-golden-agents-<agent>`, `csa-golden-router`, `csa-golden-journeys`: golden cases, with one experiment run per eval run for side-by-side comparison |
+| **Environment** | `local` (start_local.sh), `docker` (compose), `gcp` (Cloud Run), `eval` (eval stack), `sdk-experiment` (eval exports) |
+| **Release** | The Cloud Run image tag (`<git sha>-<timestamp>`), to compare behavior across deploys |
+
+### How it works in this codebase
+
+```
+Browser ─▶ Gateway: root span "chat_turn"; session + user ids put into OTel baggage
+             │  A2A (httpx): W3C traceparent + baggage headers
+             ▼
+          Agent service: TraceContextMiddleware extracts them → ADK spans join the same trace
+             │  MCP: trace context travels inside the JSON-RPC "_meta" field (mcp 2.2)
+             ▼
+          Tool service: MCP server emits a "tools/call" span in the same trace
+Every process: BatchSpanProcessor → masking/filter exporter → OTLP/HTTP → Langfuse
+```
+
+- **One shared module**, `libs/sales_common/sales_common/telemetry.py`. `create_a2a_app` (all 10 agents), the catalog/serviceability apps and the gateway call `init_telemetry(name)`, so no agent has tracing code of its own.
+- **Standard OpenTelemetry underneath.** Spans come from the OpenTelemetry SDK, with ADK instrumented by OpenInference's `GoogleADKInstrumentor` (agent/LLM/tool/workflow-node spans with input, output, model and token usage). They are exported over **OTLP/HTTP** to `{LANGFUSE_BASE_URL}/api/public/otel/v1/traces` with Basic auth from the key pair. Langfuse maps the OpenTelemetry/OpenInference attributes to its trace model.
+- **Before export**, every span gets `langfuse.session.id`, `langfuse.user.id`, `langfuse.environment` and `langfuse.release`. Card numbers, CVVs and account/routing numbers are replaced with `[REDACTED_*]`. Plumbing spans are dropped: MCP protocol messages (`initialize`, `server/discover`, `tools/list`, ...) and a2a-sdk internals.
+- **Feedback:** the SSE `done` event carries `trace_id` and a signed `feedback_token`; the UI's thumbs call `POST /api/feedback`, and the gateway posts the score to Langfuse's REST API.
+- **Cloud Run:** CPU is throttled after a response, so each request flushes its spans before its last byte (`TELEMETRY_FLUSH_PER_REQUEST=true`, at most `TELEMETRY_FLUSH_TIMEOUT_MS`, 2 s). A Langfuse outage is logged, never raised; chat keeps working.
+
+Design and decisions: [openspec/BASELINE.md §10](openspec/BASELINE.md) and `openspec/changes/langfuse-observability/`.
+
+### How Langfuse works underneath
+
+Langfuse runs as two services in front of four data stores. On Langfuse Cloud all of this is managed for you. Self-hosting (current version v4) needs all four stores; none can be left out, Redis included.
+
+| Component | Role |
+|---|---|
+| **langfuse-web** | UI and APIs: receives OTLP traces and REST calls (scores, datasets), serves the dashboard |
+| **langfuse-worker** | Processes ingested events asynchronously and writes them to ClickHouse |
+| **PostgreSQL** | Transactional data: organizations, projects, users, API keys, prompts, datasets, settings |
+| **ClickHouse** | Columnar (OLAP) store for the high-volume data: traces, observations and scores. Fast filtering and aggregation for the dashboards |
+| **Redis / Valkey** | Queue between web and worker (references to incoming event batches), plus a cache for API keys and prompts |
+| **S3-compatible blob storage** (S3, GCS, MinIO, ...) | Raw ingested events (kept for retries and replay) and media attachments |
+
+Ingestion flow: our services send a batch → **web** authenticates it, writes the raw events to **blob storage** and puts a reference on the **Redis** queue → **worker** picks it up and writes traces/observations/scores to **ClickHouse** → the UI queries ClickHouse (and PostgreSQL for configuration). Traces usually appear within seconds; data written through the REST API can take longer. To self-host later (Docker Compose, Helm or Terraform, per the Langfuse docs), only `LANGFUSE_BASE_URL` and the keys change; no application code changes.
+
+### Setup
+
+1. Create a project in Langfuse Cloud (US `https://us.cloud.langfuse.com` or EU `https://cloud.langfuse.com`) and an API key pair (Project settings → API keys).
+2. **Local:** put `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` in `.env` and restart (`scripts/stop_local.sh && scripts/start_local.sh`, or `docker compose up`). Each service logs `Tracing <name> to https://...` at startup.
+3. **GCP:** `scripts/setup_gcp.sh` asks for the two keys (stored in Secret Manager); `scripts/deploy_cloud.sh` then gives every Cloud Run service the secrets plus `LANGFUSE_HOST`, `LANGFUSE_TRACING_ENVIRONMENT=gcp`, `LANGFUSE_RELEASE=<image tag>` and `TELEMETRY_FLUSH_PER_REQUEST=true`. Without the secrets, services deploy with tracing off. `start_cloud.sh` / `shutdown_cloud.sh` need nothing extra, since Langfuse runs outside GCP. Details: [GCP_DEPLOY.md](GCP_DEPLOY.md#tracing-langfuse).
+4. **Costs in Langfuse:** if a generation shows tokens but no cost for `GEMINI_MODEL`, add the model's price once under Project settings → Models.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | (empty = tracing off) | Project key pair (Secret Manager on GCP) |
+| `LANGFUSE_BASE_URL` (or older `LANGFUSE_HOST`) | `https://us.cloud.langfuse.com` | Langfuse region / host |
+| `LANGFUSE_TRACING_ENVIRONMENT` | `local` | Environment label (`docker` in compose, `gcp` on Cloud Run, `eval` in eval runs) |
+| `LANGFUSE_CAPTURE_CONTENT` | `true` | `false` = send structure, timings, models and tokens only (no prompts, replies or tool arguments) |
+| `LANGFUSE_RELEASE` | (empty) | Release label (deploy sets the image tag) |
+| `TELEMETRY_FLUSH_PER_REQUEST` / `TELEMETRY_FLUSH_TIMEOUT_MS` | `false` / `2000` | Flush spans before each response completes (Cloud Run) |
+| `OTEL_SDK_DISABLED` | (empty) | `true` forces tracing off |
+
+### What to look for in the Langfuse dashboard
+
+Open your project in Langfuse and pick the environment in the top bar (`local`, `gcp`, ...).
+
+| Question | Where | Filter / search |
+|---|---|---|
+| What happened in a turn? | **Tracing → Traces**, open a `chat_turn` trace | Timeline view: router decision (`route_intent` generation, its `RouteDecision` output), which agent answered, each Gemini call, each tool call and its arguments/result |
+| Show me a whole conversation | **Tracing → Sessions** | Session id = the gateway session id (the `X-Session-Id` response header, also in `logs/gateway.log`) |
+| Everything for one customer | **Tracing → Users** | User id = `CUST-...` (from discovery); earlier turns of a new visitor use the browser id |
+| Which turns failed? | Traces | Tag `error`, or level/status = ERROR; open one and find the red observation |
+| Which turns were handed off? | Traces | Tag `handoff`; metadata `handoff_hops` > 0 |
+| Turns answered by one agent | Traces | Tag = agent name, e.g. `order_agent`, `serviceability_agent`, `faq_agent` |
+| Was it routed correctly? | A trace → `route_intent` generation | Compare its input (routing JSON) with the output `target`; metadata `route_target` on the trace |
+| Why was a turn slow? | Trace timeline; **Dashboards** latency charts | Sort traces by latency; look for long `GENERATION`s, MCP `tools/call`, or cold-start gaps on Cloud Run |
+| Token use and cost | **Dashboards**; any `GENERATION` | Usage per model (`gemini-3-flash-preview`); cost needs the model price (Setup step 4) |
+| What did users dislike? | **Scores**, or Traces filtered by score | `user_feedback` = 0 (thumbs down); open the trace to see the reply and the steps behind it |
+| Did a deploy change behavior? | Traces | Filter by `release` (Cloud Run image tag) and compare errors, latency and feedback |
+| Did a prompt change break the evals? | **Datasets** → `csa-golden-*` → Runs | Compare runs side by side (scores per metric, `passed`); runs are named `<results timestamp>-run-<n>` |
+| Is payment data masked? | Any trace from a payment turn | Card numbers appear as `[REDACTED_CARD]`, CVV as `[REDACTED_CVV]` |
+
+### Privacy, quota and troubleshooting
+
+- **Data sent:** prompts, replies and tool arguments (masked as above). Company names, addresses and emails stay visible. Set `LANGFUSE_CAPTURE_CONTENT=false` to send no conversation content.
+- **Quota:** a turn is roughly 10-40 observations. A full golden-eval export is several thousand, so eval export is opt-in (`scripts/eval.sh --langfuse`).
+- **No traces at all:** check that the keys are set (startup log says `Tracing ... to ...`, not `Tracing disabled`), that `OTEL_SDK_DISABLED` is not `true`, and that `LANGFUSE_BASE_URL` is the region of your project.
+- **`CERTIFICATE_VERIFY_FAILED` in service logs (corporate proxy):** the proxy re-signs `*.langfuse.com` with a CA that Python's certifi bundle lacks (curl works because macOS trusts it). Build a bundle of certifi's roots plus the proxy CAs from the System keychain, e.g. `mkdir -p .certs && { cat "$(venv/bin/python -c 'import certifi; print(certifi.where())')"; security find-certificate -a -c "<proxy root CA name>" -p /Library/Keychains/System.keychain; } > .certs/ca-bundle.pem`, then set `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to its absolute path in `.env` (`.certs/` is gitignored). Native processes only; Cloud Run is not behind the proxy, and the path does not exist inside compose containers.
+- **Spans from one hop missing:** every hop must run the current `sales_common`. Agents created outside `create_a2a_app` do not extract trace headers.
+
+---
+
 ## Secrets and Configuration
 
 - All configuration is environment variables. Shared defaults live in [.env.example](./.env.example); copy it to `.env` (git-ignored, as is any `.env.*` other than `.env.example`). Never commit real keys.
 - Required: `GEMINI_MODEL`, `GOOGLE_API_KEY` (or Vertex AI env), `DATABASE_URL`, `SESSION_SECRET_KEY` (gateway), `PUBLIC_URL` (each agent service). Services fail fast at startup when a required variable is missing.
-- In GCP, secrets come from Secret Manager (`GOOGLE_API_KEY`, `SESSION_SECRET_KEY`, `SMTP_USER`, `SMTP_PASSWORD`, `DB_PASSWORD`); service-to-service calls use Google-signed ID tokens (`SERVICE_AUTH=gcp_id_token`).
-- Database passwords are masked in logs; the browser log endpoint (`POST /api/client-log`) requires a session token, is rate-limited and strips control characters.
+- In GCP, secrets come from Secret Manager (`GOOGLE_API_KEY`, `SESSION_SECRET_KEY`, `DB_PASSWORD`, and the optional `SMTP_USER`, `SMTP_PASSWORD`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`); service-to-service calls use Google-signed ID tokens (`SERVICE_AUTH=gcp_id_token`).
+- Database passwords are masked in logs; the browser log endpoint (`POST /api/client-log`) requires a session token, is rate-limited and strips control characters. Traces sent to Langfuse have card numbers, CVVs and account numbers masked (`LANGFUSE_CAPTURE_CONTENT=false` sends no content at all).
 
 ---
 
-## Recent Fixes and Known Limitations
-
-Fixed after the rewrite (each with a regression test):
-
-| Area | Fix |
-|---|---|
-| Order / Payment ids | Collision-safe random ids (`sales_common.ids.new_id`) replace salted `hash() % 1000`; mock credit score is process-independent |
-| Offer quotes | Pricing cache holds no customer data; offer ids are per customer; every quote is persisted and confirmed; `bant_score` stored |
-| Payment | Order-status guard; opaque random tokens; saved methods persisted masked; dead duplicate tools removed |
-| Order | Carts (24 h from last activity) and orders (48 h) get `expires_at`, so hourly cleanup expires them |
-| Discovery | Tool descriptions restored (docstrings); per-day `customer_id` counter; contacts require an existing company; duplicate contacts and opportunities rejected; NULL columns render as `N/A` |
-| Serviceability | Comma-less US addresses parse correctly (`123 Main street philadelphia pa 19103`) |
-| Notifications | Outbox dispatched in insertion order (`notifications.seq`); retry backoff (`NOTIFY_RETRY_SECONDS`); technician-dispatch notification |
-| Gateway / UI | Client log endpoint authenticated, rate-limited, sanitized, same-origin URL; `create_a2a_app` safe to build more than once per process |
-| Catalog | `best-value` takes `category` only (no ignored budget parameter) |
-
-Known limitations:
+## Known Limitations
 
 - **Rate limiting is per gateway instance** (in-memory token bucket); use a shared store or Cloud Armor for multi-instance limits.
 - **One shared PostgreSQL schema** with some cross-domain writers (Payment and Fulfillment update `orders`); single-writer services are planned in `openspec/changes/mcp-remaining-domains`.
 - `contacts` and `opportunities` have no unique index (seed data contains legacy duplicates); duplicates are prevented in code under an advisory lock.
 - The catalog image downloads the embedding model at build time; knowledge search reports `available: false` if the index is missing.
 - ADK compaction, context caching and `to_a2a` are experimental in google-adk 2.10.0 (pinned).
+- **Tracing:** `openinference-instrumentation-google-adk` (pinned 1.1.6) patches ADK internals, so an ADK upgrade must re-run the tracing tests. On Cloud Run each request waits for its spans to be sent (bounded by `TELEMETRY_FLUSH_TIMEOUT_MS`); a span batch can still be lost if an instance is stopped mid-export. The Langfuse eval export (langfuse SDK 5.x) needs OpenTelemetry ≥ 1.45 while google-adk 2.10 pins ≤ 1.42.1, so it runs in an isolated environment.
 
 ---
 
@@ -1142,6 +1236,8 @@ scripts/shutdown_cloud.sh              # pause: gateway private + Cloud SQL stop
 scripts/start_cloud.sh                 # resume
 ```
 
+Tracing: when the Langfuse secrets exist (`setup_gcp.sh` asks for them), every service sends traces to Langfuse with environment `gcp`; see [Agent Observability](#agent-observability-langfuse).
+
 See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment variables, costs, verification, troubleshooting and rollback.
 
 ---
@@ -1150,15 +1246,19 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment va
 
 | File | Purpose |
 |------|---------|
+| [openspec/BASELINE.md](./openspec/BASELINE.md) | **Start here:** maintained system map (services, ports, agents, tools, context keys, handoffs, commands, observability) |
 | [AGENTS.md](./AGENTS.md) | Architecture, ADK standards, workflow and handoffs, development workflow |
 | [Agent Service Guide](#agent-service-guide) (this README) | Building, serving and testing an agent service |
-| [SuperAgent/README.md](./SuperAgent/README.md) | Gateway: workflow, API, environment variables, tests |
+| [SuperAgent/README.md](./SuperAgent/README.md) | Gateway: workflow, API (incl. `/api/feedback`), environment variables, tests |
+| [SuperAgent/client/AGENTS.md](./SuperAgent/client/AGENTS.md) | React UI: structure, SSE events, feedback buttons |
 | [services/catalog/README.md](./services/catalog/README.md) | Catalog REST + MCP + RAG service |
 | [services/serviceability/README.md](./services/serviceability/README.md) | Serviceability REST + MCP service |
 | [db/README.md](./db/README.md) | Migrations, seed files, table ownership |
 | [GCP_DEPLOY.md](./GCP_DEPLOY.md) | Multi-service Cloud Run deployment guide |
+| [Agent Observability](#agent-observability-langfuse) (this README) | Langfuse tracing: setup, how it works, dashboard guide |
+| [evals/README.md](./evals/README.md) | Golden evals: tiers, running, Langfuse export, golden lifecycle |
 | [tests/integration/README.md](./tests/integration/README.md) | Multi-process integration test |
 | [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
-| `openspec/changes/` | Design proposals, decisions and specs (`mcp-remaining-domains` is a planned follow-up) |
+| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth) and change proposals (`langfuse-observability` in progress, `mcp-remaining-domains` planned; history in `archive/`) |
 | Each `<Agent>/AGENTS.md` | Individual agent documentation |
 

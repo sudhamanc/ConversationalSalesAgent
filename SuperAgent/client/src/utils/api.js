@@ -77,7 +77,8 @@ export function resetSession() {
  *
  * @param {string} message - User message text.
  * @param {function} onToken - Called with (tokenString, authorString) for each streamed token.
- * @param {function} onDone  - Called when streaming completes.
+ * @param {function} onDone  - Called when streaming completes, with the `done` payload
+ *                             ({type, trace_id?, feedback_token?}) when the server sent one.
  * @param {function} onError - Called on error with error message.
  * @param {function} [onCartUpdate] - Called with cart data when a cart_update event arrives.
  * @param {function} [onSuggestions] - Called with (suggestionsArray, authorString) for LLM suggestion events.
@@ -144,7 +145,8 @@ export async function streamChat(
             onSuggestions?.(payload.data, payload.author);
           } else if (payload.type === "done") {
             console.info("[chat] done");
-            onDone();
+            // With tracing on, done carries {trace_id, feedback_token} for sendFeedback().
+            onDone(payload);
             return;
           } else if (payload.type === "error") {
             console.error("[chat] error", payload.content);
@@ -162,5 +164,33 @@ export async function streamChat(
   } catch (err) {
     console.error("[chat] network error", err);
     onError(err.message || "Network error");
+  }
+}
+
+/**
+ * Record a thumbs up/down on an assistant reply (Langfuse score on the turn's trace).
+ *
+ * @param {string} traceId - `trace_id` from the turn's `done` event.
+ * @param {string} feedbackToken - `feedback_token` from the same `done` event.
+ * @param {"up"|"down"} value - The vote.
+ * @returns {Promise<boolean>} true when the server recorded the vote (204).
+ */
+export async function sendFeedback(traceId, feedbackToken, value) {
+  const token = getCurrentToken();
+  if (!token || !traceId || !feedbackToken) return false;
+  try {
+    const res = await fetch(`${API_BASE}/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ trace_id: traceId, feedback_token: feedbackToken, value }),
+    });
+    if (!res.ok) console.warn("[feedback] not recorded", res.status);
+    return res.status === 204;
+  } catch (err) {
+    console.warn("[feedback] network error", err);
+    return false;
   }
 }

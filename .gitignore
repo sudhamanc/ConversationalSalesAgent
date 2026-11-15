@@ -7,6 +7,7 @@ dist/
 build/
 .venv/
 .venv312/
+.venv-langfuse/
 venv/
 
 # Environment (keep committed templates only)
@@ -74,3 +75,6 @@ temp/
 
 # Local run logs and PID files (scripts/start_local.sh)
 logs/
+
+# Local CA bundle (certifi + corporate web-proxy CAs) for Python TLS behind the proxy
+.certs/

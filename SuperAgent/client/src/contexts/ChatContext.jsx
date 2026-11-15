@@ -1,8 +1,26 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
-import { streamChat, resetSession, getToken } from "../utils/api";
+import { streamChat, resetSession, getToken, sendFeedback } from "../utils/api";
 import { getAgentInfo } from "../utils/agentLabels";
 
 const ChatContext = createContext(null);
+
+/**
+ * Copies the turn's trace id and feedback token (from the `done` event, present
+ * only when tracing is on) onto the last assistant message.
+ */
+function withTraceInfo(messages, done) {
+  if (!done || !done.trace_id || !done.feedback_token) return messages;
+  const updated = [...messages];
+  const last = updated[updated.length - 1];
+  if (last && last.role === "assistant") {
+    updated[updated.length - 1] = {
+      ...last,
+      traceId: done.trace_id,
+      feedbackToken: done.feedback_token,
+    };
+  }
+  return updated;
+}
 
 /**
  * Truncates text to maxLen characters, adding ellipsis if needed.
@@ -29,6 +47,10 @@ function summarize(text, maxLen = 120) {
 
 export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([]);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [journeySteps, setJourneySteps] = useState([]);
   const [cart, setCart] = useState(null);
   const [activities, setActivities] = useState({
@@ -175,7 +197,8 @@ export function ChatProvider({ children }) {
           });
         },
         // onDone — finalize the last active step
-        () => {
+        (done) => {
+          setMessages((prev) => withTraceInfo(prev, done));
           setIsStreaming(false);
           finalizeCurrentStep();
         },
@@ -274,6 +297,30 @@ export function ChatProvider({ children }) {
     [isStreaming, finalizeCurrentStep, startNewAgentStep]
   );
 
+  /**
+   * Thumbs up/down on the assistant message at `index`. Optimistic; reverts
+   * when the server does not record the vote.
+   */
+  const submitFeedback = useCallback(async (index, value) => {
+    // Read from the ref: state updaters run lazily, so they cannot hand back the message.
+    const target = messagesRef.current[index];
+    if (!target || target.role !== "assistant" || !target.traceId || target.feedbackPending) return;
+    setMessages((prev) => {
+      if (prev[index]?.traceId !== target.traceId) return prev;
+      const updated = [...prev];
+      updated[index] = { ...prev[index], feedback: value, feedbackPending: true };
+      return updated;
+    });
+    const ok = await sendFeedback(target.traceId, target.feedbackToken, value);
+    setMessages((prev) => {
+      const msg = prev[index];
+      if (!msg || msg.traceId !== target.traceId) return prev;
+      const updated = [...prev];
+      updated[index] = { ...msg, feedback: ok ? value : target.feedback || null, feedbackPending: false };
+      return updated;
+    });
+  }, []);
+
   const clearChat = useCallback(() => {
     setMessages([]);
     setJourneySteps([]);
@@ -360,8 +407,9 @@ export function ChatProvider({ children }) {
           });
         },
         // onDone
-        () => {
+        (done) => {
           if (cancelled) return;
+          setMessages((prev) => withTraceInfo(prev, done));
           setIsStreaming(false);
           finalizeCurrentStep();
         },
@@ -413,6 +461,7 @@ export function ChatProvider({ children }) {
         isStreaming,
         sendMessage,
         clearChat,
+        submitFeedback,
         journeySteps,
         cart,
         activities,

@@ -5,9 +5,24 @@ import logging
 import os
 import re
 
+from sales_common import telemetry
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _record_usage(span, response, response_text: str) -> None:
+    """Output and token counts on the suggestions generation span (no-op span when tracing is off)."""
+    span.set_attribute("output.value", response_text)
+    usage = getattr(response, "usage_metadata", None)
+    for attr, field in (
+        ("llm.token_count.prompt", "prompt_token_count"),
+        ("llm.token_count.completion", "candidates_token_count"),
+        ("llm.token_count.total", "total_token_count"),
+    ):
+        value = getattr(usage, field, None) if usage is not None else None
+        if isinstance(value, int):
+            span.set_attribute(attr, value)
 
 
 def _parse_suggestion_payload(raw_text: str) -> list[str]:
@@ -85,17 +100,24 @@ def generate_suggestions(user_message: str, assistant_message: str, author: str 
 
         # Use configured model for suggestions; disable thinking to avoid
         # budget consumption, and bump token limit for reliable JSON output.
-        response = client.models.generate_content(
-            model=os.environ["GEMINI_MODEL"],
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                temperature=0.2,
-                max_output_tokens=1024,
-                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
+        model = os.environ["GEMINI_MODEL"]
+        # Outside ADK, so not auto-instrumented: record it as a generation on the turn's trace.
+        with telemetry.get_tracer("gateway.suggestions").start_as_current_span(
+            "generate_suggestions",
+            attributes={"openinference.span.kind": "LLM", "llm.model_name": model, "input.value": prompt},
+        ) as span:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=1024,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            response_text = getattr(response, "text", "") or ""
+            _record_usage(span, response, response_text)
 
-        response_text = getattr(response, "text", "") or ""
         # Try direct parse; fall back to extracting JSON from markdown/preamble
         result = _parse_suggestion_payload(response_text)
         if not result:

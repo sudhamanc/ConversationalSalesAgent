@@ -8,6 +8,7 @@ import ProductDetailsCard from "./ProductDetailsCard";
 import PaymentCard from "./PaymentCard";
 import OrderCard from "./OrderCard";
 import SuggestionCard from "./SuggestionCard";
+import FeedbackButtons from "./FeedbackButtons";
 import {
   parseOfferQuote,
   parseProductAgentMessage,
@@ -113,7 +114,11 @@ function renderFormattedText(content) {
   });
 }
 
-export default function MessageBubble({ message, onSuggestionPick, suggestionsDisabled = false }) {
+/**
+ * One chat message. Assistant replies from traced turns (`message.traceId`)
+ * get thumbs up/down when `onFeedback(value)` is provided.
+ */
+export default function MessageBubble({ message, onSuggestionPick, suggestionsDisabled = false, onFeedback }) {
   const isUser = message.role === "user";
   const agentInfo =
     !isUser && message.author ? getAgentInfo(message.author) : null;
@@ -155,6 +160,7 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
         })
       : [];
   const suggestions = dynamicSuggestions.length > 0 ? dynamicSuggestions : fallbackSuggestions;
+  const showFeedback = !isUser && Boolean(message.traceId) && typeof onFeedback === "function";
 
   return (
     <div>
@@ -206,14 +212,25 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
         )}
       </div>
 
-      {/* Agent label below assistant messages */}
-      {agentInfo && message.content && (
-        <p className="text-[10px] text-slate-400 mt-1 ml-10">
-          via{" "}
-          <span className={`font-medium ${agentInfo.badgeText}`}>
-            {agentInfo.label}
-          </span>
-        </p>
+      {/* Agent label and feedback below assistant messages */}
+      {!isUser && message.content && (agentInfo || showFeedback) && (
+        <div className="flex items-center gap-2 mt-1 ml-10">
+          {agentInfo && (
+            <p className="text-[10px] text-slate-400">
+              via{" "}
+              <span className={`font-medium ${agentInfo.badgeText}`}>
+                {agentInfo.label}
+              </span>
+            </p>
+          )}
+          {showFeedback && (
+            <FeedbackButtons
+              value={message.feedback || null}
+              pending={Boolean(message.feedbackPending)}
+              onVote={onFeedback}
+            />
+          )}
+        </div>
       )}
 
       {!isUser && message.content && suggestions.length > 0 && (

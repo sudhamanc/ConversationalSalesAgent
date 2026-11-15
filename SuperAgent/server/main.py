@@ -27,11 +27,13 @@ from super_agent.config import settings  # noqa: E402  (loads .env for local dev
 from sales_common import db, migrate  # noqa: E402
 from sales_common.maintenance import cleanup_stale_records  # noqa: E402
 from sales_common.config import model_name  # noqa: E402
+from sales_common.telemetry import TraceContextMiddleware, init_telemetry, shutdown_telemetry  # noqa: E402
 
 import runtime  # noqa: E402
 from api.chat import router as chat_router  # noqa: E402
 from api.client_log import router as client_log_router  # noqa: E402
 from api.debug import router as debug_router  # noqa: E402
+from api.feedback import router as feedback_router  # noqa: E402
 from api.session import router as session_router  # noqa: E402
 from middleware.auth import get_authenticator  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
@@ -40,6 +42,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 for noisy in ("google.genai", "google.adk", "google_adk", "httpx"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 logger = get_logger(__name__)
+init_telemetry("gateway")  # tracing to Langfuse when LANGFUSE_* keys are set (no-op otherwise)
 
 
 async def _hourly_cleanup() -> None:
@@ -68,6 +71,7 @@ async def lifespan(_app: FastAPI):
     yield
     task.cancel()
     db.close_pool()
+    shutdown_telemetry()
     logger.info("Gateway shutting down")
 
 
@@ -89,6 +93,8 @@ app.include_router(chat_router, tags=["Chat"])
 app.include_router(debug_router, tags=["Debug"])
 app.include_router(session_router, tags=["Session"])
 app.include_router(client_log_router, tags=["ClientLog"])
+app.include_router(feedback_router, tags=["Feedback"])
+app.add_middleware(TraceContextMiddleware)
 
 
 @app.get("/health")

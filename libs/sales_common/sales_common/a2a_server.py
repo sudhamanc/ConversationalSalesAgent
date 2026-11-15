@@ -28,6 +28,7 @@ from . import db
 from .adk_app import build_app
 from .config import require_env
 from .logging import mask_url, setup_logging
+from .telemetry import TraceContextMiddleware, init_telemetry, shutdown_telemetry
 
 logger = logging.getLogger("sales_common.a2a_server")
 
@@ -80,12 +81,16 @@ def create_a2a_app(
     * ``DatabaseSessionService`` on PostgreSQL (sessions keyed by A2A context id)
     * a2a-sdk ``DatabaseTaskStore`` on the same database (table ``a2a_tasks``)
     * ``GET /healthz`` (503 when the database is unreachable)
+    * tracing to Langfuse when configured (``sales_common.telemetry``): incoming
+      ``traceparent``/``baggage`` are extracted so the agent's spans join the
+      gateway's trace
 
     Safe to call more than once per process (tests, several apps in one
     process): the task-table ORM model is shared, engines are per app.
     """
     name = app_name or agent.name
     setup_logging(name)
+    init_telemetry(name)
     host, port, protocol = _public_endpoint()
 
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -108,6 +113,7 @@ def create_a2a_app(
             yield
         await task_engine.dispose()
         db.close_pool()
+        shutdown_telemetry()
 
     app = to_a2a(
         agent,
@@ -127,4 +133,5 @@ def create_a2a_app(
         )
 
     app.router.routes.append(Route("/healthz", healthz, methods=["GET"]))
+    app.add_middleware(TraceContextMiddleware)
     return app

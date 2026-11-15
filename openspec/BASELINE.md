@@ -22,6 +22,7 @@ Browser (React, :3000) ──/api──▶ Gateway SuperAgent (:8000, FastAPI + 
 
 - One PostgreSQL database for everything (business tables, ADK sessions, A2A tasks). Local: Docker container `csa-postgres` via `scripts/db.sh up`.
 - Agents never import each other; they talk only through the gateway (A2A). Deterministic data comes from tools (JSON); no LLM calls inside tools.
+- Tracing (optional): with `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` set, every service exports OpenTelemetry traces to Langfuse Cloud; one trace per chat turn across gateway → agent → MCP tool service (§10).
 - Company name shown to customers: **Connectivity Max**.
 
 ## 2. Services (from `scripts/services.conf`)
@@ -93,7 +94,7 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START → prepare_turn �
 - `prepare_turn`: pure greetings (or `[GREETING]` prefix) go straight to greeting_agent; otherwise builds the router input `{message, last_agent, last_reply (last 400 chars), journey flags, company_name, memories (≤5)}`.
 - `route_intent`: `Agent(mode="single_turn", include_contents="none", output_schema=RouteDecision{target, reason})`, temperature 0, `max_output_tokens=1024`, `thinking_level=MINIMAL` on `gemini-3*` (thinking tokens count toward the output limit). Rules in `super_agent/prompts.py` (priority: greeting; company introduction with or without address → discovery; serviceability phrases; pricing phrases; short follow-ups stay with last agent; best scope).
 - `handoff_policy` (`evaluate_handoff`, max 2 hops per turn): discovery → serviceability when the customer has a ZIP not yet checked; fulfillment → payment when an appointment was just confirmed and the order is unpaid.
-- API: `POST /api/session` → bearer token; `POST /api/chat` → SSE events `token{content, author}`, `activity_update`, `structured_card{card_type: quote|…}`, `cart_update`, `suggestions`, `error`, `done`; `POST /api/client-log`; `GET /api/debug/session` (DEBUG=true only).
+- API: `POST /api/session` → bearer token; `POST /api/chat` → SSE events `token{content, author}`, `activity_update`, `structured_card{card_type: quote|…}`, `cart_update`, `suggestions`, `error`, `done` (`done{trace_id, feedback_token}` when tracing is on); `POST /api/feedback` (`{trace_id, feedback_token, value: up|down}` → Langfuse score `user_feedback`; 404 when tracing is off); `POST /api/client-log`; `GET /api/debug/session` (DEBUG=true only).
 - Config: `super_agent/config.py` loads only the repo-root `.env` (no override). All agents' Gemini calls use `sales_common.config.generate_config` (safety settings, 3 retries, `MODEL_REQUEST_TIMEOUT_MS` per-request timeout, default 120 s) and the model `sales_common.models.agent_model()` (`ResilientGemini`: a non-streaming response with no text and no function call is retried once). Rate limit, session TTL and safety thresholds come from env (see `.env.example`).
 - Errors from agents/models surface as SSE `error` → UI "The assistant service is temporarily unavailable" (including Gemini 402 prepaid credits depleted / 429 quota).
 
@@ -114,7 +115,8 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START → prepare_turn �
 | Unit/agent tests (no key) | `pytest <AgentDir>/tests -q` · `pytest SuperAgent/tests -q` · `pytest evals -q` · `pytest tests/test_baseline_doc.py -q` |
 | DB-backed / integration tests | `TEST_DATABASE_URL=postgresql://csa:csa@localhost:5432/csa_test pytest … ` · `pytest tests/integration -q -s` |
 | Live smoke | `python scripts/e2e_test.py --base-url http://127.0.0.1:8000` |
-| Golden evals (billed key) | `scripts/eval.sh [--only <agent>,router,journeys,journeys:<name>] [--runs N] [--record]`; goldens: `python -m evals.record_golden [--rerecord]`, `python -m evals.review` ([evals/README.md](../evals/README.md)). Judge model `gemini-3-flash-preview` (ADK's default `gemini-2.5-flash` is not available to this project) |
+| Golden evals (billed key) | `scripts/eval.sh [--only <agent>,router,journeys,journeys:<name>] [--runs N] [--record] [--langfuse]`; goldens: `python -m evals.record_golden [--rerecord]`, `python -m evals.review` ([evals/README.md](../evals/README.md)). Judge model `gemini-3-flash-preview` (ADK's default `gemini-2.5-flash` is not available to this project) |
+| Eval results → Langfuse | `scripts/eval.sh --langfuse` (or later: `uv run --no-project --with-requirements evals/requirements-langfuse.txt python -m evals.langfuse_sync evals/results/<ts>`); isolated env because langfuse 5.x needs OTel ≥ 1.45 and ADK 2.10 pins ≤ 1.42.1 |
 | Cloud | `scripts/setup_gcp.sh`, `scripts/deploy_cloud.sh`, `scripts/start_cloud.sh`, `scripts/shutdown_cloud.sh` ([GCP_DEPLOY.md](../GCP_DEPLOY.md)) |
 | OpenSpec | `openspec list`, `openspec validate <change>`, `/opsx:propose`, `/opsx:apply`, `/opsx:archive` |
 
@@ -126,6 +128,7 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START → prepare_turn �
 - **Add an agent:** follow the README "Agent Service Guide"; add to `scripts/services.conf`, `docker-compose.yml`, gateway registry (`super_agent/registry.py`), `evals/golden_io.py AGENT_PACKAGES`, golden set; update §2–3.
 - **Schema change:** new `db/migrations/00N_*.sql` (never edit applied ones); update ownership in db/README.md and §6.
 - **Config variable:** `.env.example` (+ SuperAgent/README.md table for gateway vars).
+- **Trace something outside ADK** (a direct `genai` call, a background job): `with sales_common.telemetry.get_tracer(...).start_as_current_span(name, attributes={"openinference.span.kind": "LLM", ...})` (no-op when tracing is off); never put secrets or identifiers other than session/user into baggage.
 - **FAQ / policy answer:** edit `services/catalog/data/faq_docs/*.md` (not the FAQ prompt), restart catalog (or `python services/catalog/scripts/ingest_knowledge.py`), then `scripts/eval.sh --only faq`.
 
 ## 9. Capability specs (behavioral source of truth: `openspec/specs/`)
@@ -140,3 +143,16 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START → prepare_turn �
 | project-baseline | project-baseline |
 
 Open (planned, not implemented): `openspec/changes/mcp-remaining-domains` (REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications; single-writer tables). Archived changes: `openspec/changes/archive/`.
+
+## 10. Observability (`libs/sales_common/sales_common/telemetry.py`)
+
+Langfuse Cloud, the same for local, compose and Cloud Run. Off unless both keys are set (and `OTEL_SDK_DISABLED` is not true); tests and plain eval runs send nothing.
+
+- **Setup:** every process calls `init_telemetry(name)` once: `create_a2a_app` (agents), the catalog/serviceability apps, gateway `main.py`. It installs the global `TracerProvider` → `BatchSpanProcessor` → `FilteringMaskingExporter` → OTLP/HTTP `{LANGFUSE_HOST}/api/public/otel/v1/traces` (Basic auth, `x-langfuse-ingestion-version: 4`), and `GoogleADKInstrumentor` (openinference, pinned 1.1.6; agent/LLM/tool/workflow-node spans with input, output, model, tokens; suppresses ADK's duplicate native spans).
+- **One trace per turn:** gateway root span `chat_turn` (input, output, tags = answering agents + `handoff`/`error`, metadata hops/attempts/route target). Gateway → agent: `traceparent`/`baggage` from the httpx event hook on the `remote_agent()` client; agents extract them in `TraceContextMiddleware`. Agent → tool: mcp 2.2 carries the context in JSON-RPC `_meta`; tool services emit `tools/call` spans.
+- **Attributes on every span** (`LangfuseAttributesProcessor`): `langfuse.session.id` = gateway session id, `langfuse.user.id` = `user:customer_id` (else browser user id), both via baggage (the only baggage keys); `langfuse.environment` = `LANGFUSE_TRACING_ENVIRONMENT` (`local`, `docker` in compose, `gcp` on Cloud Run, `eval` for `eval.sh --langfuse`); `langfuse.release` = `LANGFUSE_RELEASE` (image tag on Cloud Run).
+- **Masking/filtering before export:** card numbers (Luhn-checked) → `[REDACTED_CARD]`, CVV → `[REDACTED_CVV]`, account/routing numbers → `[REDACTED_ACCOUNT]`; `LANGFUSE_CAPTURE_CONTENT=false` drops all prompts, replies and tool arguments; MCP protocol spans are dropped (only `tools/call`, `resources/read`, `prompts/get` are exported), and so are a2a-sdk internals (tracer `a2a-python-sdk`). Names, addresses and emails stay visible when content is captured.
+- **Delivery:** `TELEMETRY_FLUSH_PER_REQUEST=true` (Cloud Run, set by `deploy_cloud.sh`) flushes before the final response chunk (bounded by `TELEMETRY_FLUSH_TIMEOUT_MS`, 2000); lifespans call `shutdown_telemetry()`. Export failures are logged, never raised.
+- **Feedback:** UI thumbs (`FeedbackButtons.jsx`) → `POST /api/feedback` → `sales_common.langfuse_api` → Langfuse score `user_feedback` (BOOLEAN; score id and timestamp derived from the trace and turn, so a revote updates it).
+- **Evals:** each run writes `evals/results/<ts>/run-<n>/cases.jsonl`; `eval.sh --langfuse` syncs them (`evals.langfuse_sync`, langfuse SDK 5.x in an isolated env) into datasets `csa-golden-agents-<agent>`, `csa-golden-router`, `csa-golden-journeys` as experiment runs named `<ts>-run-<n>` with per-metric and `passed` scores (environment `sdk-experiment`).
+- **Config:** `LANGFUSE_BASE_URL` (or older `LANGFUSE_HOST`; default `https://us.cloud.langfuse.com`), `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_CAPTURE_CONTENT`, `LANGFUSE_RELEASE`, `TELEMETRY_FLUSH_PER_REQUEST`, `TELEMETRY_FLUSH_TIMEOUT_MS`; GCP: secrets `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` (setup_gcp.sh, optional).

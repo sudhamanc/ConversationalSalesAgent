@@ -14,6 +14,7 @@ from __future__ import annotations
 import pytest
 from google.adk.evaluation.agent_evaluator import AgentEvaluator
 
+from evals.cases import append_cases, cases_from_agent_csv
 from evals.golden_io import (
     AGENT_PACKAGES,
     agent_set_path,
@@ -57,6 +58,7 @@ async def test_agent_golden_set(agent, results_dir):
             update={"criteria": {k: v for k, v in config.criteria.items() if k not in skip}}
         )
         suffix = "" if not skip else "-skip-" + "-".join(skip)
+        output_file = results_dir / f"agent-{agent}{suffix}.csv"
         for attempt in (1, 2):
             try:
                 await AgentEvaluator.evaluate_eval_set(
@@ -65,7 +67,7 @@ async def test_agent_golden_set(agent, results_dir):
                     eval_config=group_config,
                     num_runs=1,  # repetitions are separate eval.sh runs, each on a freshly reset database
                     print_detailed_results=True,
-                    output_file=str(results_dir / f"agent-{agent}{suffix}.csv"),
+                    output_file=str(output_file),
                 )
                 break
             except AssertionError as exc:
@@ -74,4 +76,6 @@ async def test_agent_golden_set(agent, results_dir):
                     continue
                 failures.append(str(exc))
                 break
+        if output_file.exists():  # per-case results for cases.jsonl (Langfuse export)
+            append_cases(results_dir, cases_from_agent_csv(output_file, agent))
     assert not failures, "\n\n".join(failures)

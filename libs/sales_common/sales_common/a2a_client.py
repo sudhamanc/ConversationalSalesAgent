@@ -9,6 +9,7 @@ from google.adk.a2a.agent import A2aRemoteAgentConfig, RemoteA2aAgent
 from google.genai import types as genai_types
 
 from .auth import ServiceAuth
+from .telemetry import ainject_trace_headers
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
@@ -46,15 +47,23 @@ def remote_agent(
     description: str = "",
     meta_provider: Optional[MetaProvider] = None,
     timeout: float = 120.0,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
 ) -> RemoteA2aAgent:
     """Build a ``RemoteA2aAgent`` for an agent service at ``base_url``.
 
     * the remote A2A context id is the gateway session id, so each gateway
       session maps to one stable remote session per agent
     * requests (card fetch + JSON-RPC) carry service auth (``SERVICE_AUTH``)
+      and, when tracing is on, ``traceparent``/``baggage`` (``sales_common.telemetry``)
     * ``meta_provider(ctx, message)`` attaches forwarded journey context
+    * ``transport`` is for tests (e.g. ``httpx.ASGITransport``)
     """
-    client = httpx.AsyncClient(timeout=httpx.Timeout(timeout), auth=ServiceAuth())
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout),
+        auth=ServiceAuth(),
+        event_hooks={"request": [ainject_trace_headers]},
+        transport=transport,
+    )
     return RemoteA2aAgent(
         name=name,
         agent_card=card_url(base_url),

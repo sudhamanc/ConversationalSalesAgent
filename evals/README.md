@@ -54,6 +54,15 @@ scripts/eval.sh --runs 3                          # 3 independent runs; a case m
 
 Offline checks (no key, no database) run with every `pytest`: `pytest evals -q` runs `test_golden_valid.py` and `test_metrics.py`; live tests are skipped unless `RUN_EVALS=1`.
 
+## Langfuse export
+
+`scripts/eval.sh ... --langfuse` (needs `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`, see the README "Observability") exports the run to Langfuse; without the flag nothing is sent, even when `.env` has the keys (`OTEL_SDK_DISABLED=true` for the run).
+
+- Every run writes `evals/results/<ts>/run-<n>/cases.jsonl` (`evals/cases.py`): one line per scored case with `key` (MANIFEST case key), `tier`, `set`, `input`, `expected`, `actual`, `metrics` (`{name, score, threshold, passed}`), `passed`, and for journeys the gateway `session_id` and per-turn `trace_ids`.
+- With `--langfuse` the journey stack's traces get environment `eval`, and after the summary `python -m evals.langfuse_sync evals/results/<ts>` upserts datasets `csa-golden-agents-<agent>`, `csa-golden-router` and `csa-golden-journeys` (one item per case) and records each `run-<n>` as an experiment run named `<ts>-run-<n>`: the recorded output is replayed (no model calls) and every metric becomes a score, plus a boolean `passed`. Journey cases join their gateway session, next to that conversation's `chat_turn` traces. Compare runs in Langfuse under Datasets.
+- The sync runs in an isolated environment (`uv run --no-project --with-requirements evals/requirements-langfuse.txt`, or `.venv-langfuse` without uv) because langfuse 5.x needs OpenTelemetry ≥ 1.45 and google-adk 2.10 pins ≤ 1.42.1. Re-export an existing run the same way: `uv run --no-project --with-requirements evals/requirements-langfuse.txt python -m evals.langfuse_sync evals/results/<ts>`.
+- Quota: a full run (~1,000-1,500 model requests) is several thousand Langfuse observations from the journey stack alone; check your plan's monthly units before exporting full runs.
+
 ## Golden lifecycle
 
 Only **reviewed** cases run. New and re-recorded cases are drafts (`reviewed: false`).

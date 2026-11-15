@@ -247,6 +247,7 @@ logger.warning("Memory search failed: %s", type(exc).__name__)   # no secrets, n
 
 - Services call `sales_common.logging.setup_logging(name)`; `LOG_LEVEL` controls verbosity. Database URLs are logged via `mask_url()`.
 - Local logs: `logs/<service>.log` (written by `scripts/start_local.sh`). Cloud: Cloud Logging per Cloud Run service.
+- **Tracing (Langfuse):** `sales_common.telemetry` is the only place that sets up OpenTelemetry. `create_a2a_app`, the tool-service apps and the gateway call `init_telemetry(name)`, so agents need no tracing code. Agent, LLM and tool spans come from the ADK instrumentation; MCP and A2A carry trace context automatically. Never create your own `TracerProvider` or exporter. For a model call outside ADK, wrap it with `telemetry.get_tracer(...).start_as_current_span(...)` (see `SuperAgent/server/api/suggestions.py`). Never put data other than the session and user ids in OTel baggage. Details: [openspec/BASELINE.md §10](openspec/BASELINE.md).
 
 ### 8. Error Handling Pattern
 

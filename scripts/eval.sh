@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the golden-dataset eval suite (agents, router, journeys) against real Gemini.
 #
-# Usage: scripts/eval.sh [--only LIST] [--runs N] [--record]
+# Usage: scripts/eval.sh [--only LIST] [--runs N] [--record] [--langfuse]
 #   --only    comma list of tiers (agents, router, journeys), agent names
 #             (discovery, discovery_agent, ...) and/or journeys:<name> (e.g. journeys:s4).
 #             Default: agents,router,journeys
@@ -9,6 +9,10 @@
 #             run; a case passes only if it passes in every run (default 1)
 #   --record  journeys only: write the streamed replies into the goldens as drafts
 #             (reviewed=false) instead of scoring them
+#   --langfuse  export the run to Langfuse (needs LANGFUSE_PUBLIC_KEY/SECRET_KEY): traces
+#             of the journey stack get environment "eval", then evals.langfuse_sync
+#             records every case as a dataset experiment run with scores. Without it
+#             nothing is sent to Langfuse (OTEL_SDK_DISABLED=true for the run).
 #
 # Env: GOOGLE_API_KEY (billed; the free tier cannot run the suite),
 #      EVAL_DATABASE_URL (default postgresql://csa:csa@localhost:5432/csa_eval),
@@ -17,22 +21,25 @@
 # never used. Agents and router run in-process (catalog/serviceability services are
 # reused when healthy, else started). Journeys start their own full stack with
 # DEBUG=true on the eval database and refuse to run while the dev stack is up.
-# Results: evals/results/<timestamp>/ (junit XML, per-agent CSV, router/journey JSON).
+# Results: evals/results/<timestamp>/ (junit XML, per-agent CSV, router/journey JSON,
+#          run-*/cases.jsonl: one line per scored case).
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-usage() { sed -n '2,20p' "$0"; }
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d'; }
 
 ONLY="agents,router,journeys"
 RUNS=1
 RECORD=0
+LANGFUSE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --only) [ $# -ge 2 ] || die "--only needs a value"; ONLY="$2"; shift ;;
     --only=*) ONLY="${1#--only=}" ;;
     --runs) [ $# -ge 2 ] || die "--runs needs a value"; RUNS="$2"; shift ;;
     --record) RECORD=1 ;;
+    --langfuse) LANGFUSE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
   esac
@@ -57,6 +64,7 @@ for item in "${ITEMS[@]}"; do
   esac
 done
 [ "$RECORD" = "0" ] || [ "$RUN_JOURNEYS" = "1" ] || die "--record applies to journeys; add journeys to --only"
+[ "$RECORD" = "0" ] || [ "$LANGFUSE" = "0" ] || die "--langfuse exports scored runs; it cannot be combined with --record"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -81,6 +89,15 @@ EVAL_DATABASE_URL="${EVAL_DATABASE_URL:-postgresql://csa:csa@localhost:5432/csa_
 db_url_is_local "$EVAL_DATABASE_URL" || die "EVAL_DATABASE_URL must be a local database (it is reset on every run)"
 [ "$EVAL_DATABASE_URL" != "${DATABASE_URL:-}" ] || die "EVAL_DATABASE_URL must differ from the dev DATABASE_URL"
 export EVAL_DATABASE_URL
+
+# Langfuse: opt-in. Exported values win over .env in the stack start_local.sh launches.
+if [ "$LANGFUSE" = "1" ]; then
+  require_env LANGFUSE_PUBLIC_KEY "Set it in .env (Langfuse project settings -> API keys)"
+  require_env LANGFUSE_SECRET_KEY "Set it in .env (Langfuse project settings -> API keys)"
+  export LANGFUSE_TRACING_ENVIRONMENT=eval
+else
+  export OTEL_SDK_DISABLED=true
+fi
 
 section "Eval database"
 EVAL_DATABASE_URL="$EVAL_DATABASE_URL" "$PYTHON" - <<'PY' || die "could not create the eval database (is PostgreSQL up? scripts/db.sh up)"
@@ -210,6 +227,32 @@ for run, name, status in rows:
 print(f"\n{sum(r[2] == 'PASS' for r in rows)} passed, {sum(r[2] == 'FAIL' for r in rows)} failed, "
       f"{sum(r[2].startswith('SKIP') for r in rows)} skipped")
 PY
+# ---------------------------------------------------------------------------
+# Langfuse export (isolated env: langfuse 5.x and google-adk 2.10 need different
+# OpenTelemetry versions, so the sync never runs in ./venv)
+# ---------------------------------------------------------------------------
+langfuse_sync() {
+  if command -v uv >/dev/null 2>&1; then
+    (cd "$REPO_ROOT" && uv run --no-project --quiet \
+      --with-requirements "$REPO_ROOT/evals/requirements-langfuse.txt" \
+      python -m evals.langfuse_sync "$RESULTS_ROOT")
+  else
+    local lf_venv="$REPO_ROOT/.venv-langfuse"
+    if [ ! -x "$lf_venv/bin/python" ]; then
+      python3 -m venv "$lf_venv" && "$lf_venv/bin/python" -m pip install -q -r "$REPO_ROOT/evals/requirements-langfuse.txt"
+    fi
+    (cd "$REPO_ROOT" && "$lf_venv/bin/python" -m evals.langfuse_sync "$RESULTS_ROOT")
+  fi
+}
+if [ "$LANGFUSE" = "1" ]; then
+  section "Langfuse export"
+  if langfuse_sync; then
+    log_ok "exported to Langfuse (Datasets: csa-golden-*; run names start with $STAMP)"
+  else
+    log_warn "Langfuse export failed; results are still in $RESULTS_ROOT (re-run: python -m evals.langfuse_sync $RESULTS_ROOT)"
+  fi
+fi
+
 if [ "$FAILED" = "1" ]; then
   log_error "eval failures (details: pytest output above, $RESULTS_ROOT)"
   exit 1

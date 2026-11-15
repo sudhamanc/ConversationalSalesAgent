@@ -35,6 +35,9 @@ graph TD
     JOB["Cloud Run job csa-db-init<br/>migrations + seed"] -->|unix socket /cloudsql| SQL
     GW -->|HTTPS| GEM(("Gemini API"))
     AGENTS -->|HTTPS| GEM
+    GW -.->|OTLP/HTTPS traces, scores| LF(("Langfuse Cloud<br/>(optional)"))
+    AGENTS -.->|OTLP/HTTPS| LF
+    TOOLS -.->|OTLP/HTTPS| LF
     SM["Secret Manager<br/>GOOGLE_API_KEY, SESSION_SECRET_KEY,<br/>DB_PASSWORD, SMTP_USER, SMTP_PASSWORD"] -.->|secret env| GW
     SM -.-> AGENTS
     SM -.-> TOOLS
@@ -76,6 +79,7 @@ Gemini is called over the internet (`generativelanguage.googleapis.com`) with `G
 | `SESSION_SECRET_KEY` | Generated | gateway | `SESSION_SECRET_KEY` |
 | `DB_PASSWORD` | Generated; set as the Cloud SQL user's password | all services, `csa-db-init` | `PGPASSWORD` (libpq/asyncpg read it; the URL has no password) |
 | `SMTP_USER` / `SMTP_PASSWORD` | Prompted; empty input skips them | communication agent | `SMTP_USER` / `SMTP_PASSWORD` |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Prompted; empty input skips them (tracing stays off) | all services | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` |
 
 Secret values are read with `read -rs` and never printed. If the SMTP secrets are absent, the communication agent is deployed with `SMTP_ENABLED=false` (simulated delivery).
 
@@ -108,6 +112,7 @@ Set by `deploy_cloud.sh`:
 | `AGENT_URL_<A2A_NAME>` | | | ✓ | one per agent, e.g. `AGENT_URL_ORDER_AGENT` |
 | `ALLOWED_ORIGINS` | | | ✓ | the gateway's own URL |
 | `RUN_MIGRATIONS=false`, `SUGGESTIONS_ENABLED` | | | ✓ | migrations run in the job instead |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (secrets), `LANGFUSE_HOST`, `LANGFUSE_TRACING_ENVIRONMENT=gcp`, `LANGFUSE_RELEASE=<image tag>`, `TELEMETRY_FLUSH_PER_REQUEST=true` | ✓ | ✓ | ✓ | only when both Langfuse secrets exist ([Tracing](#tracing-langfuse)) |
 
 Runtime settings: 1 vCPU, 1 GiB memory (catalog: 2 GiB), gen2 execution environment, 300 s timeout, `--min-instances=0` (gateway: `GATEWAY_MIN_INSTANCES`, default 0), `--max-instances=3` (`MAX_INSTANCES`).
 
@@ -162,7 +167,7 @@ Steps:
 | `--tag TAG` | Use a specific image tag |
 | `--local-docker` | Build locally (`linux/amd64`) and `docker push` instead of Cloud Build |
 
-Environment overrides: `PROJECT_ID`, `REGION`, `AR_REPO`, `SQL_INSTANCE`, `GEMINI_MODEL`, `GATEWAY_MIN_INSTANCES`, `MAX_INSTANCES`, `SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_NAME`, `USE_MOCK_DATA`, `SUGGESTIONS_ENABLED`.
+Environment overrides: `PROJECT_ID`, `REGION`, `AR_REPO`, `SQL_INSTANCE`, `GEMINI_MODEL`, `GATEWAY_MIN_INSTANCES`, `MAX_INSTANCES`, `SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_NAME`, `USE_MOCK_DATA`, `SUGGESTIONS_ENABLED`, `LANGFUSE_BASE_URL` (or `LANGFUSE_HOST`), `LANGFUSE_CAPTURE_CONTENT`.
 
 `--only` for an agent needs its tool services to exist, and `--only gateway` needs all agents to exist (their URLs are read back with `gcloud run services describe`); otherwise the script stops and tells you what to deploy first.
 
@@ -197,6 +202,21 @@ open "$GW"
 ```
 
 Migration job status: `gcloud run jobs executions list --job=csa-db-init --region=us-central1`.
+
+## Tracing (Langfuse)
+
+Optional. Every service exports OpenTelemetry traces to Langfuse Cloud over HTTPS: one trace per chat turn across `csa-gateway` → `csa-agent-*` → `csa-catalog`/`csa-serviceability`, grouped by conversation, plus thumbs up/down scores from the UI. Nothing extra runs in GCP.
+
+1. Create a Langfuse Cloud project and API keys (same project as local works; traces are separated by environment `gcp` vs `local`).
+2. `scripts/setup_gcp.sh`: enter the keys at the `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` prompts (hidden input; empty skips). It grants `secretAccessor` on both to the gateway, agent and tool service accounts.
+3. `scripts/deploy_cloud.sh`: when both secrets exist, every service gets them plus `LANGFUSE_HOST` (default `https://us.cloud.langfuse.com`; export `LANGFUSE_BASE_URL=https://cloud.langfuse.com` for EU; `LANGFUSE_HOST` also works), `LANGFUSE_TRACING_ENVIRONMENT=gcp`, `LANGFUSE_RELEASE=<image tag>` (filter traces by deploy) and `TELEMETRY_FLUSH_PER_REQUEST=true`. `--dry-run` prints them.
+
+Notes:
+
+- **Latency:** Cloud Run throttles CPU after a response, which would stall the background exporter, so each request flushes its spans before the last response chunk (bounded by `TELEMETRY_FLUSH_TIMEOUT_MS`, default 2000). Expect tens to a few hundred ms extra per hop; export failures are logged, never raised.
+- **Data:** prompts, replies and tool arguments go to Langfuse (card numbers, CVVs and account numbers are masked). Deploy with `LANGFUSE_CAPTURE_CONTENT=false scripts/deploy_cloud.sh` to send structure, timings and token counts only.
+- **Cost display:** if Langfuse shows no cost for `GEMINI_MODEL`, add a model price under Project settings → Models.
+- **Turn it off:** delete the two secrets (or their versions) and redeploy; `--set-env-vars`/`--set-secrets` replace the previous values, so tracing is removed.
 
 ## Day-to-Day Operations
 

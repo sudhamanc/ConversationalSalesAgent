@@ -6,7 +6,7 @@ import TypingIndicator from "./TypingIndicator";
 import { exportSessionToPdf } from "../utils/pdfExport";
 
 export default function ChatWindow({ onRegisterExport }) {
-  const { messages, isStreaming, sendMessage, clearChat } = useChatContext();
+  const { messages, isStreaming, sendMessage, clearChat, submitFeedback } = useChatContext();
   const bottomRef = useRef(null);
   const transcriptRef = useRef(null);
   const [prefillRequest, setPrefillRequest] = useState(null);
@@ -80,6 +80,7 @@ export default function ChatWindow({ onRegisterExport }) {
             message={msg}
             onSuggestionPick={handleSuggestionPick}
             suggestionsDisabled={isStreaming}
+            onFeedback={msg.traceId ? (value) => submitFeedback(i, value) : undefined}
           />
         ))}
 

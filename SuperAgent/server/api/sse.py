@@ -54,6 +54,7 @@ class EventMapper:
         self.current_target: Optional[str] = None
         self.provisioning_done = False
         self.domain_events_seen = False
+        self.agents: list[str] = []  # domain agents that answered this turn, in order
 
     @property
     def sent_text(self) -> bool:
@@ -67,6 +68,8 @@ class EventMapper:
         if event.author not in AGENT_NAMES or not event.content or not event.content.parts:
             return []
         self.domain_events_seen = True
+        if event.author not in self.agents:
+            self.agents.append(event.author)
         payloads: list[dict] = []
         for part in event.content.parts:
             text = getattr(part, "text", None)

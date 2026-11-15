@@ -30,6 +30,7 @@ SuperAgent/
 │   ├── api/suggestions.py   # follow-up suggestion chips (google-genai)
 │   ├── api/debug.py         # GET /api/debug/session (DEBUG=true only)
 │   ├── api/client_log.py    # POST /api/client-log (browser console forwarding, Bearer token)
+│   ├── api/feedback.py      # POST /api/feedback (thumbs up/down -> Langfuse score; feedback tokens)
 │   ├── run_scenarios.py     # smoke-run chat scenarios against a running gateway
 │   └── middleware/          # auth.py (signed tokens), rate_limiter.py
 ├── client/                  # React 19 + Vite + Tailwind (see client/AGENTS.md)
@@ -88,9 +89,15 @@ SSE events (`data: {...}` lines):
 | `structured_card` | Typed card, e.g. `card_type: "quote"` from `generate_offer_quote` / `find_best_bundle_offer` / `get_quote_details`. |
 | `suggestions` | Follow-up suggestion chips (when `SUGGESTIONS_ENABLED=true`). |
 | `error` | User-friendly error naming the unavailable service. |
-| `done` | End of turn. |
+| `done` | End of turn. With tracing on (Langfuse keys set) it is `{"type": "done", "trace_id": "<32 hex>", "feedback_token": "<token>"}`: the turn's trace (root span `chat_turn`) and a token for `POST /api/feedback`; otherwise `{"type": "done"}`. |
 
 Errors before streaming: 401 invalid/expired token, 429 rate limit, 400 invalid body. Retryable model errors (503/429) are retried up to 3 times if no domain event was produced yet.
+
+### `POST /api/feedback`
+
+Thumbs up/down on an assistant reply. Headers: `Authorization: Bearer <token>`. Body: `{"trace_id", "feedback_token", "value": "up" | "down"}` (both ids from that turn's `done` event). The vote becomes the Langfuse score `user_feedback` (BOOLEAN, 1 = up) on the trace; the score id and timestamp derive from the trace and the turn, so a changed vote updates the same score. The `feedback_token` is an itsdangerous signature (`SESSION_SECRET_KEY`) over `[session_id, trace_id, turn time]`, so any instance can verify it without state.
+
+Responses: 204 recorded · 401 invalid session · 404 tracing off · 429 rate limited (same `RATE_LIMIT_*` values as client-log, separate buckets) · 400 malformed body · 403 token not issued for this session and trace · 502 Langfuse rejected the score.
 
 ### `DELETE /api/session`
 
@@ -133,6 +140,13 @@ The shared template is the repo-root [`.env.example`](../.env.example). `super_a
 | `LOG_LEVEL` | no | `INFO` | |
 | `LOG_DIR` | no | `<repo>/logs` | Directory of `frontend.log` (browser console forwarding) |
 | `COMPACTION_*`, `CONTEXT_CACHE_*` | no | see `sales_common.config.ContextSettings` | Compaction and context-cache tuning |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | no | — | Both set = tracing on (every service exports to Langfuse; `done` carries `trace_id`; `/api/feedback` records scores). Secrets on Cloud Run |
+| `LANGFUSE_BASE_URL` (or older `LANGFUSE_HOST`) | no | `https://us.cloud.langfuse.com` | Langfuse region (`https://cloud.langfuse.com` for EU); `LANGFUSE_BASE_URL` wins |
+| `LANGFUSE_TRACING_ENVIRONMENT` | no | `local` | Environment label: `local`, `docker` (compose), `gcp` (Cloud Run), `eval` |
+| `LANGFUSE_CAPTURE_CONTENT` | no | `true` | `false` sends no prompts, replies or tool arguments (payment numbers are always masked) |
+| `LANGFUSE_RELEASE` | no | — | Release label on traces (`deploy_cloud.sh` sets the image tag) |
+| `TELEMETRY_FLUSH_PER_REQUEST` / `TELEMETRY_FLUSH_TIMEOUT_MS` | no | `false` / `2000` | Export spans before each response completes (`true` on Cloud Run) |
+| `OTEL_SDK_DISABLED` | no | — | `true` forces tracing off (tests, `eval.sh` without `--langfuse`) |
 | `SAFETY_*` | no | `BLOCK_LOW_AND_ABOVE` | Gemini safety thresholds |
 
 ## Running

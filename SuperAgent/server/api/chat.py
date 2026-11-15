@@ -7,23 +7,32 @@ Flow:
    deterministic handoffs) with durable PostgreSQL sessions.
 4. Map workflow events to SSE payloads (``api/sse.py``).
 5. After the stream completes, add the session to long-term memory.
+
+With tracing on (``sales_common.telemetry``), each turn is one Langfuse trace
+rooted at the ``chat_turn`` span, and ``done`` carries ``trace_id`` and
+``feedback_token`` (``api/feedback.py``).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncIterator
+from dataclasses import dataclass
+from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 from google.genai import types
+from opentelemetry import context as otel_context
+from opentelemetry.trace import Status, StatusCode
 
+from api.feedback import issue_feedback_token
 from api.sse import EventMapper
 from api.suggestions import generate_suggestions
 from middleware.auth import Session, get_authenticator
 from middleware.rate_limiter import rate_limiter
 from runtime import app_name, ensure_adk_session, get_runner
+from sales_common import telemetry
 from super_agent.config import settings
 from super_agent.registry import display_name
 from utils.logger import get_logger, session_id_var
@@ -71,14 +80,80 @@ def _schedule_memory_save(user_id: str, session_id: str) -> None:
     task.add_done_callback(_background_tasks.discard)
 
 
+@dataclass
+class _TurnRecord:
+    """What happened in a turn, for the ``chat_turn`` trace span."""
+
+    mapper: Optional[EventMapper] = None
+    attempts: int = 0
+    error: Optional[str] = None
+
+
+def _trace_user(adk_session, session: Session) -> str:
+    """Langfuse user: the customer id once known, otherwise the browser user id."""
+    state = getattr(adk_session, "state", None) or {}
+    return str(state.get("user:customer_id") or session.user_id)
+
+
+def _annotate_turn(span, user_message: str, record: _TurnRecord) -> None:
+    mapper = record.mapper
+    agents = list(mapper.agents) if mapper else []
+    tags = agents + (["handoff"] if len(agents) > 1 else []) + (["error"] if record.error else [])
+    span.set_attribute("langfuse.observation.output", "".join(mapper.response_parts) if mapper else "")
+    span.set_attribute("langfuse.trace.tags", tags)
+    span.set_attribute("langfuse.trace.metadata.answering_agents", ",".join(agents))
+    span.set_attribute("langfuse.trace.metadata.route_target", (mapper.current_target if mapper else None) or "")
+    span.set_attribute("langfuse.trace.metadata.handoff_hops", max(len(agents) - 1, 0))
+    span.set_attribute("langfuse.trace.metadata.attempts", record.attempts)
+    if record.error:
+        span.set_status(Status(StatusCode.ERROR, record.error[:300]))
+
+
 async def stream_turn(session: Session, user_message: str) -> AsyncIterator[str]:
-    """Run one workflow turn and yield SSE lines."""
+    """Run one workflow turn and yield SSE lines.
+
+    With tracing on (``sales_common.telemetry``) the turn is the root span
+    ``chat_turn``: the conversation's session and user ride along as baggage to
+    every agent and tool service, and ``done`` carries the turn's ``trace_id``
+    and a ``feedback_token`` for ``POST /api/feedback``.
+    """
+    adk_session = await ensure_adk_session(session.user_id, session.session_id)
+    if not telemetry.enabled():
+        async for line in _run_turn(session, user_message, _TurnRecord(), {"type": "done"}):
+            yield line
+        return
+
+    record = _TurnRecord()
+    token = otel_context.attach(
+        telemetry.turn_baggage_context(session.session_id, _trace_user(adk_session, session))
+    )
+    try:
+        with telemetry.get_tracer("gateway").start_as_current_span("chat_turn") as span:
+            trace_id = telemetry.trace_id_hex(span)
+            span.set_attribute("langfuse.trace.name", "chat_turn")
+            span.set_attribute("langfuse.observation.input", user_message)
+            done = {"type": "done"}
+            if trace_id:
+                done.update(trace_id=trace_id, feedback_token=issue_feedback_token(session.session_id, trace_id))
+            async for line in _run_turn(session, user_message, record, done):
+                yield line
+            _annotate_turn(span, user_message, record)
+    finally:
+        try:
+            otel_context.detach(token)
+        except Exception:  # generator closed from another context (client disconnect)
+            pass
+
+
+async def _run_turn(session: Session, user_message: str, record: _TurnRecord, done: dict) -> AsyncIterator[str]:
+    """The workflow turn with retries; ``record`` collects the outcome, ``done`` is the final event."""
     runner = get_runner()
-    await ensure_adk_session(session.user_id, session.session_id)
     new_message = types.Content(role="user", parts=[types.Part(text=user_message)])
 
     for attempt in range(_MAX_RETRIES):
         mapper = EventMapper()
+        record.mapper = mapper
+        record.attempts = attempt + 1
         try:
             async for event in runner.run_async(
                 user_id=session.user_id, session_id=session.session_id, new_message=new_message
@@ -89,8 +164,9 @@ async def stream_turn(session: Session, user_message: str) -> AsyncIterator[str]
                     if not mapper.domain_events_seen and _is_retryable(event.error_message) and attempt < _MAX_RETRIES - 1:
                         raise _Retry(event.error_message)
                     logger.error("Agent error from %s: %s", event.author, event.error_message)
+                    record.error = f"{event.author}: {event.error_message}"
                     yield _sse({"type": "error", "content": _unavailable_message(mapper.current_target)})
-                    yield _sse({"type": "done"})
+                    yield _sse(done)
                     return
                 for payload in mapper.consume(event):
                     yield _sse(payload)
@@ -105,9 +181,10 @@ async def stream_turn(session: Session, user_message: str) -> AsyncIterator[str]
                 await asyncio.sleep(_RETRY_DELAYS[attempt])
                 continue
             logger.error("Turn failed (target=%s): %s: %s", mapper.current_target, type(exc).__name__, error[:300])
+            record.error = f"{type(exc).__name__}: {error}"
             if not mapper.sent_text:
                 yield _sse({"type": "error", "content": _unavailable_message(mapper.current_target)})
-            yield _sse({"type": "done"})
+            yield _sse(done)
             return
 
         # --- turn completed ---
@@ -123,7 +200,7 @@ async def stream_turn(session: Session, user_message: str) -> AsyncIterator[str]
                 )
             if suggestions:
                 yield _sse({"type": "suggestions", "author": mapper.last_text_author or "agent", "data": suggestions})
-        yield _sse({"type": "done"})
+        yield _sse(done)
         _schedule_memory_save(session.user_id, session.session_id)
         return
 

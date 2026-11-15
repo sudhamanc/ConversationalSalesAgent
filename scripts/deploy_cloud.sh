@@ -21,8 +21,12 @@
 # the URL; libpq/asyncpg read PGPASSWORD from secret DB_PASSWORD), SERVICE_AUTH=gcp_id_token.
 # Tools + agents are private (--no-allow-unauthenticated); run.invoker: csa-gateway SA on agents,
 # csa-agents SA on tools. The gateway is public (--allow-unauthenticated).
+# Tracing: when secrets LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY exist (setup_gcp.sh), every
+# service gets them plus LANGFUSE_HOST, LANGFUSE_TRACING_ENVIRONMENT=gcp, LANGFUSE_RELEASE=<tag>
+# and TELEMETRY_FLUSH_PER_REQUEST=true; otherwise services deploy with tracing off.
 # Overrides: PROJECT_ID, REGION, AR_REPO, SQL_INSTANCE, GEMINI_MODEL, GATEWAY_MIN_INSTANCES,
-#            MAX_INSTANCES, SMTP_ENABLED, SMTP_HOST, SMTP_PORT, SMTP_FROM_NAME.
+#            MAX_INSTANCES, SMTP_ENABLED, SMTP_HOST, SMTP_PORT, SMTP_FROM_NAME, LANGFUSE_HOST,
+#            LANGFUSE_CAPTURE_CONTENT.
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -183,10 +187,20 @@ fi
 # 3-5. Deploy services in dependency order
 # ---------------------------------------------------------------------------
 secret_available() {
-  # SMTP secrets are optional (setup_gcp.sh lets you skip them)
+  # SMTP and Langfuse secrets are optional (setup_gcp.sh lets you skip them)
   if ! have_gcloud; then is_dry_run && return 0; fi
   gcloud secrets describe "$1" --project="$PROJECT_ID" >/dev/null 2>&1
 }
+
+# Tracing to Langfuse (sales_common.telemetry): on only when both secrets exist.
+LANGFUSE_HOST="${LANGFUSE_BASE_URL:-${LANGFUSE_HOST:-https://us.cloud.langfuse.com}}"
+LANGFUSE_ON=0
+if secret_available LANGFUSE_PUBLIC_KEY && secret_available LANGFUSE_SECRET_KEY; then
+  LANGFUSE_ON=1
+  log_info "Langfuse tracing on: $LANGFUSE_HOST (environment gcp, release $TAG)"
+else
+  log_info "Langfuse secrets not found; services deploy with tracing off"
+fi
 
 DEPLOYED_URLS=()
 
@@ -249,6 +263,12 @@ deploy_service() {
       done
       ;;
   esac
+  if [ "$LANGFUSE_ON" = "1" ]; then
+    # Per-request flush: Cloud Run throttles CPU after the response, which would stall the batch exporter.
+    envs+=("LANGFUSE_HOST=$LANGFUSE_HOST" "LANGFUSE_TRACING_ENVIRONMENT=gcp" "LANGFUSE_RELEASE=$TAG"
+      "LANGFUSE_CAPTURE_CONTENT=${LANGFUSE_CAPTURE_CONTENT:-true}" "TELEMETRY_FLUSH_PER_REQUEST=true")
+    secrets+=("LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest" "LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest")
+  fi
 
   section "Deploy $name ($cloud)"
   run gcloud run deploy "$cloud" --image="$(image_for "$name" "$TAG")" \

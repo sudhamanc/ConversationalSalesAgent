@@ -11,7 +11,9 @@
 #   - Cloud SQL PostgreSQL 16 instance $SQL_INSTANCE (default csa-db, db-f1-micro),
 #     database csa, user csa (password generated into secret DB_PASSWORD)
 #   - Secrets: GOOGLE_API_KEY (prompted, or taken from $GOOGLE_API_KEY), SESSION_SECRET_KEY
-#     (generated), SMTP_USER / SMTP_PASSWORD (prompted; empty input skips them)
+#     (generated), SMTP_USER / SMTP_PASSWORD (prompted; empty input skips them),
+#     LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (prompted; empty input skips them and
+#     deploy_cloud.sh then deploys with tracing off)
 #   - Service accounts csa-gateway, csa-agents, csa-tools with roles/cloudsql.client and
 #     secretAccessor on only the secrets each one needs
 # Secret values are read with `read -rs` and are never printed.
@@ -131,7 +133,11 @@ prompt_secret() {
     log_info "$name taken from the environment"
     return 0
   fi
-  [ -t 0 ] || die "$name is missing and stdin is not a terminal; export $name or run interactively"
+  if [ ! -t 0 ]; then
+    # Non-interactive: optional secrets that are not exported are skipped, required ones fail.
+    [ "$required" = "0" ] && return 0
+    die "$name is missing and stdin is not a terminal; export $name or run interactively"
+  fi
   while :; do
     if [ "$required" = "1" ]; then
       read -rs -p "Enter $name (input hidden): " value
@@ -177,6 +183,8 @@ ensure_secret GOOGLE_API_KEY required
 ensure_secret SESSION_SECRET_KEY generate
 ensure_secret SMTP_USER optional
 ensure_secret SMTP_PASSWORD optional
+ensure_secret LANGFUSE_PUBLIC_KEY optional
+ensure_secret LANGFUSE_SECRET_KEY optional
 
 # ---------------------------------------------------------------------------
 section "Service accounts and IAM"
@@ -193,8 +201,21 @@ ensure_sa "$SA_GATEWAY" "CSA gateway (public Cloud Run service)"
 ensure_sa "$SA_AGENTS" "CSA A2A agent services"
 ensure_sa "$SA_TOOLS" "CSA tool services (catalog, serviceability)"
 
+retry_iam() {
+  # retry_iam <command...> : a just-created service account can take ~a minute to be
+  # visible to IAM ("does not exist"); retry instead of failing a fresh setup.
+  local attempt
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if run "$@"; then return 0; fi
+    is_dry_run && return 0
+    log_warn "IAM not ready yet (attempt $attempt/8); retrying in 15s"
+    sleep 15
+  done
+  die "IAM binding still failing: $*"
+}
+
 for sa in "$SA_GATEWAY" "$SA_AGENTS" "$SA_TOOLS"; do
-  run gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$sa" \
+  retry_iam gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$sa" \
     --role=roles/cloudsql.client --condition=None --quiet --format=none
 done
 
@@ -207,7 +228,7 @@ grant_secret() {
     return 0
   fi
   for sa in "$@"; do
-    run gcloud secrets add-iam-policy-binding "$secret" --member="serviceAccount:$sa" \
+    retry_iam gcloud secrets add-iam-policy-binding "$secret" --member="serviceAccount:$sa" \
       --role=roles/secretmanager.secretAccessor --project="$PROJECT_ID" --quiet --format=none
   done
 }
@@ -217,6 +238,9 @@ grant_secret GOOGLE_API_KEY "$SA_GATEWAY" "$SA_AGENTS"
 grant_secret SESSION_SECRET_KEY "$SA_GATEWAY"
 grant_secret SMTP_USER "$SA_AGENTS"
 grant_secret SMTP_PASSWORD "$SA_AGENTS"
+# Tracing (every service exports to Langfuse; the gateway also posts feedback scores)
+grant_secret LANGFUSE_PUBLIC_KEY "$SA_GATEWAY" "$SA_AGENTS" "$SA_TOOLS"
+grant_secret LANGFUSE_SECRET_KEY "$SA_GATEWAY" "$SA_AGENTS" "$SA_TOOLS"
 
 section "Done"
 cat >&2 <<EOF

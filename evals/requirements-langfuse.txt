@@ -1,0 +1,4 @@
+# Isolated environment for `python -m evals.langfuse_sync` (run by scripts/eval.sh --langfuse).
+# NOT installed into ./venv: langfuse 5.x needs opentelemetry>=1.45 while google-adk 2.10
+# pins opentelemetry<=1.42.1. The sync reads cases.jsonl only (no ADK, no sales_common).
+langfuse>=5.2,<6

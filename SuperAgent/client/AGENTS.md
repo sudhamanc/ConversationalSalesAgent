@@ -47,7 +47,8 @@ client/
 │   ├── components/
 │   │   ├── ChatWindow.jsx          # Message list + streaming reply
 │   │   ├── ChatInput.jsx           # User input field
-│   │   ├── MessageBubble.jsx       # Message display (agent label, markdown)
+│   │   ├── MessageBubble.jsx       # Message display (agent label, markdown, feedback)
+│   │   ├── FeedbackButtons.jsx     # Thumbs up/down on traced replies (POST /api/feedback)
 │   │   ├── TypingIndicator.jsx     # Loading state
 │   │   ├── SuggestionCard.jsx      # Suggested next replies
 │   │   ├── JourneySidebar.jsx      # Sales journey progress (JourneyStep.jsx)
@@ -57,7 +58,7 @@ client/
 │   ├── hooks/useChat.js            # Chat actions hook
 │   ├── styles/index.css            # Tailwind imports
 │   └── utils/
-│       ├── api.js                  # Session + streaming chat client (see API Communication)
+│       ├── api.js                  # Session, streaming chat, sendFeedback (see API Communication)
 │       ├── remoteLog.js            # Forwards client logs to /api/client-log
 │       ├── agentLabels.js          # Agent display names
 │       ├── responseFormatters.js   # Reply formatting
@@ -306,7 +307,9 @@ All calls go through `src/utils/api.js` with relative URLs (`/api/...`); the Vit
 | `structured_card` | `onStructuredCard(...)` | Rich card (products, quote, order, ...) |
 | `suggestions` | `onSuggestions(...)` | Suggested next replies |
 | `error` | `onError(message)` | Agent or model failure (e.g. Gemini quota `429`) |
-| `done` | `onDone()` | Turn finished |
+| `done` | `onDone(payload)` | Turn finished; with tracing on, `payload` has `trace_id` and `feedback_token` |
+
+4. **Feedback:** `ChatContext` copies `trace_id`/`feedback_token` from `done` onto the assistant message (`traceId`, `feedbackToken`). `MessageBubble` then shows `FeedbackButtons` (thumbs up/down), and `submitFeedback(index, value)` calls `sendFeedback()` → `POST /api/feedback` (optimistic; reverts when the server does not answer 204). The vote becomes the Langfuse score `user_feedback` on that turn's trace. Messages without `traceId` (tracing off) show no buttons.
 
 Client logs are forwarded with `src/utils/remoteLog.js` to `POST /api/client-log`.
 

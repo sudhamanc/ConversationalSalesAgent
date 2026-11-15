@@ -17,6 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from sales_common import db
 from sales_common.config import env_bool
 from sales_common.logging import setup_logging
+from sales_common.telemetry import TraceContextMiddleware, init_telemetry, shutdown_telemetry
 
 from . import __version__, core, rag
 from .core import InvalidInputError, ProductNotFoundError
@@ -97,7 +98,14 @@ def _router() -> APIRouter:
 
 
 def create_app(*, rag_warmup: Optional[bool] = None) -> FastAPI:
-    """Build the FastAPI app. Each call creates its own MCP server instance."""
+    """Build the FastAPI app. Each call creates its own MCP server instance.
+
+    Tracing (``sales_common.telemetry``) is on when Langfuse keys are set; the
+    MCP SDK then emits a ``tools/call`` span joined to the calling agent's trace
+    (trace context arrives in the JSON-RPC ``_meta`` field).
+    """
+    setup_logging(SERVICE_NAME)  # before init_telemetry, so its startup line is logged
+    init_telemetry(SERVICE_NAME)
     mcp = build_mcp()
     mcp_app = mcp.streamable_http_app(
         streamable_http_path="/",
@@ -116,6 +124,7 @@ def create_app(*, rag_warmup: Optional[bool] = None) -> FastAPI:
         async with mcp.session_manager.run():
             yield
         db.close_pool()
+        shutdown_telemetry()
 
     app = FastAPI(
         title="Product Catalog Service",
@@ -150,6 +159,7 @@ def create_app(*, rag_warmup: Optional[bool] = None) -> FastAPI:
 
     app.include_router(_router())
     app.mount("/mcp", mcp_app)
+    app.add_middleware(TraceContextMiddleware)
     app.state.mcp = mcp
     return app
 

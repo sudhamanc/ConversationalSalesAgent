@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from sales_common import db
 from sales_common.logging import setup_logging
+from sales_common.telemetry import TraceContextMiddleware, init_telemetry, shutdown_telemetry
 
 from . import __version__, core
 from .mcp_server import mcp, streamable_http_app
@@ -31,7 +32,12 @@ logger = logging.getLogger("serviceability.app")
 
 
 def create_app() -> FastAPI:
-    """Build the service app. Each call creates a fresh MCP session manager."""
+    """Build the service app. Each call creates a fresh MCP session manager.
+
+    Tracing (``sales_common.telemetry``) is on when Langfuse keys are set; MCP
+    ``tools/call`` spans join the calling agent's trace via JSON-RPC ``_meta``.
+    """
+    init_telemetry("serviceability-service")
     mcp_app = streamable_http_app()
     session_manager = mcp.session_manager  # the manager created for ``mcp_app``
 
@@ -40,6 +46,7 @@ def create_app() -> FastAPI:
         async with session_manager.run():
             yield
         db.close_pool()
+        shutdown_telemetry()
 
     app = FastAPI(
         title="Serviceability Service",
@@ -85,6 +92,7 @@ def create_app() -> FastAPI:
         return dump(core.get_coverage_zones())
 
     app.mount("/mcp", mcp_app)
+    app.add_middleware(TraceContextMiddleware)
     return app
 
 

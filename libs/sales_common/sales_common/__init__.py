@@ -16,6 +16,8 @@ memory        PostgreSQL-backed ADK ``BaseMemoryService``
 notifications Transactional notification outbox
 repositories  Cross-domain SQL helpers shared by several agents
 maintenance   Periodic stale-record cleanup
+telemetry     Tracing to Langfuse (OpenTelemetry, OTLP/HTTP; off unless keys are set)
+langfuse_api  Langfuse REST client (scores)
 """
 
 __version__ = "2.0.0"

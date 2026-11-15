@@ -23,6 +23,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from evals.cases import append_cases, case_record, metric
 from evals.golden_io import GOLDEN_DIR, case_key, load_manifest, load_set, reviewed_only
 
 pytestmark = [pytest.mark.eval, pytest.mark.asyncio]
@@ -66,7 +67,7 @@ async def test_router_golden_set(results_dir):
         pytest.skip(f"router: no reviewed golden cases ({len(pending)} pending review)")
 
     router = standalone_router(build_router(model_name()))
-    rows, confusion = [], Counter()
+    rows, confusion, records = [], Counter(), []
     for case in eval_set.eval_cases:
         meta = manifest["cases"][case_key(eval_set.eval_set_id, case.eval_id)]
         (invocation,) = case.conversation
@@ -90,8 +91,23 @@ async def test_router_golden_set(results_dir):
             "raw": raw[:300],
         })
         confusion[(meta["target"], chosen)] += 1
+        row = rows[-1]
+        records.append(case_record(
+            key=case_key(eval_set.eval_set_id, case.eval_id),
+            tier="router",
+            set_name="router",
+            input=routing_input,
+            expected={"target": meta["target"], "allowed": row["allowed"]},
+            actual={"target": chosen, "finish_reason": finish, "raw": raw[:2000]},
+            metrics=[
+                metric("target_match", float(row["trajectory_ok"]), 1.0, row["trajectory_ok"]),
+                metric("valid_decision", float(row["response_ok"]), 1.0, row["response_ok"]),
+            ],
+            passed=row["trajectory_ok"] and row["response_ok"],
+        ))
 
     (results_dir / "router.json").write_text(json.dumps(rows, indent=2))
+    append_cases(results_dir, records)
     total = len(rows)
     accuracy = sum(r["trajectory_ok"] for r in rows) / total
     rule_rows = [r for r in rows if r["rule"]]

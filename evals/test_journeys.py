@@ -33,6 +33,7 @@ from google.adk.evaluation.eval_config import get_eval_metrics_from_config
 from google.adk.evaluation.eval_metrics import EvalStatus
 from google.genai import types
 
+from evals.cases import append_cases, case_record, metric
 from evals.golden_io import (
     AGENT_PACKAGES,
     REPO_ROOT,
@@ -68,8 +69,8 @@ def _get_json(url: str, token: str) -> dict:
         return json.loads(resp.read().decode())
 
 
-async def _session_tool_calls(token: str, messages: list[str]) -> list[IntermediateData]:
-    """Tool calls/responses per user turn, from the gateway session in the eval database."""
+async def _session_tool_calls(token: str, messages: list[str]) -> tuple[list[IntermediateData], str]:
+    """Tool calls/responses per user turn (and the gateway session id), from the eval database."""
     from google.adk.sessions import DatabaseSessionService
     from sales_common.db import session_db_url
     from super_agent.config import settings
@@ -83,7 +84,15 @@ async def _session_tool_calls(token: str, messages: list[str]) -> list[Intermedi
         session.events if session else [], allowed_authors=set(AGENT_PACKAGES), user_messages=messages
     )
     data = [t.invocation.intermediate_data for t in turns]
-    return (data + [IntermediateData()] * len(messages))[: len(messages)]
+    return (data + [IntermediateData()] * len(messages))[: len(messages)], ids["session_id"]
+
+
+def _trace_id(sse_turn) -> str | None:
+    """``trace_id`` from the turn's ``done`` event (present when the gateway traces to Langfuse)."""
+    for event in sse_turn.events:
+        if event.get("type") == "done":
+            return event.get("trace_id")
+    return None
 
 
 def _event_names(sse_turn) -> set[str]:
@@ -125,6 +134,7 @@ async def test_journey(path, results_dir):
     config = load_config(path, **judge_overrides())
     report = []
     failures = []
+    records = []
 
     for case in eval_set.eval_cases:
         meta = manifest["cases"][case_key(eval_set.eval_set_id, case.eval_id)]
@@ -134,7 +144,9 @@ async def test_journey(path, results_dir):
 
         messages = ["".join(p.text or "" for p in golden.user_content.parts) for golden in golden_turns]
         sse_turns = [run_turn(GATEWAY_URL, token, message, TURN_TIMEOUT) for message in messages]
-        tool_data = await _session_tool_calls(token, messages)
+        tool_data, gateway_session_id = await _session_tool_calls(token, messages)
+        failures_before = len(failures)
+        case_metrics = []
 
         actual = [
             Invocation(
@@ -183,6 +195,11 @@ async def test_journey(path, results_dir):
                 failures.append(f"{where}: missing events {row['events_missing']}")
             if row["errors"]:
                 failures.append(f"{where}: error events {row['errors']}")
+            case_metrics += [
+                metric(f"turn{i + 1}_agents_match", float(row["agents_actual"] == row["agents_expected"]), 1.0,
+                       row["agents_actual"] == row["agents_expected"]),
+                metric(f"turn{i + 1}_tool_trajectory", row["tool_score"], threshold, row["tool_score"] >= threshold),
+            ]
 
         # Response: ADK metrics per turn against the golden reply
         skip = {"golden_trajectory_v1", *meta.get("skip_metrics", [])}
@@ -196,6 +213,23 @@ async def test_journey(path, results_dir):
                            "status": result.overall_eval_status.name})
             if result.overall_eval_status == EvalStatus.FAILED:
                 failures.append(f"{case.eval_id}: {name} score {result.overall_score} below threshold")
+            case_metrics.append(metric(name, result.overall_score, None, result.overall_eval_status == EvalStatus.PASSED))
+
+        records.append(case_record(
+            key=case_key(eval_set.eval_set_id, case.eval_id),
+            tier="journeys",
+            set_name="journeys",
+            input=messages,
+            expected={
+                "replies": ["".join(p.text or "" for p in (g.final_response.parts if g.final_response else [])) for g in golden_turns],
+                "agents": meta["turn_agents"],
+            },
+            actual={"replies": [sse.text for sse in sse_turns], "agents": [sse.authors for sse in sse_turns]},
+            metrics=case_metrics,
+            passed=len(failures) == failures_before,
+            session_id=gateway_session_id,
+            trace_ids=[_trace_id(sse) for sse in sse_turns],
+        ))
 
     if RECORD:
         save_set(full_set, path)
@@ -205,4 +239,5 @@ async def test_journey(path, results_dir):
     (results_dir / f"journey-{path.name.replace('.evalset.json', '')}.json").write_text(
         json.dumps(report, indent=2, default=str)
     )
+    append_cases(results_dir, records)
     assert not failures, "\n".join(failures)
