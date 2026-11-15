@@ -131,7 +131,7 @@ def build_svg() -> str:
     parts.append(text(56, 98, "LATEST MULTI-AGENT ORCHESTRATION ARCHITECTURE", size=12, weight=500, fill="#6B7280", letter_spacing=1.8))
 
     bx = 650
-    for label in ["Google ADK 1.20+", "Gemini 3 Flash", "Python 3.12+", "React 19", "FastAPI", "SQLite WAL"]:
+    for label in ["Google ADK 2.10", "Gemini 3 Flash", "Python 3.12", "React 19", "FastAPI", "PostgreSQL 16"]:
         parts.append(badge(bx, 48, label))
         bx += 14 + len(label) * 8.1 + 8
 
@@ -194,12 +194,12 @@ def build_svg() -> str:
     parts.append(rect(56, 678, 1168, 148, rx=14, fill="#FEF2F2", stroke="#FCA5A5", sw=1.3))
     parts.append(text(76, 702, "INFRASTRUCTURE & DETERMINISTIC TOOLS", size=11, weight=700, fill="#991B1B", family="Menlo, Monaco, monospace", letter_spacing=2))
 
-    parts.append(card(76, 720, 372, 84, "Unified SQLite · sales_agent.db", [
+    parts.append(card(76, 720, 372, 84, "PostgreSQL 16 · Cloud SQL", [
         "accounts · quotes · orders · payments",
         "fulfillments · notifications · customer_master",
     ], "#FCA5A5", "#991B1B"))
-    parts.append(card(462, 720, 222, 84, "In-Repo Product Catalog", [
-        "Structured catalog +",
+    parts.append(card(462, 720, 222, 84, "Catalog service (REST + MCP)", [
+        "products table +",
         "ChromaDB knowledge",
     ], "#FCA5A5", "#991B1B"))
     parts.append(card(700, 720, 154, 84, "GIS / Coverage API", [

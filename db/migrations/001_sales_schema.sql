@@ -1,6 +1,6 @@
 -- =========================================================================
 -- 001: Sales domain schema (PostgreSQL 16)
--- Ported from the SQLite unified schema (SuperAgent/super_agent/utils/database.py).
+-- 19 tables owned by the sales domain services (single writer per table: db/README.md).
 -- Timestamps stay ISO-8601 TEXT for compatibility with existing tool logic.
 -- =========================================================================
 

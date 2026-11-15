@@ -46,7 +46,7 @@ OrderAgent/
 └── tests/                          # cart->order flow (Postgres) + ScriptLlm agent test
 ```
 
-Persistence is PostgreSQL only (see `db/README.md`); the legacy SQLite file was removed.
+Persistence is PostgreSQL only (see `db/README.md`).
 
 ### Database Tables (Order domain)
 

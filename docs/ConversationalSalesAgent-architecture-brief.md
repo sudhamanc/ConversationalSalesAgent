@@ -58,7 +58,7 @@ All business-critical values (addresses, prices, IDs, coverage) come from determ
 | Deployment unit | One container (`Dockerfile` + `entrypoint.sh`), one Cloud Run instance | 13 Cloud Run services + Cloud Run job `csa-db-init`; `docker-compose.yml` locally |
 | Agent coupling | `importlib` isolation wrappers in `SuperAgent/super_agent/sub_agents/*`, 7 `sys.modules` cross-calls | One A2A service per agent; the gateway calls agents only through `RemoteA2aAgent`; no cross-package imports |
 | Orchestration | ADK 1.x root `LlmAgent` with `transfer_to_agent`, 3 `after_agent_callback` handoff hacks, synthetic "Proceed to payment" re-run | ADK 2.10 `Workflow` graph with an LLM router node and a data-driven `HandoffPolicyNode` |
-| Data store | Shared SQLite `sales_agent.db`, synced to GCS | PostgreSQL 16 (Cloud SQL), versioned migrations `db/migrations/001-004`, seeds in `db/seed/` |
+| Data store | One shared database file, synced to GCS | PostgreSQL 16 (Cloud SQL), versioned migrations `db/migrations/`, seeds in `db/seed/` |
 | Sessions and auth | `InMemorySessionService`, in-memory token registry | `DatabaseSessionService` on PostgreSQL; stateless `itsdangerous` signed tokens with a `revoked_sessions` table |
 | Memory and context | None | `PostgresMemoryService` (`adk_memories`, full-text search), event compaction, Gemini context caching |
 | Catalog and coverage | Python dicts duplicated in ProductAgent, OfferManagement and ServiceabilityAgent | `products` and `coverage_zones` tables behind REST + MCP services |
@@ -78,7 +78,7 @@ All business-critical values (addresses, prices, IDs, coverage) come from determ
 **Why the rewrite was needed (baseline limitations):**
 
 - **Monolith scaling limits.** All ten agents were loaded into one Python process and shipped as one image. No agent could be deployed or scaled on its own, and Cloud Run was pinned to a single instance.
-- **SQLite as the shared store.** Nineteen tables in one SQLite file had cross-domain writes (Payment to `orders`, Fulfillment to `orders`/`accounts`, Order to `quotes`). The file was persisted by periodic GCS sync, which is last-writer-wins, loses data on crash, and cannot support more than one instance.
+- **A single database file as the shared store.** Nineteen tables in one file had cross-domain writes (Payment to `orders`, Fulfillment to `orders`/`accounts`, Order to `quotes`). The file was persisted by periodic GCS sync, which is last-writer-wins, loses data on crash, and cannot support more than one instance.
 - **`importlib` coupling.** Isolation wrappers and seven `sys.modules` cross-calls tied agents together at import time. When a module was absent the calls failed silently, and Payment and Fulfillment fell back to in-memory simulation.
 - **In-memory sessions.** `InMemorySessionService`, the token registry and journey state were lost on every restart and could not be shared across instances.
 - **Fragile orchestration.** An LLM-only coordinator plus three `after_agent_callback` handoff hacks and a synthetic server-side "Proceed to payment" re-run made handoffs non-deterministic.
@@ -592,12 +592,12 @@ erDiagram
 
 **Data flow and formats:**
 
-- **Sales schema.** It was ported mechanically from SQLite:
-  - `?` placeholders became `%s`
-  - `INSERT OR REPLACE` became `ON CONFLICT`
-  - identity columns replaced `AUTOINCREMENT`
-  - timestamps stay ISO-8601 `TEXT`
-  - Discovery keeps quoted legacy column names such as `"Company Name"`
+- **Sales schema conventions:**
+  - `%s` placeholders (psycopg 3)
+  - upserts with `ON CONFLICT`
+  - identity columns for generated ids
+  - timestamps as ISO-8601 `TEXT`
+  - Discovery uses quoted column names such as `"Company Name"`
 
   Most cross-domain links are logical (`customer_id`, `company_name`). The declared foreign keys are: `cart_items`/`order_items` to their parents, `orders.offer_id` to `quotes`, `payments`/`fulfillments` to `orders`, `payment_events` to `payments`, and `customer_master.first_order_id` to `orders`. A partial unique index (`uq_payments_order`) allows only one `processing`/`completed` payment per order.
 - **Notification outbox.** Offer, order, payment, fulfillment and gateway maintenance call `sales_common.notifications.enqueue(...)` inside their own business transaction. It inserts a `notifications` row with `status='pending'` and `metadata_json = {"template": <type>, "args": {...}}`. The communication service's dispatcher claims pending rows with `FOR UPDATE SKIP LOCKED`, renders them with its own templates, and marks them `sent`, `simulated` or `failed`. `dedup_cache` suppresses duplicate sends.
@@ -802,7 +802,7 @@ All services get `--add-cloudsql-instances`, `DATABASE_URL` on the `/cloudsql/<c
 |---|---|
 | Document | ConversationalSalesAgent Architecture Brief |
 | Scope | Target architecture after ADK 2.x / A2A / MCP rewrite (openspec changes `adk2-workflow-orchestration`, `a2a-agent-services`, `catalog-serviceability-mcp`, `multi-service-scripts`) |
-| Baseline | Single container, SQLite, `importlib` isolation, ADK 1.x (commit `b3cb18a`); see [Architecture Evolution](#architecture-evolution) |
+| Baseline | Single container, one shared database file, `importlib` isolation, ADK 1.x (commit `b3cb18a`); see [Architecture Evolution](#architecture-evolution) |
 | Sources analysed | `openspec/changes/*`, README "Agent Service Guide", `libs/sales_common/`, `SuperAgent/super_agent/`, `SuperAgent/server/`, `services/catalog/`, `services/serviceability/`, the 10 agent directories, `db/migrations/001-004`, `db/README.md`, `scripts/`, `docker-compose.yml`, Dockerfiles, `tests/integration/test_local_stack.py` |
 | Generated with | `architecture-brief` skill v0.5.2 |
 | Date | 2026-09-30 |

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "seed_hashes": {
-    "db/seed/001_sales_data.sql": "80c50f643866eba0a35bba02188601d7d3cf3be74ffc99aff438c6c9a02455b9",
+    "db/seed/001_sales_data.sql": "818673d9aaf751951aa1eb141ef33839327411c3153634a346afe30096cd6f37",
     "db/seed/002_catalog.sql": "4ff6d6539bb85ff5bc770c4168c454ce1b8e0328ee4efd651c9f61ed66d5a682",
     "db/seed/003_coverage.sql": "3a0e5267a6c6203f9d9662ea5a1d61a103712c6caad7e4d3c74a82f846defae2"
   },

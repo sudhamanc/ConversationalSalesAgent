@@ -491,7 +491,7 @@ The router prompt (`ROUTER_INSTRUCTION`) classifies intent in this priority orde
 ### Why PostgreSQL?
 
 - Durable ADK sessions, memory and A2A tasks shared by many instances; business tables with versioned migrations (`db/migrations`) and idempotent seed files (`db/seed`).
-- Cloud SQL in GCP and a `postgres:16` container locally keep environments symmetric. SQLite and the GCS database sync were retired.
+- Cloud SQL in GCP and a `postgres:16` container locally keep environments symmetric.
 
 ### Why ADK Over LangChain/LlamaIndex?
 

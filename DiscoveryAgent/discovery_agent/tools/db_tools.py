@@ -48,7 +48,7 @@ def search_companies(
 ) -> List[Dict[str, Any]]:
     """Search accounts by name, address, industry, region or customer status (compound match).
 
-    Matching is case-insensitive substring matching (SQLite ``LIKE`` semantics).
+    Matching is case-insensitive substring matching (PostgreSQL ``ILIKE``).
     """
     query = f"SELECT {_ACCOUNT_COLUMNS} FROM accounts WHERE 1=1"
     conditions: list[str] = []

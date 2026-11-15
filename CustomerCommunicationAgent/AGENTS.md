@@ -31,7 +31,6 @@ CustomerCommunicationAgent/
 │   ├── models/__init__.py         # NotificationStatus, legacy type aliases
 │   ├── tools/notification_tools.py# send_* tools + get_notification_history
 │   └── utils/db.py                # read queries (history, single row)
-├── data/                          # legacy SQLite files (unused at runtime; kept for reference)
 └── tests/                         # pytest; PostgreSQL tests need TEST_DATABASE_URL
 ```
 

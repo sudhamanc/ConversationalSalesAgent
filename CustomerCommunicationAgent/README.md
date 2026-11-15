@@ -93,8 +93,7 @@ SMS is always simulated. Abandoned-cart reminders go by email only.
 
 If `SMTP_ENABLED=true` is set without `SMTP_USER`/`SMTP_PASSWORD`, the service fails at startup.
 
-`NOTIFICATION_DB_PATH` and `SALES_AGENT_DB_PATH` have been removed. The SQLite files in `data/`
-are legacy data and are not used at runtime.
+Notifications and their history live in PostgreSQL (`notifications`, `dedup_cache`; see `db/README.md`).
 
 ## Tests
 

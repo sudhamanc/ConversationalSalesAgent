@@ -315,5 +315,3 @@ Every image is kept in Artifact Registry under its tag, and every Cloud Run depl
    ```
 
 3. **Database:** migrations are forward-only and additive. Take a Cloud SQL backup before releases that add migrations (`gcloud sql backups create --instance=csa-db`) and restore it if a migration must be undone.
-
-The earlier single-container deployment (one Cloud Run service with a GCS-synced SQLite file) is retired; its bucket is no longer used by the current services.
