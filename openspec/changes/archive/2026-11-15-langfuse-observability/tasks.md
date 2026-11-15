@@ -61,15 +61,19 @@
 ## 8. End-to-end verification
 
 - [ ] 8.1 Local, with keys in `.env`: run `scripts/db.sh up && scripts/start_local.sh`, then a greeting turn, a discovery → serviceability handoff turn and a product turn that uses MCP. Verify in Langfuse (environment `local`):
+  - Partially verified (2026-11-15): stack running locally, all 13 services tracing, a model-free MCP call reached Langfuse (`local`). Owner's UI walkthrough not reported back; deferred at archive by the owner.
   - one trace per turn containing the gateway workflow, agent and `tools/call` spans
   - one session for the conversation
   - generations with model and tokens
   - a card number shown as `[REDACTED_CARD]`
   - a thumbs-down recorded as `user_feedback` = 0
 - [ ] 8.2 Docker compose: one turn shows environment `docker`.
+  - Deferred at archive by the owner (compose not run; note: the `.certs` CA bundle lines in `.env` are native-only).
 - [ ] 8.3 Evals: `scripts/eval.sh --only router --langfuse` and `--only journeys:s4 --langfuse` create dataset runs with scores; the journey's experiment trace sits in its gateway session.
   - Deferred by the owner (2026-11-15): live eval runs cost Gemini tokens. The export path is covered offline (`evals/test_langfuse_sync.py`, SDK API checked in the isolated env); run it with the next eval run that is needed anyway.
-- [ ] 8.4 GCP: run `scripts/deploy_cloud.sh`, then `python scripts/e2e_test.py --base-url $GW`. Traces with environment `gcp` and release = image tag arrive.
+- [x] 8.4 GCP: run `scripts/deploy_cloud.sh`, then `python scripts/e2e_test.py --base-url $GW`. Traces with environment `gcp` and release = image tag arrive.
+  - Verified 2026-11-15: fresh GCP setup + deploy; traces with environment `gcp` and release = image tag arrive (gateway exports return 200); FAQ turn traced end to end (18 observations after filtering a2a-sdk spans). Led to fixes `fix-mcp-service-auth` and `fix-catalog-model-permissions` (archived).
 - [ ] 8.5 Regression: `pytest` for every agent dir, `SuperAgent/tests`, `libs/sales_common/tests`, `evals` and `tests/test_baseline_doc.py`; then run the golden evals once with `scripts/eval.sh`.
+  - Also deferred at archive: PostgreSQL-backed tests not run in this change.
   - Offline suites pass (2026-11-15). Golden evals not re-run, by owner decision: this change alters no prompt, model, tool or routing (CLAUDE.md's trigger for evals). PostgreSQL-backed tests (`TEST_DATABASE_URL`) still to run.
-- [ ] 8.6 `openspec validate langfuse-observability` passes. Commit the code with the change, then run `openspec archive langfuse-observability -y`.
+- [x] 8.6 `openspec validate langfuse-observability` passes. Commit the code with the change, then run `openspec archive langfuse-observability -y`.

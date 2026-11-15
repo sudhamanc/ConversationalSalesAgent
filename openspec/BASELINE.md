@@ -141,6 +141,7 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START â†’ prepare_turn â†
 | service-operations | multi-service-scripts (+ db lifecycle from local-dev-reliability) |
 | agent-evaluation | agent-eval-suite |
 | project-baseline | project-baseline |
+| agent-observability (+ additions to conversation-orchestration, agent-evaluation, service-operations) | langfuse-observability (2026-11-15) |
 
 Open (planned, not implemented): `openspec/changes/mcp-remaining-domains` (REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications; single-writer tables). Archived changes: `openspec/changes/archive/`.
 

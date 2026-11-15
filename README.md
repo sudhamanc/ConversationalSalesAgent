@@ -1140,7 +1140,7 @@ Every process: BatchSpanProcessor → masking/filter exporter → OTLP/HTTP → 
 - **Feedback:** the SSE `done` event carries `trace_id` and a signed `feedback_token`; the UI's thumbs call `POST /api/feedback`, and the gateway posts the score to Langfuse's REST API.
 - **Cloud Run:** CPU is throttled after a response, so each request flushes its spans before its last byte (`TELEMETRY_FLUSH_PER_REQUEST=true`, at most `TELEMETRY_FLUSH_TIMEOUT_MS`, 2 s). A Langfuse outage is logged, never raised; chat keeps working.
 
-Design and decisions: [openspec/BASELINE.md §10](openspec/BASELINE.md) and `openspec/changes/langfuse-observability/`.
+Design and decisions: [openspec/BASELINE.md §10](openspec/BASELINE.md), the `agent-observability` spec (`openspec/specs/agent-observability/spec.md`) and the archived change `openspec/changes/archive/2026-11-15-langfuse-observability/`.
 
 ### How Langfuse works underneath
 
@@ -1259,6 +1259,6 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment va
 | [evals/README.md](./evals/README.md) | Golden evals: tiers, running, Langfuse export, golden lifecycle |
 | [tests/integration/README.md](./tests/integration/README.md) | Multi-process integration test |
 | [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
-| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth) and change proposals (`langfuse-observability` in progress, `mcp-remaining-domains` planned; history in `archive/`) |
+| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth) and change proposals (`mcp-remaining-domains` planned; history, including `2026-11-15-langfuse-observability`, in `archive/`) |
 | Each `<Agent>/AGENTS.md` | Individual agent documentation |
 
