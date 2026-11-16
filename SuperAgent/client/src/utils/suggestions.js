@@ -14,48 +14,62 @@ function dedupeSuggestions(list) {
   }).slice(0, 3);
 }
 
+// Client fallback, used only when the gateway sends no `suggestions` event.
+// Every chip is a first-person message the CUSTOMER sends (it pre-fills the
+// input); [placeholders] are filled in before sending. Mirrors the gateway's
+// SuperAgent/server/api/suggestion_playbook.py.
+
+const chips = (...texts) => texts.map((text) => ({ text }));
+
 function fromGreeting() {
-  return [
-    { text: "I need business internet for my location" },
-    { text: "I want to check serviceability for my address" },
-    { text: "Show business product options for my company" },
-  ];
+  return chips(
+    "We're [company name], located at [street, city, state ZIP]",
+    "I need business internet for my office",
+    "What plans do you offer for small businesses?",
+  );
 }
 
 function fromDiscovery(content) {
   const lower = content.toLowerCase();
-  if (lower.includes("full address") || lower.includes("zip code")) {
-    return [
-      { text: "My company address is [Street, City, State, ZIP]" },
-      { text: "Use our registered company address for this request" },
-      { text: "Check serviceability for our business address" },
-    ];
+  if (lower.includes("email") || lower.includes("phone")) {
+    return chips(
+      "You can reach me at [email] or [phone]",
+      "Check service at our address",
+      "Show me plans for my business",
+    );
   }
-
-  return [
-    { text: "Check serviceability for our location" },
-    { text: "Show product options for our business" },
-    { text: "Give me pricing after serviceability check" },
-  ];
+  if (lower.includes("address") || lower.includes("zip code")) {
+    return chips(
+      "Our address is [street, city, state ZIP]",
+      "We have [number] employees and need [internet/voice/both]",
+      "What plans do you offer for small businesses?",
+    );
+  }
+  return chips(
+    "Check service at our address",
+    "We have [number] employees and need [internet/voice/both]",
+    "Show me plans for my business",
+  );
 }
 
 function fromServiceability(content) {
   const parsed = parseServiceabilityMessage(content);
   const productIds = parsed?.products?.map((item) => item.id).filter(Boolean) || [];
+  const notServiceable = /not (currently )?(serviceable|available)/i.test(content);
 
-  if (productIds.length) {
-    return dedupeSuggestions([
-      { text: "Show technical specs for the recommended products" },
-      { text: "Compare the top two recommended options" },
-      { text: "Generate a quote for the selected products" },
-    ]);
+  if (productIds.length || !notServiceable) {
+    return chips(
+      "Show me the plans available at my address",
+      "Which plan fits [number] employees?",
+      "Quote me [plan] on a [12/24/36]-month term",
+    );
   }
 
-  return [
-    { text: "Show available products at this location" },
-    { text: "Check a different address" },
-    { text: "Connect me to pricing options" },
-  ];
+  return chips(
+    "Check a different address: [street, city, state ZIP]",
+    "What options do I have at this location?",
+    "Let me know when service reaches my area",
+  );
 }
 
 function fromProduct(content) {
@@ -63,95 +77,102 @@ function fromProduct(content) {
   const productIds = parsed?.products?.map((item) => item.productId).filter(Boolean) || [];
 
   if (productIds.length) {
-    return dedupeSuggestions([
-      { text: "Generate a quote for these products" },
-      { text: "Compare the best two product options" },
-      { text: "Show term discounts for 24 months" },
-    ]);
+    return chips(
+      "Quote me these plans on a [12/24/36]-month term",
+      "Compare the top two options for me",
+      "Which of these fits [number] employees?",
+    );
   }
 
-  return [
-    { text: "Get a quote for these products" },
-    { text: "Compare these product options" },
-    { text: "Which option is best for a small business?" },
-  ];
+  return chips(
+    "Get me a quote for these plans",
+    "Compare these options for me",
+    "Which option is best for a small business?",
+  );
 }
 
 function fromOffer(content) {
   const quote = parseOfferQuote(content);
   const hasQuote = Boolean(quote?.offer_id);
 
-  return dedupeSuggestions([
-    hasQuote ? { text: "Proceed with this quote" } : { text: "Proceed to order creation" },
-    { text: "Recalculate this quote for a 24-month term" },
-    { text: "Remove one product and requote" },
-  ]);
+  return chips(
+    hasQuote ? "I'd like to go ahead with this quote" : "I'd like to place my order",
+    "Requote this on a [12/24/36]-month term",
+    "Remove [product] and requote",
+  );
 }
 
 function fromOrder() {
-  return [
-    { text: "Simulate install day" },
-    { text: "Show my order summary" },
-    { text: "Send order confirmation to customer" },
-  ];
+  return chips(
+    "Schedule my installation for [date]",
+    "What installation dates are available?",
+    "Show my order details",
+  );
 }
 
-function fromPayment() {
-  return [
-    { text: "Schedule installation" },
-    { text: "Send payment confirmation" },
-    { text: "Show payment status" },
-  ];
+function fromPayment(content) {
+  if (/card|payment details|cvv/i.test(content) && !/payment (was )?(successful|completed|approved)/i.test(content)) {
+    return chips(
+      "My card is [card number], exp [MM/YY], CVV [CVV]",
+      "What payment methods do you accept?",
+      "Show my order total",
+    );
+  }
+  return chips(
+    "Simulate my install day",
+    "Email me the payment receipt",
+    "Show my order status",
+  );
 }
 
 function fromFulfillment() {
-  return [
-    { text: "Simulate install day" },
-    { text: "Activate my service" },
-    { text: "Show fulfillment status" },
-  ];
+  return chips(
+    "[date] in the [morning/afternoon] works for me",
+    "Simulate my install day",
+    "Show my installation status",
+  );
 }
 
 function fromComms() {
-  return [
-    { text: "Show notification history" },
-    { text: "Resend the latest confirmation" },
-    { text: "Send a status update to the customer" },
-  ];
+  return chips(
+    "Show me the messages you've sent me",
+    "Resend my latest confirmation",
+    "Email me a status update on my order",
+  );
 }
 
 function fromFaq() {
-  return [
-    { text: "Show me your cancellation policy" },
-    { text: "How long does installation take?" },
-    { text: "Do you provide 24/7 support?" },
-  ];
+  return chips(
+    "Is there an early-termination fee?",
+    "How long does installation take?",
+    "Do you provide 24/7 support?",
+  );
 }
 
 function genericSuggestions(content) {
   const lower = (content || "").toLowerCase();
 
   if (lower.includes("quote") || lower.includes("offer")) {
-    return [
-      { text: "Proceed with this quote" },
-      { text: "Adjust products and requote" },
-      { text: "Show me contract term options" },
-    ];
+    return chips(
+      "I'd like to go ahead with this quote",
+      "Requote this on a [12/24/36]-month term",
+      "What contract terms do you offer?",
+    );
   }
 
   if (lower.includes("serviceable")) {
-    return [
-      { text: "Show available product specs" },
-      { text: "Get a quote for this location" },
-      { text: "Check another address" },
-    ];
+    return chips(
+      "Show me the plans available at my address",
+      "Get me a quote for this location",
+      "Check a different address: [street, city, state ZIP]",
+    );
   }
 
-  return [
-    { text: "Continue" },
-    { text: "Show me next best step" },
-    { text: "Give me a summary" },
-  ];
+  return chips(
+    "What plans do you offer for small businesses?",
+    "Check service at [street, city, state ZIP]",
+    "How long does installation take?",
+  );
 }
 
 export function getSuggestionsForMessage({ author, content }) {
@@ -178,7 +199,7 @@ export function getSuggestionsForMessage({ author, content }) {
       suggestions = fromOrder();
       break;
     case "payment_agent":
-      suggestions = fromPayment();
+      suggestions = fromPayment(content);
       break;
     case "service_fulfillment_agent":
       suggestions = fromFulfillment();

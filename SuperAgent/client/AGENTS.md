@@ -50,7 +50,7 @@ client/
 │   │   ├── MessageBubble.jsx       # Message display (agent label, markdown, feedback)
 │   │   ├── FeedbackButtons.jsx     # Thumbs up/down on traced replies (POST /api/feedback)
 │   │   ├── TypingIndicator.jsx     # Loading state
-│   │   ├── SuggestionCard.jsx      # Suggested next replies
+│   │   ├── SuggestionCard.jsx      # Customer-voice suggestion chips (pencil = fill-in template)
 │   │   ├── JourneySidebar.jsx      # Sales journey progress (JourneyStep.jsx)
 │   │   ├── CartPanel.jsx           # Cart (CartItem.jsx)
 │   │   └── *Card.jsx               # Structured cards: Serviceability, ProductDetails, Quote, Order, Payment
@@ -62,7 +62,8 @@ client/
 │       ├── remoteLog.js            # Forwards client logs to /api/client-log
 │       ├── agentLabels.js          # Agent display names
 │       ├── responseFormatters.js   # Reply formatting
-│       ├── suggestions.js          # Suggestion helpers
+│       ├── suggestions.js          # Fallback chips (customer voice) when no `suggestions` event arrives
+│       ├── placeholders.js         # [placeholder] search for fill-in suggestion templates
 │       └── pdfExport.js            # Quote/order PDF export
 ├── index.html                      # HTML entry point
 ├── package.json                    # Dependencies
@@ -305,7 +306,7 @@ All calls go through `src/utils/api.js` with relative URLs (`/api/...`); the Vit
 | `cart_update` | `onCartUpdate(data)` | Cart contents changed |
 | `activity_update` | `onActivityUpdate(payload)` | Agent/tool activity for the activity panel |
 | `structured_card` | `onStructuredCard(...)` | Rich card (products, quote, order, ...) |
-| `suggestions` | `onSuggestions(...)` | Suggested next replies |
+| `suggestions` | `onSuggestions(...)` | Customer-voice chips. A click pre-fills `ChatInput`. Templates with `[placeholders]` get the first placeholder selected, Tab/Enter move to the next, and sending is blocked until none remain |
 | `error` | `onError(message)` | Agent or model failure (e.g. Gemini quota `429`) |
 | `done` | `onDone(payload)` | Turn finished; with tracing on, `payload` has `trace_id` and `feedback_token` |
 

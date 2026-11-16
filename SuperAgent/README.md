@@ -27,7 +27,8 @@ SuperAgent/
 │   ├── api/chat.py          # POST /api/chat (SSE)
 │   ├── api/sse.py           # ADK events -> UI SSE payloads
 │   ├── api/session.py       # POST/DELETE /api/session
-│   ├── api/suggestions.py   # follow-up suggestion chips (google-genai)
+│   ├── api/suggestions.py   # customer-voice suggestion chips (google-genai + playbook)
+│   ├── api/suggestion_playbook.py # journey stage, reply templates, chip validator (deterministic)
 │   ├── api/debug.py         # GET /api/debug/session (DEBUG=true only)
 │   ├── api/client_log.py    # POST /api/client-log (browser console forwarding, Bearer token)
 │   ├── api/feedback.py      # POST /api/feedback (thumbs up/down -> Langfuse score; feedback tokens)
@@ -87,7 +88,7 @@ SSE events (`data: {...}` lines):
 | `activity_update` | A remote tool ran (category, tool name, data). Drives the activity panel. |
 | `cart_update` | Cart/order tool results. |
 | `structured_card` | Typed card, e.g. `card_type: "quote"` from `generate_offer_quote` / `find_best_bundle_offer` / `get_quote_details`. |
-| `suggestions` | Follow-up suggestion chips (when `SUGGESTIONS_ENABLED=true`). |
+| `suggestions` | Three customer-voice chips (when `SUGGESTIONS_ENABLED=true`): first-person messages the customer would send next, chosen for the journey stage read from session state. When the agent asked for details, chip 1 is a fill-in template with `[placeholders]`. Rep-voice and filler chips are dropped, and the stage playbook (`api/suggestion_playbook.py`) fills any gaps, including when the model call fails. |
 | `error` | User-friendly error naming the unavailable service. |
 | `done` | End of turn. With tracing on (Langfuse keys set) it is `{"type": "done", "trace_id": "<32 hex>", "feedback_token": "<token>"}`: the turn's trace (root span `chat_turn`) and a token for `POST /api/feedback`; otherwise `{"type": "done"}`. |
 

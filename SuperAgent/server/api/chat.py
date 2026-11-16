@@ -28,6 +28,7 @@ from opentelemetry.trace import Status, StatusCode
 
 from api.feedback import issue_feedback_token
 from api.sse import EventMapper
+from api.suggestion_playbook import PLAYBOOK
 from api.suggestions import generate_suggestions
 from middleware.auth import Session, get_authenticator
 from middleware.rate_limiter import rate_limiter
@@ -43,7 +44,6 @@ router = APIRouter()
 _MAX_RETRIES = 3
 _RETRY_DELAYS = [2, 5, 10]
 _FALLBACK_TEXT = "I'm ready to assist you! How can I help with your business telecommunications needs today?"
-_ACTIVATION_SUGGESTIONS = ["Simulate install day", "Show order details", "Send installation confirmation"]
 _background_tasks: set[asyncio.Task] = set()
 
 
@@ -145,6 +145,18 @@ async def stream_turn(session: Session, user_message: str) -> AsyncIterator[str]
             pass
 
 
+async def _session_state(runner, session: Session) -> dict:
+    """Post-turn journey state for journey-aware suggestions (empty on failure)."""
+    try:
+        adk_session = await runner.session_service.get_session(
+            app_name=app_name(), user_id=session.user_id, session_id=session.session_id
+        )
+    except Exception as exc:  # suggestions are best effort
+        logger.warning("Could not read session state for suggestions: %s", exc)
+        return {}
+    return dict(getattr(adk_session, "state", None) or {})
+
+
 async def _run_turn(session: Session, user_message: str, record: _TurnRecord, done: dict) -> AsyncIterator[str]:
     """The workflow turn with retries; ``record`` collects the outcome, ``done`` is the final event."""
     runner = get_runner()
@@ -193,10 +205,11 @@ async def _run_turn(session: Session, user_message: str, record: _TurnRecord, do
             yield _sse({"type": "token", "content": _FALLBACK_TEXT, "author": "agent"})
         elif settings.server.suggestions_enabled:
             if mapper.provisioning_done:
-                suggestions = _ACTIVATION_SUGGESTIONS
+                suggestions = PLAYBOOK["provisioning"]
             else:
+                state = await _session_state(runner, session)
                 suggestions = await asyncio.to_thread(
-                    generate_suggestions, user_message, "".join(mapper.response_parts), mapper.last_text_author
+                    generate_suggestions, user_message, "".join(mapper.response_parts), mapper.last_text_author, state
                 )
             if suggestions:
                 yield _sse({"type": "suggestions", "author": mapper.last_text_author or "agent", "data": suggestions})

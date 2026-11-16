@@ -1,10 +1,11 @@
-"""Next-step suggestion chips (direct Gemini call; best effort)."""
+"""Next-step suggestion chips: the customer's likely next messages (Gemini + deterministic playbook)."""
 
 import json
 import logging
 import os
 import re
 
+from api import suggestion_playbook as playbook
 from sales_common import telemetry
 from utils.logger import get_logger
 
@@ -26,7 +27,7 @@ def _record_usage(span, response, response_text: str) -> None:
 
 
 def _parse_suggestion_payload(raw_text: str) -> list[str]:
-    """Parse JSON suggestions payload into a cleaned list."""
+    """Parse the JSON suggestions payload into a raw list (validation happens in ``finalize``)."""
     if not raw_text:
         return []
 
@@ -43,60 +44,75 @@ def _parse_suggestion_payload(raw_text: str) -> list[str]:
         if isinstance(suggestions, list):
             candidates = suggestions
 
-    cleaned: list[str] = []
-    for item in candidates:
-        text = str(item).strip()
-        if not text:
-            continue
-        # Keep suggestions editable and generic; avoid over-specific hard values.
-        text = text.replace("\n", " ").strip()
-        if text not in cleaned:
-            cleaned.append(text)
-        if len(cleaned) >= 3:
-            break
-
-    return cleaned
+    return [" ".join(str(item).split()) for item in candidates if str(item).strip()]
 
 
-def generate_suggestions(user_message: str, assistant_message: str, author: str | None) -> list[str]:
-    """Generate sales-flow-aware next-step suggestions using LLM; return empty list on failure."""
+def _reply_excerpt(assistant_message: str) -> str:
+    """Head and tail of the agent reply, so its closing question is always included."""
+    text = assistant_message.strip()
+    if len(text) <= 700:
+        return text
+    return f"{text[:300]} … {text[-400:]}"
+
+
+def build_prompt(user_message: str, assistant_message: str, author: str | None, state=None) -> str:
+    """Customer-voice suggestion prompt (see ``suggestion_playbook`` for the contract)."""
+    stage = playbook.journey_stage(state)
+    facts = playbook.journey_facts(state)
+    template = playbook.reply_template(assistant_message)
+    examples = "\n".join(f"  - {chip}" for chip in playbook.PLAYBOOK[stage])
+    reply_rule = (
+        f"- The agent just asked the customer for something. Suggestion 1 MUST answer it, "
+        f"as a fill-in like: {template}\n"
+        if template
+        else "- If the agent asked a question, suggestion 1 MUST answer it.\n"
+    )
+    return (
+        "You are a JSON API. Output ONLY a JSON object, nothing else.\n"
+        "A business customer is chatting with a telecom sales agent. Write the 3 messages the CUSTOMER "
+        "is most likely to send next. The customer clicks one and it is sent as THEIR message.\n"
+        'Output: {"suggestions": ["message1", "message2", "message3"]}\n'
+        "Rules:\n"
+        "- Write in the customer's voice: first person (I, we, our, my), speaking TO the agent.\n"
+        "- NEVER write what the agent would say: no questions about the customer's company, address or "
+        'needs, no "your company", no "the customer", no back-office actions.\n'
+        f"{reply_rule}"
+        "- Where the customer must supply their own details, use short [bracketed placeholders] "
+        "such as [company name], [street, city, state ZIP], [email], [phone], [date], [number].\n"
+        "- Never ask to give information listed as known. Move the customer toward what is missing.\n"
+        "- Each message under 80 characters; no real names, addresses or IDs; no filler like \"Continue\".\n"
+        "Bad -> good:\n"
+        '  "Tell me about your company and location" -> "We\'re [company name], located at [street, city, state ZIP]"\n'
+        '  "Send order confirmation to customer" -> "Email me the order confirmation"\n'
+        '  "Continue" -> "I\'d like to go ahead with this quote"\n'
+        f"Journey stage: {stage} ({playbook.STAGE_HINTS[stage]})\n"
+        f"Known: {', '.join(facts['known']) or 'nothing yet'}\n"
+        f"Missing: {', '.join(facts['missing']) or 'nothing'}\n"
+        f"Typical customer messages at this stage:\n{examples}\n"
+        f"Agent: {author or 'agent'}\n"
+        f"Customer said: {user_message[:200]}\n"
+        f"Agent reply: {_reply_excerpt(assistant_message)}\n"
+    )
+
+
+def generate_suggestions(
+    user_message: str, assistant_message: str, author: str | None, state=None
+) -> list[str]:
+    """Three customer-voice next messages for this journey stage.
+
+    The LLM proposes; ``suggestion_playbook.finalize`` enforces the contract and tops up
+    from the stage playbook, so a model failure still yields suggestions.
+    """
     if not assistant_message.strip():
         return []
 
-    # Sales flow context per agent — guides LLM toward domain-appropriate suggestions
-    _AGENT_FLOW_HINTS = {
-        "greeting_agent": "User just started. Suggest: introducing their company/location, asking about products, checking serviceability.",
-        "discovery_agent": "Company info was gathered. Suggest: check serviceability for address, ask about product needs, provide budget/timeline.",
-        "serviceability_agent": "Address was validated. Suggest: view available products, get technical specs, request a pricing quote.",
-        "product_agent": "Products were shown. Suggest: generate a pricing quote, compare products, ask about term discounts (12/24/36 month).",
-        "offer_management_agent": "A pricing quote was generated. Suggest: proceed with this quote, show different term length (e.g. 24 or 36 month), add/remove products and requote.",
-        "order_agent": "Order was created. Suggest: schedule installation, review order details, proceed to payment.",
-        "payment_agent": "Payment was processed. Suggest: schedule installation, send payment confirmation, show order status.",
-        "service_fulfillment_agent": "Installation/fulfillment in progress. Suggest: simulate install day, activate service, show fulfillment status.",
-        "customer_communication_agent": "Notification was sent. Suggest: show notification history, resend confirmation, send status update.",
-        "faq_agent": "FAQ was answered. Suggest: ask about products, check serviceability, get a pricing quote.",
-    }
-
-    flow_hint = _AGENT_FLOW_HINTS.get(author or "", "Suggest logical next steps in a B2B telecom sales conversation.")
-
+    stage = playbook.journey_stage(state)
+    candidates: list[str] = []
     try:
         from google import genai
         from google.genai import types as genai_types
         client = genai.Client()
-        prompt = (
-            "You are a JSON API. Output ONLY a JSON object, nothing else.\n"
-            "Generate 3 short next-step suggestions for a B2B telecom sales chat.\n"
-            "Output: {\"suggestions\": [\"action1\", \"action2\", \"action3\"]}\n"
-            "Rules:\n"
-            "- Each suggestion under 60 chars\n"
-            "- Suggestions must be specific to the current sales stage\n"
-            "- No customer names, addresses, or IDs\n"
-            "- Actionable and directly useful as clickable buttons\n"
-            f"Sales context: {flow_hint}\n"
-            f"Agent: {author or 'agent'}\n"
-            f"User said: {user_message[:200]}\n"
-            f"Agent response (excerpt): {assistant_message[:400]}\n"
-        )
+        prompt = build_prompt(user_message, assistant_message, author, state)
 
         # Use configured model for suggestions; disable thinking to avoid
         # budget consumption, and bump token limit for reliable JSON output.
@@ -119,16 +135,16 @@ def generate_suggestions(user_message: str, assistant_message: str, author: str 
             _record_usage(span, response, response_text)
 
         # Try direct parse; fall back to extracting JSON from markdown/preamble
-        result = _parse_suggestion_payload(response_text)
-        if not result:
+        candidates = _parse_suggestion_payload(response_text)
+        if not candidates:
             match = re.search(r'\{[^{}]*"suggestions"\s*:\s*\[.*?\]\s*\}', response_text, re.DOTALL)
             if match:
-                result = _parse_suggestion_payload(match.group())
-        if result:
-            logger.info("Dynamic suggestions generated: %s", result)
-        else:
+                candidates = _parse_suggestion_payload(match.group())
+        if not candidates:
             logger.warning("Dynamic suggestions: LLM returned unparseable response: %s", response_text[:200])
-        return result
     except Exception as error:
         logger.warning("Dynamic suggestion generation failed: %s", error)
-        return []
+
+    result = playbook.finalize(candidates, assistant_message, stage)
+    logger.info("Suggestions (stage=%s): %s", stage, result)
+    return result
