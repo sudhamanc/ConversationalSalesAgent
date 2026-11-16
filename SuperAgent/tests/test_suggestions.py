@@ -159,3 +159,33 @@ def test_faq_mid_quote_gets_quote_chips_not_discovery(monkeypatch):
 
 def test_empty_reply_yields_nothing():
     assert suggestions.generate_suggestions("hi", "   ", "faq_agent", {}) == []
+
+
+# --- review fixes (returning-customer-resume) ------------------------------------
+
+SESSION_QUOTE_REPLY = (
+    "This quote is now active and saved to your account. Would you like to:\n"
+    "1.  **See pricing for a longer term?** (We offer additional discounts for 24 or 36-month commitments).\n"
+    "2.  **Add other services?** (We also have Voice, SD-WAN, and Mobile options available at your location).\n"
+    "3.  **Proceed with this quote?** (I can help you move forward to the ordering stage)."
+)
+
+
+def test_location_mentioned_in_offer_is_not_an_address_request():
+    assert "[street" not in (pb.reply_template(SESSION_QUOTE_REPLY) or "")
+    out = pb.finalize([], SESSION_QUOTE_REPLY, "quote")
+    assert not any("[street" in c for c in out)
+
+
+def test_this_location_question_gets_confirmation_chip():
+    reply = "Welcome back! I found **Acme** at 1 A St, Philadelphia PA 19103. Are you calling about service for this location?"
+    assert pb.reply_template(reply) == "Yes, service at this address"
+
+
+def test_returning_active_service_stage():
+    state = {**CUSTOMER, "returning_customer_context": {"customer_id": "C1", "status": "active_service"}}
+    assert pb.journey_stage(state) == "returning_active"
+    with_quote = {**state, "offer_context": {"offer_id": "OFF-1"}}
+    assert pb.journey_stage(with_quote) == "quote"
+    other = {**CUSTOMER, "returning_customer_context": {"customer_id": "ZZ", "status": "active_service"}}
+    assert pb.journey_stage(other) == "address"

@@ -61,7 +61,7 @@ DiscoveryAgent/
 | Tool | Tables | Writes `customer_context` |
 |------|--------|---------------------------|
 | `search_companies` | `accounts` (case-insensitive substring, compound name+address) | no |
-| `get_company_profile` | `accounts` LEFT JOIN `spend` | yes, when the account has a `customer_id` |
+| `get_company_profile` | `accounts` LEFT JOIN `spend`, then the returning-customer summary | yes, when the account has a `customer_id` (also `returning_customer_context`, restored `offer_context` / `serviceability_context`) |
 | `get_contact_personas` | `contacts` | no |
 | `get_customer_intent` | `insights`, `opportunities`, `actions` | no |
 | `search_by_intent_signals` | `accounts` JOIN `insights` | no |
@@ -71,7 +71,7 @@ DiscoveryAgent/
 | `add_new_contact` / `update_contact_info` | `contacts` (`add_new_contact` requires an existing account, matched case-insensitively; else `{success: false, error}`) | no |
 | `add_or_update_insights` | `insights` (update, else insert) | no |
 | `create_opportunity_from_bant` | `opportunities` INSERT with BANT scores; an existing opportunity with the same company + name (case-insensitive) is not re-inserted (`success: false, duplicate: true`) | no |
-| `check_customer_state` | cross-table, via `sales_common.repositories.customer_state` | no |
+| `check_customer_state` | cross-table (quotes, carts, orders, payments, fulfillments, customer_master, serviceability_checks), via `sales_common.repositories.customer_state` | `returning_customer_context` (+ restored keys) |
 
 `customer_context` shape: `{customer_id, company_name, address: {street, address_line2, city, state, zip_code}}`. It is written to `tool_context.state`; `export_context_delta` adds it to the tool response as `_context_update` so the gateway merges it into the journey state.
 

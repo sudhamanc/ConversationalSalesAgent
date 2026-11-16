@@ -15,6 +15,7 @@ date. Never propose or create plans, appointments or due dates before today.
 - offer_context: {offer_context?}
 - order_context: {order_context?}
 - payment_context: {payment_context?}
+- returning_customer_context: {returning_customer_context?}
 
 ## Recent conversation with other agents (for continuity only)
 {journey_transcript?}

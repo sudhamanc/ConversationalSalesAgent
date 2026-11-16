@@ -28,7 +28,8 @@ from . import db
 from .adk_app import build_app
 from .config import require_env
 from .logging import mask_url, setup_logging
-from .telemetry import TraceContextMiddleware, init_telemetry, shutdown_telemetry
+from . import telemetry
+from .telemetry import TelemetryFlushPlugin, TraceContextMiddleware, init_telemetry, shutdown_telemetry
 
 logger = logging.getLogger("sales_common.a2a_server")
 
@@ -100,6 +101,10 @@ def create_a2a_app(
     session_service = DatabaseSessionService(db_engine=task_engine)
     task_store = _task_store(task_engine)
 
+    plugins = list(plugins or [])
+    settings = telemetry.settings()
+    if settings is not None and settings.flush_per_request:
+        plugins.append(TelemetryFlushPlugin())  # deliver the run's spans before CPU is throttled
     adk_app = build_app(name, agent, plugins=plugins)
     runner = Runner(app=adk_app, session_service=session_service, auto_create_session=True)
 

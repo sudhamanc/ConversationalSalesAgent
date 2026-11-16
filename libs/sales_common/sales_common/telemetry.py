@@ -36,6 +36,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
+from google.adk.plugins.base_plugin import BasePlugin
 from opentelemetry import baggage, context, propagate, trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import Event, ReadableSpan, SpanProcessor, TracerProvider
@@ -103,7 +104,7 @@ class TelemetrySettings:
             release=env_str("LANGFUSE_RELEASE", ""),
             capture_content=env_bool("LANGFUSE_CAPTURE_CONTENT", True),
             flush_per_request=env_bool("TELEMETRY_FLUSH_PER_REQUEST", False),
-            flush_timeout_ms=env_int("TELEMETRY_FLUSH_TIMEOUT_MS", 2000),
+            flush_timeout_ms=env_int("TELEMETRY_FLUSH_TIMEOUT_MS", 5000),
             disabled=env_bool("OTEL_SDK_DISABLED", False),
         )
 
@@ -265,7 +266,10 @@ class FilteringMaskingExporter(SpanExporter):
             cleaned = [self._clean(s) for s in spans if not is_noise_span(s)]
             if not cleaned:
                 return SpanExportResult.SUCCESS
-            return self._inner.export(cleaned)
+            result = self._inner.export(cleaned)
+            if result != SpanExportResult.SUCCESS:
+                logger.warning("Span export failed: %d span(s) not delivered (%s)", len(cleaned), result.name)
+            return result
         except Exception as exc:  # never let telemetry break the service
             logger.warning("Span export failed: %s: %s", type(exc).__name__, exc)
             return SpanExportResult.FAILURE
@@ -426,9 +430,12 @@ def flush(timeout_ms: Optional[int] = None) -> bool:
     provider = _provider
     if provider is None:
         return True
-    timeout = timeout_ms if timeout_ms is not None else (_settings.flush_timeout_ms if _settings else 2000)
+    timeout = timeout_ms if timeout_ms is not None else (_settings.flush_timeout_ms if _settings else 5000)
     try:
-        return provider.force_flush(timeout)
+        done = provider.force_flush(timeout)
+        if not done:
+            logger.warning("Span flush did not finish within %d ms; spans may be delayed or lost", timeout)
+        return done
     except Exception as exc:
         logger.warning("Span flush failed: %s", exc)
         return False
@@ -438,6 +445,24 @@ async def aflush(timeout_ms: Optional[int] = None) -> bool:
     if _provider is None:
         return True
     return await asyncio.to_thread(flush, timeout_ms)
+
+
+class TelemetryFlushPlugin(BasePlugin):
+    """ADK plugin: flush spans when an agent run ends, while the A2A request is still open.
+
+    The per-request flush in :class:`TraceContextMiddleware` runs on the final
+    response chunk, which can come after (or without) the run's spans being
+    exported; on Cloud Run the CPU is throttled once the response ends, so spans
+    left in the batch queue are lost. Flushing here delivers the run's agent,
+    model and tool spans first (spec: agent-observability).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(name="telemetry_flush")
+
+    async def after_run_callback(self, *, invocation_context) -> None:
+        await aflush()
+        return None
 
 
 def shutdown_telemetry() -> None:

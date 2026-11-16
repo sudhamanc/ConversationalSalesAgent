@@ -147,3 +147,49 @@ def test_check_customer_state(seeded_db):
     assert state["account"]["company_name"] == SEEDED
     for key in ("active_quotes", "pending_orders", "payments", "fulfillments"):
         assert isinstance(state[key], list)
+
+
+def test_returning_customer_resumes_saved_quote_and_serviceability(seeded_db):
+    """Spec: agent-services "Returning customers are acknowledged and resumed"."""
+    import json as _json
+
+    from sales_common.db import now_iso
+
+    customer_id = tools.search_companies(company_name=SEEDED)["companies"][0]["customer_id"]
+    offer_id = f"OFF-T{uuid.uuid4().hex[:8].upper()}"
+    stamp = now_iso()
+    svc = {"is_serviceable": True, "max_speed_mbps": 5000, "infrastructure_type": "FTTP", "service_address": "456 Park Avenue"}
+    with seeded_db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO quotes (offer_id, customer_id, company_name, items_json, term_months, subtotal, total_price, "
+            "monthly_total, yearly_total, full_quote_json, status, created_at, updated_at, expires_at) "
+            "VALUES (%s,%s,%s,%s,12,599,7188,599,7188,'{}','active',%s,%s,%s)",
+            (offer_id, customer_id, SEEDED, _json.dumps([{"product_id": "FIB-5G"}]), stamp, stamp, "2099-01-01T00:00:00"),
+        )
+        conn.execute(
+            "INSERT INTO serviceability_checks (customer_id, street, city, state, zip_code, is_serviceable, result_json, checked_at) "
+            "VALUES (%s, '456 Park Avenue', 'New York', 'NY', '10001', true, %s, %s)",
+            (customer_id, _json.dumps(svc), stamp),
+        )
+    try:
+        ctx = FakeToolContext()
+        profile = tools.get_company_profile(SEEDED, tool_context=ctx)
+        returning = ctx.state["returning_customer_context"]
+        assert profile["returning_customer"]["customer_id"] == customer_id
+        assert returning["status"] in ("in_progress", "active_service")
+        assert returning["active_quote"]["offer_id"] == offer_id
+        assert ctx.state["offer_context"]["offer_id"] == offer_id
+        assert ctx.state["serviceability_context"]["reused"] is True
+        assert ctx.state["serviceability_context"]["max_speed_mbps"] == 5000
+    finally:
+        with seeded_db.transaction() as conn:
+            conn.execute("DELETE FROM quotes WHERE offer_id = %s", (offer_id,))
+            conn.execute("DELETE FROM serviceability_checks WHERE customer_id = %s", (customer_id,))
+
+
+def test_check_customer_state_publishes_returning_context(seeded_db):
+    customer_id = tools.search_companies(company_name=SEEDED)["companies"][0]["customer_id"]
+    ctx = FakeToolContext()
+    state = tools.check_customer_state(customer_id, tool_context=ctx)
+    assert state["returning_customer"]["status"] in ("known", "in_progress", "active_service")
+    assert ctx.state["returning_customer_context"]["customer_id"] == customer_id

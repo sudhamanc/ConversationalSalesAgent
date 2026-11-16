@@ -29,6 +29,11 @@ PLAYBOOK: dict[str, list[str]] = {
         "I need business internet for my office",
         "What plans do you offer for small businesses?",
     ],
+    "returning_active": [
+        "I'd like to add another service to my account",
+        "I need service at a new location: [street, city, state ZIP]",
+        "I have a question about my current service",
+    ],
     "address": [
         "Our service address is [street, city, state ZIP]",
         "We have [number] employees and need [internet/voice/both]",
@@ -69,6 +74,7 @@ PLAYBOOK: dict[str, list[str]] = {
 # Short descriptions the LLM sees for each stage.
 STAGE_HINTS: dict[str, str] = {
     "new": "Customer has not introduced their business yet.",
+    "returning_active": "Returning customer who already has active service with us; nothing new in progress.",
     "address": "Business is known; service address/needs not yet checked.",
     "products": "Address is serviceable; customer is choosing plans, no quote yet.",
     "not_serviceable": "Address is NOT serviceable.",
@@ -89,6 +95,8 @@ def journey_stage(state: Mapping[str, Any] | None) -> str:
         return "payment" if flags["installation_scheduled"] else "schedule"
     if flags["quote_ready"]:
         return "quote"
+    if flags["returning_customer_status"] == "active_service":
+        return "returning_active"
     if flags["serviceability_checked"]:
         return "products" if flags["serviceable"] else "not_serviceable"
     if flags["customer_identified"]:
@@ -133,7 +141,11 @@ _REPLY_TOPICS: list[tuple[re.Pattern[str], str]] = [
      "[date] in the [morning/afternoon] works for me"),
     (re.compile(r"\b(company name|business name|name of your (company|business)|who you are)\b", re.I),
      "We're [company name], located at [street, city, state ZIP]"),
-    (re.compile(r"\b(address|zip|location|street)\b", re.I),
+    # Only explicit requests: "...at your location" in an offer is not one.
+    (re.compile(r"\b(this|that|the same) (location|address)\b", re.I),
+     "Yes, service at this address"),
+    (re.compile(r"\b((your|the|service|business|full|street|installation|new) address|zip(\s?code)?|"
+                r"which (location|address)|where (is|are|should|would))\b", re.I),
      "Our address is [street, city, state ZIP]"),
     (re.compile(r"\b(employees|staff|users|bandwidth|speed|needs?|looking for|use case|timeline|budget)\b", re.I),
      "We have [number] employees and need [internet/voice/both]"),

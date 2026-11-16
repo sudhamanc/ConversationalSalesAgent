@@ -213,7 +213,7 @@ Optional. Every service exports OpenTelemetry traces to Langfuse Cloud over HTTP
 
 Notes:
 
-- **Latency:** Cloud Run throttles CPU after a response, which would stall the background exporter, so each request flushes its spans before the last response chunk (bounded by `TELEMETRY_FLUSH_TIMEOUT_MS`, default 2000). Expect tens to a few hundred ms extra per hop; export failures are logged, never raised.
+- **Latency:** Cloud Run throttles CPU after a response, which would stall the background exporter, so each request flushes its spans before the last response chunk (bounded by `TELEMETRY_FLUSH_TIMEOUT_MS`, default 5000), and agent services also flush after each agent run (`TelemetryFlushPlugin`). Expect tens to a few hundred ms extra per hop; export failures are logged, never raised.
 - **Data:** prompts, replies and tool arguments go to Langfuse (card numbers, CVVs and account numbers are masked). Deploy with `LANGFUSE_CAPTURE_CONTENT=false scripts/deploy_cloud.sh` to send structure, timings and token counts only.
 - **Cost display:** if Langfuse shows no cost for `GEMINI_MODEL`, add a model price under Project settings → Models.
 - **Turn it off:** delete the two secrets (or their versions) and redeploy; `--set-env-vars`/`--set-secrets` replace the previous values, so tracing is removed.

@@ -25,6 +25,7 @@ A PostgreSQL advisory lock serialises concurrent runners.
 | `migrations/003_platform.sql` | `adk_memories` (long-term memory), `revoked_sessions` (gateway tokens) |
 | `migrations/004_coverage.sql` | `coverage_zones` (serviceability service) |
 | `migrations/005_notifications_seq.sql` | `notifications.seq` insertion-order column for the outbox dispatcher |
+| `migrations/006_serviceability_checks.sql` | `serviceability_checks`: stored coverage results, reused for returning customers |
 | `seed/001_sales_data.sql` | demo prospects/accounts, contacts, quotes, orders, fulfillments and related rows (edited by hand) |
 | `seed/002_catalog.sql` | 16 SKUs with price/family (`scripts/export_catalog_seed.py`) |
 | `seed/003_coverage.sql` | 38 coverage ZIPs (`scripts/export_coverage_seed.py`) |
@@ -41,5 +42,6 @@ A PostgreSQL advisory lock serialises concurrent runners.
 | notifications, dedup_cache | customer_communication_agent (dispatcher) | all producers insert `pending` rows (outbox) |
 | products | catalog service | — |
 | coverage_zones | serviceability service | — |
+| serviceability_checks | serviceability_agent (after-tool callback) | — (read by discovery via `customer_state`) |
 | adk_memories, revoked_sessions | gateway | — |
 | sessions, events, app_states, user_states (ADK), a2a_tasks (a2a-sdk) | every agent service + gateway | keyed by app name |

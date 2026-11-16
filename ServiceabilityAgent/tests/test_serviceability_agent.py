@@ -181,3 +181,34 @@ def test_runner_writes_state_and_context_update():
     responses, state = asyncio.run(run())
     assert state["serviceability_context"] == EXPECTED_CONTEXT
     assert responses[0][CONTEXT_UPDATE_KEY]["serviceability_context"]["is_serviceable"] is True
+
+
+def test_check_is_stored_for_reuse(monkeypatch):
+    """Spec: sales-data-store "Serviceability checks are stored"."""
+    import os
+
+    if not os.getenv("TEST_DATABASE_URL"):
+        pytest.skip("TEST_DATABASE_URL not set")
+    import uuid
+
+    from sales_common import db, migrate
+
+    migrate.run()
+    from serviceability_agent.callbacks import store_serviceability_check
+
+    cid = f"CUST-T-{uuid.uuid4().hex[:6]}"
+    assert store_serviceability_check({"is_serviceable": True, "max_speed_mbps": 5000}, ARGS, cid)
+    row = db.fetch_one("SELECT zip_code, is_serviceable, result_json FROM serviceability_checks WHERE customer_id = %s", (cid,))
+    assert row["zip_code"] == ARGS["zip_code"] and row["is_serviceable"] is True
+    assert json.loads(row["result_json"])["max_speed_mbps"] == 5000
+    db.execute("DELETE FROM serviceability_checks WHERE customer_id = %s", (cid,))
+
+
+def test_store_failure_never_raises(monkeypatch):
+    from serviceability_agent import callbacks
+
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(callbacks.db, "get_pool", boom)
+    assert callbacks.store_serviceability_check({"is_serviceable": True}, ARGS, "CUST-1") is False

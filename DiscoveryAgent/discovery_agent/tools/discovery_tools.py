@@ -14,6 +14,7 @@ import psycopg
 from google.adk.tools.tool_context import ToolContext
 
 from sales_common.repositories.customer_state import check_customer_state as _check_customer_state
+from sales_common.repositories.customer_state import summarize_returning_customer
 
 from . import db_tools as db
 from . import qualification_tools as lead_db
@@ -118,6 +119,32 @@ def search_companies(
     return {"found": len(companies), "companies": companies}
 
 
+def _publish_returning_customer(
+    tool_context: Optional[ToolContext], customer_id: str, company_name: Optional[str], pipeline: Optional[dict] = None
+) -> dict:
+    """Write ``returning_customer_context`` and restore the saved quote / reusable serviceability.
+
+    Deterministic resume for a customer found in the CRM (spec: agent-services
+    "Returning customers are acknowledged and resumed"). Returns the summary.
+    """
+    pipeline = pipeline if pipeline is not None else _check_customer_state(customer_id)
+    summary = summarize_returning_customer(pipeline, company_name=company_name)
+    if tool_context is not None:
+        tool_context.state["returning_customer_context"] = summary["returning_customer_context"]
+        if summary["offer_context"]:
+            tool_context.state["offer_context"] = summary["offer_context"]
+        if summary["serviceability_context"]:
+            tool_context.state["serviceability_context"] = summary["serviceability_context"]
+        logger.info(
+            "[STATE WRITE] returning customer %s status=%s quote=%s serviceability_reused=%s",
+            customer_id,
+            summary["returning_customer_context"]["status"],
+            (summary["offer_context"] or {}).get("offer_id"),
+            bool(summary["serviceability_context"]),
+        )
+    return summary
+
+
 @_db_guard
 def get_company_profile(company_name: str, tool_context: Optional[ToolContext] = None) -> dict:
     """
@@ -167,6 +194,12 @@ def get_company_profile(company_name: str, tool_context: Optional[ToolContext] =
             profile["customer_id"], profile["company_name"], _address(company, default="")
         )
         logger.info(f"[STATE WRITE] get_company_profile -> customer_context = {tool_context.state['customer_context']}")
+
+    if profile.get("customer_id"):
+        # Found in the CRM: tell the agent where this customer stands (and restore it).
+        profile["returning_customer"] = _publish_returning_customer(
+            tool_context, profile["customer_id"], profile["company_name"]
+        )["returning_customer_context"]
 
     return profile
 
@@ -708,7 +741,7 @@ def create_opportunity_from_bant(
 
 
 @_db_guard
-def check_customer_state(customer_id: str) -> dict:
+def check_customer_state(customer_id: str, tool_context: Optional[ToolContext] = None) -> dict:
     """
     Check the current pipeline state for a returning customer.
 
@@ -724,7 +757,10 @@ def check_customer_state(customer_id: str) -> dict:
         pending orders, payment status, and fulfillment progress.
     """
     logger.info(f"DiscoveryAgent: check_customer_state called with customer_id={customer_id}")
-    return _check_customer_state(customer_id)
+    state = _check_customer_state(customer_id)
+    company = ((state.get("account") or {}).get("company_name")) or None
+    summary = _publish_returning_customer(tool_context, customer_id, company, pipeline=state)
+    return {**state, "returning_customer": summary["returning_customer_context"]}
 
 
 ALL_TOOLS = [

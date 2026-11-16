@@ -73,14 +73,34 @@ def is_pure_greeting(message: str) -> bool:
     return cleaned in _GREETINGS
 
 
+ACK_KEY = "returning_acknowledged_customer"
+
+
+def unacknowledged_returning_customer(state: Mapping[str, Any]) -> Optional[str]:
+    """customer_id of a CRM customer identified this session but not yet acknowledged, else None.
+
+    In that turn discovery welcomes them back and asks how to continue, so the
+    automatic serviceability handoff is skipped (spec: conversation-orchestration).
+    """
+    customer_id = (state.get("customer_context") or {}).get("customer_id")
+    returning = state.get("returning_customer_context") or {}
+    if customer_id and returning.get("customer_id") == customer_id and state.get(ACK_KEY) != customer_id:
+        return customer_id
+    return None
+
+
 def journey_flags(state: Mapping[str, Any]) -> dict[str, Any]:
     customer = state.get("customer_context") or {}
     svc = state.get("serviceability_context") or {}
     offer = state.get("offer_context") or {}
     order = state.get("order_context") or {}
     payment = state.get("payment_context") or {}
+    returning = state.get("returning_customer_context") or {}
     return {
         "customer_identified": bool(customer.get("customer_id")),
+        "returning_customer_status": returning.get("status")
+        if returning.get("customer_id") and returning.get("customer_id") == customer.get("customer_id")
+        else None,
         "serviceability_checked": bool(svc),
         "serviceable": svc.get("is_serviceable"),
         "quote_ready": bool(offer.get("offer_id")),
@@ -120,7 +140,7 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
     if hops >= MAX_HANDOFF_HOPS:
         return None
 
-    if last_agent == "discovery_agent":
+    if last_agent == "discovery_agent" and not unacknowledged_returning_customer(state):
         customer = state.get("customer_context") or {}
         address = customer.get("address") or {}
         zip_code = str(address.get("zip_code") or "").strip()
@@ -215,6 +235,11 @@ class HandoffPolicyNode(Node):
         state: dict[str, Any] = {"last_reply": reply[-2000:], "transcript": transcript}
 
         handoff = evaluate_handoff(ctx.state, last_agent, hops)
+        if last_agent == "discovery_agent":
+            returning_id = unacknowledged_returning_customer(ctx.state)
+            if returning_id:
+                logger.info("Returning customer %s acknowledged; serviceability handoff deferred", returning_id)
+                state[ACK_KEY] = returning_id
         if handoff is None:
             yield Event(output=reply, route="end", state=state)
             return

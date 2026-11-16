@@ -143,3 +143,27 @@ def test_generate_offer_quote_persists_bant_score(pg):
     assert result["bant_score"] == 72.5
     row = db.fetch_one("SELECT bant_score FROM quotes WHERE offer_id = %s", (result["offer_id"],))
     assert row["bant_score"] == 72.5
+
+
+def test_unsaved_quote_is_not_presented(monkeypatch):
+    """Spec: agent-services "Unsaved quotes are not presented"."""
+    import contextlib
+
+    import psycopg
+
+    from offer_management.tools import pricing_tools
+
+    @contextlib.contextmanager
+    def broken_transaction():
+        raise psycopg.OperationalError("couldn't get a connection after 30.00 sec")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(pricing_tools.db, "transaction", broken_transaction)
+    ctx = _ctx({"customer_context": {"customer_id": "CUST-X", "company_name": "X Inc"}})
+    result = generate_offer_quote([{"product_id": "FIB-5G", "quantity": 1}], tool_context=ctx)
+    assert result == {
+        "success": False,
+        "error": "quote_not_saved",
+        "message": result["message"],
+    }
+    assert "offer_context" not in ctx.state

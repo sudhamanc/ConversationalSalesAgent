@@ -375,10 +375,6 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
     }
     logger.info("Generated offer quote %s for %d items (bant_score=%.1f)", result["offer_id"], len(priced_items), bant_score)
 
-    # Publish offer to session state so OrderAgent can read offer_id directly
-    # without the LLM having to extract it from conversation history.
-    _publish_offer_context(tool_context, result, customer_id, company_name)
-
     # Persist the quote and enqueue the QUOTE_CONFIRMATION notification in one
     # transaction (transactional outbox; the communication service delivers it).
     try:
@@ -421,8 +417,19 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
                 "status": "pending",
             }
     except psycopg.Error as exc:
-        logger.warning("Failed to persist quote %s (non-fatal): %s", result["offer_id"], exc)
+        # An unsaved quote cannot be retrieved, ordered or resumed later: never present it
+        # (spec: agent-services "Unsaved quotes are not presented").
+        logger.error("Failed to persist quote %s: %s", result["offer_id"], exc)
+        return {
+            "success": False,
+            "error": "quote_not_saved",
+            "message": "The quote could not be saved right now. Tell the customer and offer to try again shortly; "
+            "do not present prices or a quote id.",
+        }
 
+    # Publish offer to session state (only once saved) so OrderAgent can read offer_id
+    # directly without the LLM having to extract it from conversation history.
+    _publish_offer_context(tool_context, result, customer_id, company_name)
     return result
 
 

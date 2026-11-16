@@ -30,6 +30,8 @@ JOURNEY_KEYS: tuple[str, ...] = (
     "offer_context",
     "order_context",
     "payment_context",
+    #: Written by discovery when a CRM customer is identified (status, saved quote, orders, last check).
+    "returning_customer_context",
 )
 
 CONTEXT_UPDATE_KEY = "_context_update"
