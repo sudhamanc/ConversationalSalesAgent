@@ -93,12 +93,11 @@ def create_a2a_app(
     init_telemetry(name)
     host, port, protocol = _public_endpoint()
 
-    from sqlalchemy.ext.asyncio import create_async_engine
-
     session_url = db.session_db_url()
     logger.info("A2A service %s sessions/tasks at %s", name, mask_url(session_url))
-    session_service = DatabaseSessionService(db_url=session_url)
-    task_engine = create_async_engine(session_url, pool_pre_ping=True)
+    # One engine for sessions and tasks keeps the per-instance connection budget small.
+    task_engine = db.create_session_engine(session_url)
+    session_service = DatabaseSessionService(db_engine=task_engine)
     task_store = _task_store(task_engine)
 
     adk_app = build_app(name, agent, plugins=plugins)

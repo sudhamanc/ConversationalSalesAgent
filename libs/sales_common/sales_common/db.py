@@ -49,6 +49,28 @@ def session_db_url() -> str:
     return "postgresql+asyncpg://" + url.split("://", 1)[1]
 
 
+def create_session_engine(url: Optional[str] = None):
+    """The process's SQLAlchemy async engine for ADK sessions, A2A tasks and memory.
+
+    Defaults to ``NullPool`` (no idle connections held); ``DB_ASYNC_POOL_SIZE`` > 0
+    selects a bounded QueuePool with ``DB_ASYNC_MAX_OVERFLOW`` overflow.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    url = url or session_db_url()
+    size = env_int("DB_ASYNC_POOL_SIZE", 0)
+    if size <= 0:
+        return create_async_engine(url, poolclass=NullPool)
+    return create_async_engine(
+        url,
+        pool_size=size,
+        max_overflow=env_int("DB_ASYNC_MAX_OVERFLOW", 0),
+        pool_pre_ping=True,
+        pool_recycle=300,
+    )
+
+
 def get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
@@ -57,8 +79,11 @@ def get_pool() -> ConnectionPool:
                 url = database_url()
                 _pool = ConnectionPool(
                     conninfo=url,
-                    min_size=1,
-                    max_size=env_int("DB_POOL_MAX", 5),
+                    # Small and idle-free: Cloud SQL db-f1-micro has ~22 usable connections
+                    # shared by every service instance (spec: sales-data-store).
+                    min_size=env_int("DB_POOL_MIN", 0),
+                    max_size=env_int("DB_POOL_MAX", 2),
+                    max_idle=float(env_int("DB_POOL_MAX_IDLE_S", 60)),
                     kwargs={"row_factory": dict_row, "autocommit": False},
                     open=True,
                     name="sales_common",

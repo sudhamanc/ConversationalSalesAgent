@@ -7,7 +7,7 @@ from typing import Optional
 from google.adk import Runner
 from google.adk.sessions import DatabaseSessionService
 
-from sales_common.db import session_db_url
+from sales_common.db import create_session_engine
 from sales_common.memory import PostgresMemoryService
 from super_agent import build_gateway_app
 from super_agent.config import settings
@@ -18,11 +18,13 @@ _runner: Optional[Runner] = None
 def init_runtime(app=None, session_service=None, memory_service=None) -> Runner:
     """Create the Runner (tests may inject an app and services)."""
     global _runner
-    url = session_db_url()
+    engine = None
+    if session_service is None or memory_service is None:
+        engine = create_session_engine()  # shared by sessions and memory (connection budget)
     _runner = Runner(
         app=app or build_gateway_app(),
-        session_service=session_service or DatabaseSessionService(db_url=url),
-        memory_service=memory_service or PostgresMemoryService(url),
+        session_service=session_service or DatabaseSessionService(db_engine=engine),
+        memory_service=memory_service or PostgresMemoryService(engine=engine),
     )
     return _runner
 
