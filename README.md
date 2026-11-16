@@ -59,7 +59,7 @@ Responses stream back to the browser via Server-Sent Events (SSE). When Langfuse
 ├─────────────────────────────────────────────────────────────────────┤
 │  DATA            PostgreSQL 16 (Cloud SQL in GCP) · SMTP · Gemini   │
 ├─────────────────────────────────────────────────────────────────────┤
-│  OBSERVABILITY   OpenTelemetry → Langfuse (optional, all services)   │
+│  OBSERVABILITY   OpenTelemetry → Langfuse (optional, all services)  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
