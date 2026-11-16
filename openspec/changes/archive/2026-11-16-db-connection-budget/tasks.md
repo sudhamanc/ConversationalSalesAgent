@@ -16,4 +16,4 @@
 
 ## 4. Deploy
 
-- [ ] 4.1 Redeploy all services (`scripts/deploy_cloud.sh --skip-migrate`). Verify: services healthy; no new "remaining connection slots" log entries after a journey.
+- [x] 4.1 Redeploy all services (`scripts/deploy_cloud.sh --skip-migrate`). Verify: all 13 services Ready on new revisions (offer `-00004-75f`, order `-00004-wwl`), gateway 200; all 19 "remaining connection slots" entries are from the pre-fix `-00003` revisions, none since. No journey was run (no billed Gemini requests).
