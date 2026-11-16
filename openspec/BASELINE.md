@@ -63,7 +63,7 @@ Every agent package `<Dir>/<package>/` has `agent.py` (`build_agent(model=None)`
 | **service_fulfillment_agent** (`service_fulfillment_agent`) | check_availability, schedule_installation, reschedule_appointment, cancel_appointment, provision_equipment, track_equipment, verify_equipment_delivery, dispatch_technician, update_installation_status, complete_installation, activate_service, run_service_tests, get_fulfillment_status | order_context (status) | fulfillments, customer_master |
 | **customer_communication_agent** (`customer_communication_agent`) | send_order_confirmation, send_quote_confirmation, send_payment_notification, send_installation_reminder, send_service_activated_notification, send_abandoned_cart_reminder, send_order_status_update, get_notification_history | — | notifications, dedup_cache (outbox dispatcher) |
 
-Cross-writers still present (to be removed by `mcp-remaining-domains`): service_fulfillment → accounts; order → quotes.status; payment/fulfillment → orders.status; gateway maintenance → quotes/orders expiry. Full table: [db/README.md](../db/README.md#table-ownership-writer-services).
+Cross-writers (intentional; single-writer services in `mcp-remaining-domains` were decided against): service_fulfillment → accounts; order → quotes.status; payment/fulfillment → orders.status; gateway maintenance → quotes/orders expiry. Full table: [db/README.md](../db/README.md#table-ownership-writer-services).
 
 Flow the prompts enforce: **cart → order (pending_payment) → installation scheduling → payment → confirmed**.
 - Discovery: `search_companies`, then `add_new_company` in the same turn once name, industry (inferred), street, city, state and ZIP are known; never asks for suite/unit.
@@ -143,7 +143,7 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START → prepare_turn �
 | project-baseline | project-baseline |
 | agent-observability (+ additions to conversation-orchestration, agent-evaluation, service-operations) | langfuse-observability (2026-11-15) |
 
-Open (planned, not implemented): `openspec/changes/mcp-remaining-domains` (REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications; single-writer tables). Archived changes: `openspec/changes/archive/`.
+Open: none. Decided not to do: `openspec/changes/archive/2026-11-16-mcp-remaining-domains` (REST + MCP services for the other six domains; archived without merging specs). Archived changes: `openspec/changes/archive/`.
 
 ## 10. Observability (`libs/sales_common/sales_common/telemetry.py`)
 

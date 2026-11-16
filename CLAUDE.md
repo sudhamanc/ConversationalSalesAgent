@@ -80,7 +80,7 @@ When working in specific directories, also read:
 - **Database:** [db/README.md](db/README.md)
 - **UI Development:** `SuperAgent/client/AGENTS.md`
 - **System map:** [openspec/BASELINE.md](openspec/BASELINE.md)
-- **Behavioral specs (source of truth):** `openspec/specs/<capability>/spec.md`; history in `openspec/changes/archive/`; open changes in `openspec/changes/` (`mcp-remaining-domains` is planned, not implemented)
+- **Behavioral specs (source of truth):** `openspec/specs/<capability>/spec.md`; history in `openspec/changes/archive/`; open changes in `openspec/changes/` (none open; `mcp-remaining-domains` was decided against and archived)
 - **Operations scripts:** `scripts/` (service list in `scripts/services.conf`)
 
 ---

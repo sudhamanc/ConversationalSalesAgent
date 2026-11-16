@@ -31,7 +31,7 @@ A PostgreSQL advisory lock serialises concurrent runners.
 
 ## Table ownership (writer services)
 
-| Tables | Owner | Other writers (to be removed by `mcp-remaining-domains`) |
+| Tables | Owner | Other writers (intentional; `mcp-remaining-domains` was decided against) |
 |---|---|---|
 | accounts, contacts, spend, opportunities, insights, actions | discovery_agent | service_fulfillment_agent (accounts) |
 | quotes | offer_management_agent | order_agent (status), gateway maintenance (expiry) |

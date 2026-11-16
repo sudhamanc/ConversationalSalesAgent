@@ -577,7 +577,7 @@ erDiagram
 
 **Table ownership (writer services, from `db/README.md`):**
 
-| Tables | Owner | Other writers (to be removed by `mcp-remaining-domains`) |
+| Tables | Owner | Other writers (intentional; `mcp-remaining-domains` was decided against) |
 |---|---|---|
 | `accounts`, `contacts`, `spend`, `opportunities`, `insights`, `actions` | `discovery_agent` | `service_fulfillment_agent` (`accounts`) |
 | `quotes` | `offer_management_agent` | `order_agent` (status via `sales_common.repositories.quotes.mark_ordered`), gateway maintenance (expiry) |
@@ -786,12 +786,12 @@ All services get `--add-cloudsql-instances`, `DATABASE_URL` on the `/cloudsql/<c
 
 | # | Risk | Impact | Mitigation / follow-up |
 |---|---|---|---|
-| 1 | **Shared database schema.** One PostgreSQL database; cross-domain writes remain (Payment and Fulfillment update `orders`, Fulfillment updates `accounts`, Order updates `quotes`) | Schema changes couple services; no per-service isolation or independent scaling of data | Ownership is documented in `db/README.md`; single-writer APIs are planned in `mcp-remaining-domains`, then per-service databases |
+| 1 | **Shared database schema.** One PostgreSQL database; cross-domain writes remain (Payment and Fulfillment update `orders`, Fulfillment updates `accounts`, Order updates `quotes`) | Schema changes couple services; no per-service isolation or independent scaling of data | Ownership is documented in `db/README.md`; single-writer APIs (`mcp-remaining-domains`) were decided against |
 | 2 | **ID generation (resolved).** `ORD-`, `CUST-`, `CART-`, `INV-` and `PLAN-` ids used salted `hash() % 1000` | Fixed: `sales_common.ids.new_id` (random 32-bit suffix) for ids; `stable_number` (SHA-256) for the simulated credit score | Regression tests in `OrderAgent/tests` and `PaymentAgent/tests` |
 | 3 | **Per-instance rate limit.** The token bucket in `middleware/rate_limiter.py` is in memory | The effective limit multiplies with gateway instances, and counters reset on restart | Move to a shared store (PostgreSQL or Memorystore) or Cloud Armor rate limiting |
 | 4 | **RAG model download at build time.** The catalog image pulls CPU PyTorch and `all-MiniLM-L6-v2` from external indexes during `docker build` | Builds depend on PyPI, the PyTorch index and Hugging Face availability; the image is large and needs 2 GiB | Vendor the model into an internal artifact or bucket (`EMBEDDING_MODEL_PATH` already supports pre-staged files) |
 | 5 | **Experimental ADK 2.x features.** The design relies on `Workflow`/`Node`, event compaction, context caching, `to_a2a`, and the `RemoteA2aAgent` `context_builder` and metadata provider | Upgrades may change behaviour; `RemoteA2aAgent` ignores node input, which required the `a2a_outbound_message` workaround | Pin `google-adk==2.10.0`; unit and integration tests cover the workflow, `App` config and the A2A round trip |
-| 6 | **Remaining in-process domain tools.** Discovery, offer, order, payment, fulfillment and communication tools still run inside LLM agent containers; OfferManagement keeps its own `PRODUCT_PRICE_BOOK` | No reuse by non-agent clients; price drift versus `products.unit_price` | Planned change `mcp-remaining-domains`: `crm`, `pricing`, `orders`, `payments`, `fulfillment` and `notifications` REST + MCP services |
+| 6 | **Remaining in-process domain tools.** Discovery, offer, order, payment, fulfillment and communication tools still run inside LLM agent containers; OfferManagement keeps its own `PRODUCT_PRICE_BOOK` | No reuse by non-agent clients; price drift versus `products.unit_price` | Accepted as-is; moving them to `crm`, `pricing`, `orders`, `payments`, `fulfillment` and `notifications` REST + MCP services (`mcp-remaining-domains`) was decided against |
 | 7 | **Latency and cold starts.** Each turn adds a router LLM call and one to three A2A hops, and each agent opens an MCP session. 13 services scale to zero | First-turn latency after idle; slower multi-hop turns | Greeting fast path, context caching, `min-instances` configurable for the gateway, single region |
 | 8 | **Outbox delay and context envelope.** Notifications wait up to `NOTIFY_POLL_SECONDS`. `_context_update` is visible to the agent's model | Delayed emails; slight prompt noise | 10 s default poll; the key is documented as internal in agent instructions |
 | 9 | **`POST /api/client-log` (resolved)** previously accepted unauthenticated writes | Fixed: requires a session token, has its own per-session rate limit, strips control characters | Regression tests in `SuperAgent/tests/test_api.py` |
@@ -806,4 +806,4 @@ All services get `--add-cloudsql-instances`, `DATABASE_URL` on the `/cloudsql/<c
 | Sources analysed | `openspec/changes/*`, README "Agent Service Guide", `libs/sales_common/`, `SuperAgent/super_agent/`, `SuperAgent/server/`, `services/catalog/`, `services/serviceability/`, the 10 agent directories, `db/migrations/001-004`, `db/README.md`, `scripts/`, `docker-compose.yml`, Dockerfiles, `tests/integration/test_local_stack.py` |
 | Generated with | `architecture-brief` skill v0.5.2 |
 | Date | 2026-09-30 |
-| Related | `AGENTS.md`, `GCP_DEPLOY.md`, `db/README.md`, README "Agent Service Guide", `openspec/changes/mcp-remaining-domains/` |
+| Related | `AGENTS.md`, `GCP_DEPLOY.md`, `db/README.md`, README "Agent Service Guide", `openspec/changes/archive/2026-11-16-mcp-remaining-domains/` (declined) |

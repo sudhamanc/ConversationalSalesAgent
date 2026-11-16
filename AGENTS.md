@@ -45,7 +45,7 @@ Behavioral specs live in `openspec/specs/<capability>/spec.md`; design history a
 | `agent-eval-suite` | Implemented (115/115 goldens reviewed) | Golden datasets + eval runners scoring trajectory and response for agents, router and journeys (`evals/`, `scripts/eval.sh`) |
 | `project-baseline` | Implemented | `openspec/BASELINE.md` system map + `tests/test_baseline_doc.py` drift check; all implemented changes archived into `openspec/specs/` |
 | `fix-eval-defects` | Implemented | FAQ RAG (`search_faq` over `services/catalog/data/faq_docs`), competitor refusal, cancellation guard, real payment history, current date for all agents, discovery registration, company-introduction routing, catalog embedding crash fix, model request timeout |
-| `mcp-remaining-domains` | **Planned (not implemented)** | REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications |
+| `mcp-remaining-domains` | **Decided not to do** (archived 2026-11-16, specs not merged) | Would have added REST + MCP services for CRM, pricing, orders, payments, fulfillment, notifications |
 
 ---
 
@@ -115,7 +115,7 @@ MCP is used for **real network tool services**, not as a label for in-process fu
 
 - Servers use `mcp` 2.x `MCPServer`, mounted as stateless streamable HTTP with JSON responses. REST and MCP share one `core.py` per service.
 - Agents connect with `sales_common.mcp_client.mcp_toolset(url)` (ADK `McpToolset` + `StreamableHTTPConnectionParams`, service-auth headers). URLs come from `CATALOG_MCP_URL` / `SERVICEABILITY_MCP_URL` and must end in `/mcp/`.
-- The other six domain agents still run their tools in-process against PostgreSQL. Moving them behind REST + MCP is the planned change `mcp-remaining-domains`.
+- The other six domain agents still run their tools in-process against PostgreSQL. Moving them behind REST + MCP (`mcp-remaining-domains`) was considered and decided against; that is the intended design.
 
 ---
 
@@ -454,7 +454,6 @@ The router prompt (`ROUTER_INSTRUCTION`) classifies intent in this priority orde
 
 ### Production Considerations (Future)
 
-- Per-domain REST + MCP services and single-writer table ownership (`mcp-remaining-domains`), then per-service databases.
 - Shared rate limiting (currently an in-memory token bucket per gateway instance).
 - OpenTelemetry tracing across gateway → A2A → MCP hops.
 - Terraform / CI/CD pipelines (scripts use `gcloud` today).
@@ -573,11 +572,10 @@ Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by Fa
 
 **Remaining:**
 
-1. **`mcp-remaining-domains`** (planned): REST + MCP services for CRM, pricing, orders, payments, fulfillment and notifications, with single-writer table ownership; OfferManagement reads prices from the catalog service instead of its own price book.
-2. **Known domain bugs:** all fixed with regression tests (see README "Recent Fixes and Known Limitations"). Residual limitations are listed in each agent's `AGENTS.md` under "Known issues".
-3. **Structured UI contracts:** extend `structured_card` to serviceability, product and order results so `responseFormatters.js` becomes a fallback only.
-4. **Rate limiting** is per gateway instance (in-memory token bucket); move to a shared store for multi-instance deployments.
-5. **Known environment limitations:** the RAG embedding model download is blocked in the build sandbox (the catalog service then reports `available: false` for knowledge search); Docker images were not built in the sandbox (run `docker compose build` / `scripts/deploy_cloud.sh` yourself).
+1. **Known domain bugs:** all fixed with regression tests (see README "Recent Fixes and Known Limitations"). Residual limitations are listed in each agent's `AGENTS.md` under "Known issues".
+2. **Structured UI contracts:** extend `structured_card` to serviceability, product and order results so `responseFormatters.js` becomes a fallback only.
+3. **Rate limiting** is per gateway instance (in-memory token bucket); move to a shared store for multi-instance deployments.
+4. **Known environment limitations:** the RAG embedding model download is blocked in the build sandbox (the catalog service then reports `available: false` for knowledge search); Docker images were not built in the sandbox (run `docker compose build` / `scripts/deploy_cloud.sh` yourself).
 6. Per-service databases and IaC (Terraform) once table ownership is single-writer.
 
 ---

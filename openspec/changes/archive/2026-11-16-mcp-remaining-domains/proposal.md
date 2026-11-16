@@ -1,6 +1,8 @@
 # Proposal: REST + MCP for the Remaining Domain Tools (Follow-up)
 
-> **Status:** planned follow-up. Not implemented in the initial rewrite, per the decision "Catalog + serviceability now, rest later".
+> **Status: decided not to do (2026-11-16).** Archived without implementation and without merging its specs. The six domain agents keep their in-process tools against the shared PostgreSQL schema; only catalog and serviceability run as REST + MCP services. This proposal is kept for history.
+>
+> Original status: planned follow-up, per the decision "Catalog + serviceability now, rest later".
 
 ## Why
 

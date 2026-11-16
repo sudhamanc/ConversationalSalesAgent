@@ -677,7 +677,7 @@ Account:    Existing_Customer=N ──→ Existing_Customer=Y (on activation)
 | **coverage_zones** | — | — | — | — | — | — | — | R | — |
 | **adk_memories**, **revoked_sessions** | — | — | — | — | — | — | — | — | R/W |
 
-> **R** = SELECT, **W** = INSERT/UPDATE. **Gateway** includes the hourly `cleanup_stale_records()` maintenance. Every agent service and the gateway also use the library-managed ADK session and `a2a_tasks` tables. The follow-up `mcp-remaining-domains` removes the remaining cross-domain writers (e.g. Payment and Fulfillment updating `orders`).
+> **R** = SELECT, **W** = INSERT/UPDATE. **Gateway** includes the hourly `cleanup_stale_records()` maintenance. Every agent service and the gateway also use the library-managed ADK session and `a2a_tasks` tables. The cross-domain writers (e.g. Payment and Fulfillment updating `orders`) are intentional; moving them behind single-writer services (`mcp-remaining-domains`) was decided against.
 
 ### PaymentAgent Hardening
 
@@ -1216,7 +1216,7 @@ Open your project in Langfuse and pick the environment in the top bar (`local`, 
 ## Known Limitations
 
 - **Rate limiting is per gateway instance** (in-memory token bucket); use a shared store or Cloud Armor for multi-instance limits.
-- **One shared PostgreSQL schema** with some cross-domain writers (Payment and Fulfillment update `orders`); single-writer services are planned in `openspec/changes/mcp-remaining-domains`.
+- **One shared PostgreSQL schema** with some cross-domain writers (Payment and Fulfillment update `orders`); single-writer services (`mcp-remaining-domains`) were decided against.
 - `contacts` and `opportunities` have no unique index (seed data contains legacy duplicates); duplicates are prevented in code under an advisory lock.
 - The catalog image downloads the embedding model at build time; knowledge search reports `available: false` if the index is missing.
 - ADK compaction, context caching and `to_a2a` are experimental in google-adk 2.10.0 (pinned).
@@ -1259,6 +1259,6 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment va
 | [evals/README.md](./evals/README.md) | Golden evals: tiers, running, Langfuse export, golden lifecycle |
 | [tests/integration/README.md](./tests/integration/README.md) | Multi-process integration test |
 | [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
-| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth) and change proposals (`mcp-remaining-domains` planned; history, including `2026-11-15-langfuse-observability`, in `archive/`) |
+| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth) and change proposals (none open; history, including `2026-11-15-langfuse-observability` and the declined `2026-11-16-mcp-remaining-domains`, in `archive/`) |
 | Each `<Agent>/AGENTS.md` | Individual agent documentation |
 
