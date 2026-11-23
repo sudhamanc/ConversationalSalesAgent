@@ -56,7 +56,7 @@ Responses stream back to the browser via Server-Sent Events (SSE): the agents' t
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PRESENTATION    React 19 + Vite + Tailwind  ⇄  FastAPI SSE gateway │
-│  GENERATIVE UI   A2UI 1.0 surfaces (gateway builders, deterministic) │
+│  GENERATIVE UI   A2UI 1.0 surfaces (gateway builders, deterministic)│
 │                  → CopilotKit renderer, standard catalog, actions   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ORCHESTRATION   sales_journey Workflow: router LLM, dispatch,      │
