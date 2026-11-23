@@ -42,6 +42,7 @@ def test_order_has_expires_at(pg):
         service_type="Business Fiber 1 Gbps",
         customer_id="CUST-EXP-ORD",
         price=249.0,
+        contact_email="expiry@example.com",
     )
     assert result["success"]
     row = _row("orders", "order_id", result["order_id"])
@@ -61,6 +62,7 @@ def test_cleanup_expires_stale_cart_and_order(pg):
         service_type="Business Fiber 1 Gbps",
         customer_id="CUST-EXP-STALE",
         price=99.0,
+        contact_email="stale@example.com",
     )["order_id"]
     past = "2000-01-01T00:00:00"
     db.execute("UPDATE carts SET expires_at = %s WHERE cart_id = %s", (past, cart_id))

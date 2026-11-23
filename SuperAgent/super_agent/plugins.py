@@ -22,7 +22,8 @@ class ContextBridgePlugin(BasePlugin):
     do cross the A2A boundary; this plugin copies them into the event's
     ``state_delta`` before the event is persisted, so downstream workflow nodes
     (e.g. ``HandoffPolicyNode``) and later turns see them. It also records a
-    successful ``schedule_installation`` for the scheduling -> payment handoff,
+    successful ``create_order`` (order -> scheduling handoff) and ``schedule_installation``
+    (scheduling -> payment handoff),
     and writes a delegation audit log line per tool call.
     """
 
@@ -46,6 +47,13 @@ class ContextBridgePlugin(BasePlugin):
                 response.get("success"),
                 invocation_context.session.id,
             )
+            if fr.name == "create_order" and response.get("success") and response.get("order_id"):
+                # order -> fulfillment handoff (spec: guided-checkout)
+                event.actions.state_delta["order_created_order"] = response["order_id"]
+                event.actions.state_delta["order_waiting_for_contact"] = None
+            if fr.name == "create_order" and response.get("error") == "contact_email_required":
+                # discovery -> order handoff once the contact is saved (spec: guided-checkout)
+                event.actions.state_delta["order_waiting_for_contact"] = True
             if fr.name == "schedule_installation" and response.get("success"):
                 order_ctx = invocation_context.session.state.get("order_context") or {}
                 order_id = response.get("order_id") or order_ctx.get("order_id")

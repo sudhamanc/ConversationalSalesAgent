@@ -123,3 +123,84 @@ def test_run_scenarios_client_against_app(client):
 
     events = asyncio.run(go())
     assert any(e["type"] == "token" for e in events) and events[-1] == {"type": "done"}
+
+
+# --- guided checkout (spec: guided-checkout) ---------------------------------
+
+
+def _auth(client):
+    s = client.post("/api/session").json()
+    return {"Authorization": f"Bearer {s['token']}"}
+
+
+def test_card_numbers_are_masked_before_the_workflow(client, monkeypatch):
+    import api.chat as chat
+
+    seen = {}
+
+    async def fake_stream(session, user_message):
+        seen["message"] = user_message
+        yield 'data: {"type": "done"}\n\n'
+
+    monkeypatch.setattr(chat, "stream_turn", fake_stream)
+    r = client.post("/api/chat", json={"message": "my card is 4111 1111 1111 1111 cvv 123"}, headers=_auth(client))
+    assert r.status_code == 200
+    assert "4111" not in seen["message"]
+    assert "[REDACTED_CARD]" in seen["message"] and "[REDACTED_CVV]" in seen["message"]
+
+
+def test_payment_method_proxy(client, monkeypatch):
+    import httpx
+
+    import api.payment_methods as pm
+
+    forwarded = {}
+
+    async def fake_customer(user_id, session_id):
+        return "CUST-9"
+
+    async def fake_post(self, url, json=None, headers=None):
+        forwarded.update(url=url, body=json)
+        return httpx.Response(200, json={"success": True, "saved": True, "method_id": "PM-1",
+                                         "payment_type": "credit_card", "card_brand": "visa",
+                                         "last_four": "1111", "token": "tok_should_not_leak"})
+
+    monkeypatch.setattr(pm, "_customer_id", fake_customer)
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    body = {"payment_type": "credit_card", "card_number": "4111111111111111", "expiry_month": 12,
+            "expiry_year": 2030, "cvv": "123", "customer_id": "SOMEONE-ELSE"}
+    r = client.post("/api/payment-methods", json=body, headers=_auth(client))
+    assert r.status_code == 200
+    assert r.json() == {"success": True, "payment_type": "credit_card", "card_brand": "visa", "last_four": "1111"}
+    assert forwarded["url"].endswith("/payment-methods")
+    assert forwarded["body"]["customer_id"] == "CUST-9", "customer comes from the session, not the browser"
+
+
+def test_payment_method_needs_a_customer_and_a_session(client, monkeypatch):
+    import api.payment_methods as pm
+
+    async def no_customer(user_id, session_id):
+        return None
+
+    monkeypatch.setattr(pm, "_customer_id", no_customer)
+    assert client.post("/api/payment-methods", json={"payment_type": "credit_card"}).status_code == 401
+    r = client.post("/api/payment-methods", json={"payment_type": "credit_card"}, headers=_auth(client))
+    assert r.status_code == 409
+
+
+def test_payment_method_validation_error_is_passed_through(client, monkeypatch):
+    import httpx
+
+    import api.payment_methods as pm
+
+    async def fake_customer(user_id, session_id):
+        return "CUST-9"
+
+    async def fake_post(self, url, json=None, headers=None):
+        return httpx.Response(400, json={"success": False, "error": "Invalid card number (failed Luhn check)"})
+
+    monkeypatch.setattr(pm, "_customer_id", fake_customer)
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    r = client.post("/api/payment-methods", json={"payment_type": "credit_card", "card_number": "4111111111111112"},
+                    headers=_auth(client))
+    assert r.status_code == 400 and r.json()["error"] == "Invalid card number (failed Luhn check)"

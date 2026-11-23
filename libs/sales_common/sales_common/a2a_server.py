@@ -75,6 +75,7 @@ def create_a2a_app(
     plugins: Optional[Sequence[BasePlugin]] = None,
     uses_database: bool = True,
     extra_lifespan: Optional[Callable] = None,
+    extra_routes: Sequence[Route] = (),
 ):
     """Build the Starlette A2A app for ``agent``.
 
@@ -82,6 +83,8 @@ def create_a2a_app(
     * ``DatabaseSessionService`` on PostgreSQL (sessions keyed by A2A context id)
     * a2a-sdk ``DatabaseTaskStore`` on the same database (table ``a2a_tasks``)
     * ``GET /healthz`` (503 when the database is unreachable)
+    * ``extra_routes``: plain REST routes of the service (no model), e.g. the payment
+      service's ``POST /payment-methods``
     * tracing to Langfuse when configured (``sales_common.telemetry``): incoming
       ``traceparent``/``baggage`` are extracted so the agent's spans join the
       gateway's trace
@@ -137,5 +140,6 @@ def create_a2a_app(
         )
 
     app.router.routes.append(Route("/healthz", healthz, methods=["GET"]))
+    app.router.routes.extend(extra_routes)
     app.add_middleware(TraceContextMiddleware)
     return app

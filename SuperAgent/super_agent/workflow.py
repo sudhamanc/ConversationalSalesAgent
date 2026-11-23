@@ -7,17 +7,19 @@ for deterministic handoffs)::
     START -> prepare_turn --fast--> dispatch
                           --llm---> route_intent -> dispatch
     dispatch --<agent>--> <agent node> -> handoff_policy
-    handoff_policy --serviceability_agent|payment_agent--> <agent node>   (<= 2 hops)
+    handoff_policy --serviceability_agent|order_agent|service_fulfillment_agent|payment_agent--> <agent node>   (<= 2 hops)
     handoff_policy --end--> finish_turn
 
 State written here (session scope unless noted):
     turn_user_message, handoff_hops, last_agent, last_reply, transcript,
-    appointment_confirmed_order (set by ContextBridgePlugin),
+    appointment_confirmed_order, order_created_order, order_waiting_for_contact (set by ContextBridgePlugin),
+    offer_context (when the customer names one of their active quotes),
     user:customer_id, user:company_name (user scope, visible to later sessions)
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -32,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from sales_common.a2a_client import OUTBOUND_MESSAGE_KEY
 from sales_common.config import generate_config
+from sales_common.repositories.quotes import OFFER_ID_RE, load_offer_context
 
 from .prompts import ROUTER_INSTRUCTION
 from .registry import AGENT_NAMES, AGENTS, FALLBACK_AGENT, GREETING_AGENT
@@ -140,6 +143,18 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
     if hops >= MAX_HANDOFF_HOPS:
         return None
 
+    if last_agent == "discovery_agent" and state.get("order_waiting_for_contact"):
+        contact = (state.get("customer_context") or {}).get("contact") or {}
+        if contact.get("email"):
+            return Handoff(
+                target="order_agent",
+                message=(
+                    f"The customer's contact details are now on file (email {contact['email']}). "
+                    "Create the order from the cart now with create_order."
+                ),
+                clear_keys=("order_waiting_for_contact",),
+            )
+
     if last_agent == "discovery_agent" and not unacknowledged_returning_customer(state):
         customer = state.get("customer_context") or {}
         address = customer.get("address") or {}
@@ -153,6 +168,25 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
             return Handoff(
                 target="serviceability_agent",
                 message="Check service availability for this address: " + json.dumps(payload),
+            )
+
+    if last_agent == "order_agent":
+        order_id = state.get("order_created_order")
+        order = state.get("order_context") or {}
+        installation = order.get("installation") if isinstance(order.get("installation"), Mapping) else {}
+        already_scheduled = installation.get("status") == "scheduled" or (
+            order_id and state.get("installation_scheduled_order") == order_id
+        )
+        if order_id and not already_scheduled and order.get("status") in PAYABLE_ORDER_STATUSES:
+            where = order.get("service_address") or "the service address"
+            what = order.get("service_type") or "the service"
+            return Handoff(
+                target="service_fulfillment_agent",
+                message=(
+                    f"Order {order_id} was just created for {what} at {where}. Call check_availability now "
+                    "and ask the customer to pick one of the installation times shown."
+                ),
+                clear_keys=("order_created_order",),
             )
 
     if last_agent == "service_fulfillment_agent":
@@ -170,7 +204,7 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
                 target="payment_agent",
                 message=(
                     f"Installation is scheduled for order {order_id}; total {total}. "
-                    "Start payment: ask the customer for their payment method."
+                    "Start payment: call get_payment_methods so the secure payment form is shown."
                 ),
                 clear_keys=("appointment_confirmed_order",),
             )
@@ -180,6 +214,32 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
 # ---------------------------------------------------------------------------
 # Workflow nodes
 # ---------------------------------------------------------------------------
+
+
+def _load_offer(offer_id: str, customer_id: str) -> Optional[dict]:
+    """``offer_context`` for an active quote of the customer (patched in tests)."""
+    return load_offer_context(offer_id, customer_id)
+
+
+async def _selected_offer(state: Mapping[str, Any], message: str) -> Optional[dict]:
+    """The quote the customer names, when it is not already ``offer_context`` (spec: generative-ui).
+
+    Quote cards' buttons say "I'll take quote OFF-…"; several quotes can be on
+    screen, and order_agent builds the cart from ``offer_context``.
+    """
+    match = OFFER_ID_RE.search(message or "")
+    if not match:
+        return None
+    offer_id = match.group(0)
+    current = (state.get("offer_context") or {}).get("offer_id")
+    customer_id = (state.get("customer_context") or {}).get("customer_id") or state.get("user:customer_id")
+    if offer_id == current or not customer_id:
+        return None
+    try:
+        return await asyncio.to_thread(_load_offer, offer_id, customer_id)
+    except Exception as exc:  # the turn still routes; the agent will look the quote up itself
+        logger.warning("Could not load quote %s: %s", offer_id, type(exc).__name__)
+        return None
 
 
 async def prepare_turn(ctx: Context, node_input: str):
@@ -202,6 +262,11 @@ async def prepare_turn(ctx: Context, node_input: str):
         pass  # no memory service configured
     except Exception as exc:  # memory is best-effort context; never block the turn
         logger.warning("Memory search failed: %s", type(exc).__name__)
+
+    selected = await _selected_offer(ctx.state, message)
+    if selected:
+        logger.info("Customer chose quote %s", selected["offer_id"])
+        state["offer_context"] = selected
 
     router_input = {
         "message": message,
@@ -307,6 +372,8 @@ def build_workflow(agents: Mapping[str, BaseAgent], router_model) -> Workflow:
             handoff,
             {
                 "serviceability_agent": agents["serviceability_agent"],
+                "service_fulfillment_agent": agents["service_fulfillment_agent"],
+                "order_agent": agents["order_agent"],
                 "payment_agent": agents["payment_agent"],
                 "end": finish_turn,
             },

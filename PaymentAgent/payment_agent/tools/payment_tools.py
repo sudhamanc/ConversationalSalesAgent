@@ -34,6 +34,8 @@ from google.adk.tools.tool_context import ToolContext
 from sales_common import db, notifications
 from sales_common.ids import new_id
 
+from .billing_tools import _describe_method
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -238,6 +240,9 @@ def process_payment(
             customer_email = order_ctx["contact_email"]
         if not customer_phone and isinstance(order_ctx.get("contact_phone"), str):
             customer_phone = order_ctx["contact_phone"]
+        contact = (tool_context.state.get("customer_context") or {}).get("contact") or {}
+        if not customer_email and isinstance(contact, dict) and isinstance(contact.get("email"), str):
+            customer_email = contact["email"]  # spec: guided-checkout
 
     logger.info(
         "Processing payment: amount=%s token=...%s order=%s",
@@ -410,6 +415,10 @@ def process_payment(
                 )
                 _record_payment_event(conn, payment_id, "processing", "failed", note=failure_reason)
 
+            method = conn.execute(
+                "SELECT payment_type, card_brand, last_four FROM customer_payment_methods WHERE token = %s",
+                (payment_method_token,),
+            ).fetchone() or {}
             notification_id = _enqueue_payment_notification(
                 conn,
                 order_id=order_id,
@@ -420,7 +429,9 @@ def process_payment(
                 payment_status="success" if approved else "failed",
                 amount=amount,
                 currency=currency,
-                payment_method=payment_method_token,
+                # Never the token: the email names the masked method ("Visa card ending 1111").
+                payment_method=_describe_method(payment_method_token, method.get("payment_type"),
+                                                method.get("card_brand"), method.get("last_four")),
                 transaction_id=transaction_id,
                 failure_reason=failure_reason,
             )

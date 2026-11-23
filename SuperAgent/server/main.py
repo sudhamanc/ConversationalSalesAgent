@@ -34,6 +34,7 @@ from api.chat import router as chat_router  # noqa: E402
 from api.client_log import router as client_log_router  # noqa: E402
 from api.debug import router as debug_router  # noqa: E402
 from api.feedback import router as feedback_router  # noqa: E402
+from api.payment_methods import router as payment_methods_router  # noqa: E402
 from api.session import router as session_router  # noqa: E402
 from middleware.auth import get_authenticator  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
@@ -93,6 +94,7 @@ app.include_router(chat_router, tags=["Chat"])
 app.include_router(debug_router, tags=["Debug"])
 app.include_router(session_router, tags=["Session"])
 app.include_router(client_log_router, tags=["ClientLog"])
+app.include_router(payment_methods_router, tags=["Payment"])
 app.include_router(feedback_router, tags=["Feedback"])
 app.add_middleware(TraceContextMiddleware)
 

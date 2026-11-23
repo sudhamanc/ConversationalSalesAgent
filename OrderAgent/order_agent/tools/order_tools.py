@@ -35,6 +35,13 @@ def _recipient_phone(contact_phone: Optional[str]) -> Optional[str]:
     return None
 
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _valid_email(email: Any) -> bool:
+    return isinstance(email, str) and bool(_EMAIL_RE.match(email.strip()))
+
+
 def create_order(
     customer_name: str,
     service_address: str,
@@ -58,7 +65,7 @@ def create_order(
         service_type: Type of service to be ordered
         contact_phone: Customer contact phone (optional, defaults to "Not provided")
         customer_id: Customer identifier (auto-generated if not provided)
-        contact_email: Customer contact email
+        contact_email: Customer contact email (required; defaults to customer_context.contact.email)
         price: Service price (optional, for price tracking)
         offer_id: Offer/quote identifier from OfferManagement (links order to quote)
 
@@ -88,6 +95,22 @@ def create_order(
                 state_price = offer_ctx.get("total_price")
                 if isinstance(state_price, (int, float)):
                     price = float(state_price)
+            contact = cust_ctx.get("contact") if isinstance(cust_ctx.get("contact"), dict) else {}
+            if not _valid_email(contact_email) and _valid_email(contact.get("email")):
+                contact_email = contact["email"]
+            if contact_phone in (None, "", "Not provided", "N/A") and contact.get("phone"):
+                contact_phone = contact["phone"]
+
+        # Every order needs an email for its confirmation, payment receipt and
+        # installation reminders (spec: guided-checkout).
+        if not _valid_email(contact_email):
+            return {
+                "success": False,
+                "error": "contact_email_required",
+                "message": "An email address is required to place the order. Ask the customer for the contact "
+                           "name and email in the contact card shown below your reply; do not create the order yet.",
+            }
+        contact_email = contact_email.strip()
 
         # Auto-generate customer_id if not provided (fixes critical bug)
         if not customer_id:

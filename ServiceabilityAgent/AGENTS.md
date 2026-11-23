@@ -39,7 +39,7 @@ ServiceabilityAgent/
 │   ├── __init__.py      # build_agent, root_agent
 │   ├── agent.py         # Agent + McpToolset
 │   ├── callbacks.py     # record_serviceability_context
-│   ├── prompts.py       # static domain prompt (UI-parsed output format)
+│   ├── prompts.py       # static domain prompt (short replies; the A2UI card shows the result)
 │   └── server.py        # A2A app
 └── tests/               # construction + callback tests (no network, no API key)
 ```

@@ -9,6 +9,7 @@ import PaymentCard from "./PaymentCard";
 import OrderCard from "./OrderCard";
 import SuggestionCard from "./SuggestionCard";
 import FeedbackButtons from "./FeedbackButtons";
+import A2UISurface from "./A2UISurface";
 import {
   parseOfferQuote,
   parseProductAgentMessage,
@@ -123,23 +124,32 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
   const agentInfo =
     !isUser && message.author ? getAgentInfo(message.author) : null;
 
-  const quote = !isUser ? (message.structuredCard?.type === "quote" ? message.structuredCard.data : parseOfferQuote(message.content)) : null;
+  // A2UI surfaces (spec: generative-ui) replace the legacy card of the same kind.
+  const allSurfaces = !isUser && Array.isArray(message.a2uiSurfaces) ? message.a2uiSurfaces : [];
+  // After a payment receipt, the payment-methods card of the same turn is stale.
+  const paid = allSurfaces.some((s) => s.tool === "process_payment");
+  const a2uiSurfaces = paid ? allSurfaces.filter((s) => s.tool !== "get_payment_methods") : allSurfaces;
+  const a2uiKinds = new Set(a2uiSurfaces.map((s) => s.kind));
+
+  const quote = !isUser && !a2uiKinds.has("quote")
+    ? (message.structuredCard?.type === "quote" ? message.structuredCard.data : parseOfferQuote(message.content))
+    : null;
   // Order/payment detection runs before product to avoid false positives from numbered lists
   const orderConfirmation =
-    !isUser && !quote ? parseOrderConfirmation(message.content) : null;
+    !isUser && !quote && !a2uiKinds.has("order") ? parseOrderConfirmation(message.content) : null;
   const paymentConfirmation =
-    !isUser && !quote && !orderConfirmation
+    !isUser && !quote && !orderConfirmation && !a2uiKinds.has("payment")
       ? parsePaymentConfirmation(message.content)
       : null;
   const serviceabilityDetails =
-    !isUser && !quote && !orderConfirmation && !paymentConfirmation
+    !isUser && !a2uiKinds.has("serviceability") && !quote && !orderConfirmation && !paymentConfirmation
       ? parseServiceabilityMessage(message.content)
       : null;
   // Gate product parsing by author — prevents offer/discovery prose with numbered
   // lists or product IDs from being misclassified as a ProductDetailsCard.
   const productDetails =
     !isUser && !quote && !orderConfirmation && !paymentConfirmation && !serviceabilityDetails
-    && message.author === "product_agent"
+    && message.author === "product_agent" && !a2uiKinds.has("products")
       ? parseProductAgentMessage(message.content)
       : null;
 
@@ -159,7 +169,15 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
           content: message.content,
         })
       : [];
-  const suggestions = dynamicSuggestions.length > 0 ? dynamicSuggestions : fallbackSuggestions;
+  // The payment receipt card replaces the agent's machine-readable confirmation line.
+  const displayText = a2uiKinds.has("payment")
+    ? (message.content || "").replace(/\{"payment_confirmation"[^\n]*\}/g, "").trim()
+    : message.content;
+  // A card with its own buttons is the next step; chips under it would compete with it.
+  const surfaceHasActions = a2uiSurfaces.some((surface) =>
+    JSON.stringify(surface.operations || []).includes('"component":"Button"')
+  );
+  const suggestions = surfaceHasActions ? [] : dynamicSuggestions.length > 0 ? dynamicSuggestions : fallbackSuggestions;
   const showFeedback = !isUser && Boolean(message.traceId) && typeof onFeedback === "function";
 
   return (
@@ -199,7 +217,7 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
             ) : shouldRenderProductCard ? (
               <ProductDetailsCard payload={productDetails} />
             ) : (
-              renderFormattedText(message.content)
+              renderFormattedText(displayText)
             )}
           </div>
         )}
@@ -211,6 +229,14 @@ export default function MessageBubble({ message, onSuggestionPick, suggestionsDi
           </div>
         )}
       </div>
+
+      {a2uiSurfaces.length > 0 && (
+        <div className="ml-10 max-w-[90%] flex flex-col gap-3">
+          {a2uiSurfaces.map((surface) => (
+            <A2UISurface key={surface.surface_id} surface={surface} />
+          ))}
+        </div>
+      )}
 
       {/* Agent label and feedback below assistant messages */}
       {!isUser && message.content && (agentInfo || showFeedback) && (

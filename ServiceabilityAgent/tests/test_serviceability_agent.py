@@ -54,12 +54,15 @@ def test_mcp_url_is_required(monkeypatch):
         build_agent(model="gemini-test")
 
 
-def test_prompt_keeps_ui_output_format():
+def test_prompt_is_short_and_keeps_legacy_markers():
+    """The A2UI card shows the result (spec: guided-checkout); the legacy card still
+    recognizes the status line and SKU lines when A2UI is off."""
     prompt = root_agent.static_instruction
-    for key in ("Infrastructure Type:", "Service Zone:", "Maximum Speed:", "Installation Timeline:"):
-        assert key in prompt
     assert "• **FIB-1G** - Business Fiber 1 Gbps" in prompt
     assert "location is serviceable" in prompt and "location is not serviceable" in prompt
+    assert "NEVER mention internal network details" in prompt
+    for removed in ("Switch ID:", "Cabinet ID:", "OLT Equipment:", "Network Infrastructure Details"):
+        assert removed not in prompt
 
 
 # ---------------------------------------------------------------------------

@@ -54,6 +54,8 @@ class ServerConfig:
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
     run_migrations: bool = os.getenv("RUN_MIGRATIONS", "false").lower() == "true"
     suggestions_enabled: bool = os.getenv("SUGGESTIONS_ENABLED", "true").lower() == "true"
+    # A2UI surfaces (SSE `a2ui`) built from quote, serviceability and product tool results.
+    a2ui_enabled: bool = os.getenv("A2UI_ENABLED", "true").lower() != "false"
 
 
 @dataclass(frozen=True)

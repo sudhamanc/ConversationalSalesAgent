@@ -52,17 +52,19 @@ graph TD
     HANDOFF -->|end| FINISH["finish_turn"]
 ```
 
-1. **`prepare_turn`** records the user message (`turn_user_message`, `transcript`) and resets `handoff_hops`. A pure greeting ("hi", "good morning", or a `[GREETING]` prefix) goes straight to `greeting_agent` with no router call. Otherwise it searches memory and builds the router input: message, `last_agent`, last reply excerpt, journey flags, company name, memories.
+1. **`prepare_turn`** records the user message (`turn_user_message`, `transcript`) and resets `handoff_hops`. A pure greeting ("hi", "good morning", or a `[GREETING]` prefix) goes straight to `greeting_agent` with no router call. Otherwise it searches memory and builds the router input: message, `last_agent`, last reply excerpt, journey flags, company name, memories. When the message names one of the customer's active quotes (`OFF-…`, e.g. a quote card's "Accept quote" button) that differs from `offer_context`, it loads that quote into `offer_context` (`sales_common.repositories.quotes.load_offer_context`) so the order uses the chosen quote.
 2. **`route_intent`** is an `LlmAgent` (`mode="single_turn"`, `include_contents="none"`, temperature 0, `output_schema=RouteDecision{target, reason}`, `max_output_tokens=1024`, `thinking_level=MINIMAL` on `gemini-3*` models because thinking tokens count toward the output limit) with `ROUTER_INSTRUCTION` as its static instruction.
 3. **`dispatch`** validates the target (an unknown target falls back to `faq_agent`), sets `last_agent`, and writes the user message to `a2a_outbound_message`, which is the only text sent to the remote agent.
 4. **Agent node:** a `RemoteA2aAgent` (from `sales_common.a2a_client.remote_agent`) sends the message plus forwarded metadata (journey context, transcript, user profile). The gateway session id is used as the remote context id.
 5. **`handoff_policy`** (`HandoffPolicyNode`, a custom `google.adk.workflow.Node`) applies `evaluate_handoff()`:
    - `discovery_agent` → `serviceability_agent` when the customer has an address ZIP and serviceability was not yet checked for it;
-   - `service_fulfillment_agent` → `payment_agent` when a `schedule_installation` succeeded and the order is still unpaid;
+   - `discovery_agent` → `order_agent` when `create_order` was refused for lack of an email (`order_waiting_for_contact`) and discovery has now saved `customer_context.contact.email`;
+   - `order_agent` → `service_fulfillment_agent` when `create_order` succeeded this turn (`order_created_order`) and no installation is scheduled: fulfillment calls `check_availability` and the slots card appears in the same turn;
+   - `service_fulfillment_agent` → `payment_agent` when a `schedule_installation` succeeded and the order is still unpaid (the message asks for `get_payment_methods`, which shows the secure payment card);
    - at most `MAX_HANDOFF_HOPS = 2` per turn.
 6. **`finish_turn`** stores `user:customer_id` / `user:company_name` for returning visitors.
 
-The workflow is wrapped in an ADK `App` (`sales_common.adk_app.build_app`) with events compaction (every 8 invocations, overlap 2, or above 60k tokens keeping 10 events), context caching (TTL 1800 s, 10 intervals, min 4096 tokens) and **`ContextBridgePlugin`**. The plugin merges `_context_update` from remote tool responses into the gateway session's `state_delta`, sets `appointment_confirmed_order` after a successful `schedule_installation`, and logs one `delegation author=... tool=... success=...` line per remote tool call.
+The workflow is wrapped in an ADK `App` (`sales_common.adk_app.build_app`) with events compaction (every 8 invocations, overlap 2, or above 60k tokens keeping 10 events), context caching (TTL 1800 s, 10 intervals, min 4096 tokens) and **`ContextBridgePlugin`**. The plugin merges `_context_update` from remote tool responses into the gateway session's `state_delta`, sets `order_created_order` after a successful `create_order` and `appointment_confirmed_order` after a successful `schedule_installation`, and logs one `delegation author=... tool=... success=...` line per remote tool call.
 
 ### Sessions and Memory
 
@@ -88,11 +90,18 @@ SSE events (`data: {...}` lines):
 | `activity_update` | A remote tool ran (category, tool name, data). Drives the activity panel. |
 | `cart_update` | Cart/order tool results. |
 | `structured_card` | Typed card, e.g. `card_type: "quote"` from `generate_offer_quote` / `find_best_bundle_offer` / `get_quote_details`. |
+| `a2ui` | A2UI 1.0 surface (when `A2UI_ENABLED` is not `false`): `{surface_id, kind: quote\|serviceability\|products, tool, author, operations}`. Built deterministically by `server/api/a2ui.py` from tool results plus the turn's journey state: `kind` contact (name/email/phone card after a new company is registered without a contact, and when `create_order` returns `contact_email_required`; Save is disabled until the email is valid and sends "My contact details: …"), quote (buttons: accept, other contract terms, add a service, email), serviceability, products (list filtered to the address's internet plans, compare, detail; no prices), cart, order, scheduling (slot buttons, appointment) and payment (amount due, saved methods, `SecurePaymentForm`, receipt); no model call, using only CopilotKit standard-catalog components (`server/a2ui/catalog.json`). Buttons call the client function `sendChatMessage` with a customer-voice message. Additive: `structured_card` is still sent. |
 | `suggestions` | Three customer-voice chips (when `SUGGESTIONS_ENABLED=true`): first-person messages the customer would send next, chosen for the journey stage read from session state. When the agent asked for details, chip 1 is a fill-in template with `[placeholders]`. Rep-voice and filler chips are dropped, and the stage playbook (`api/suggestion_playbook.py`) fills any gaps, including when the model call fails. |
 | `error` | User-friendly error naming the unavailable service. |
 | `done` | End of turn. With tracing on (Langfuse keys set) it is `{"type": "done", "trace_id": "<32 hex>", "feedback_token": "<token>"}`: the turn's trace (root span `chat_turn`) and a token for `POST /api/feedback`; otherwise `{"type": "done"}`. |
 
+Card numbers (Luhn-checked), CVVs and bank account numbers in the message are replaced with `[REDACTED_CARD]` / `[REDACTED_CVV]` / `[REDACTED_ACCOUNT]` (`sales_common.telemetry.mask_text`) before the workflow, the agents or the trace see them; customers enter payment details in the secure form instead. Payment-method tokens are stripped from every SSE payload.
+
 Errors before streaming: 401 invalid/expired token, 429 rate limit, 400 invalid body. Retryable model errors (503/429) are retried up to 3 times if no domain event was produced yet.
+
+### `POST /api/payment-methods`
+
+The chat's secure payment form (`SecurePaymentForm` in an A2UI payment card). Headers: `Authorization: Bearer <token>`. Body: `{"payment_type": "credit_card", "card_number", "expiry_month", "expiry_year", "cvv"}` or `{"payment_type": "ach", "routing_number", "account_number", "account_type"}`. The gateway adds `customer_id` from the session's journey state (never from the browser) and forwards it to the payment service's model-free `POST /payment-methods`, which tokenizes and saves the masked method. Response: `{"success": true, "payment_type", "card_brand" | "account_type", "last_four", "expiry"}` (never the token or numbers). 400 invalid details (the validation message) · 401 bad session · 409 no customer in the session yet · 429 rate limited · 502 payment service unavailable. The body is never logged.
 
 ### `POST /api/feedback`
 
@@ -133,6 +142,7 @@ The shared template is the repo-root [`.env.example`](../.env.example). `super_a
 | `SERVICE_AUTH` | no | `none` | `gcp_id_token` on Cloud Run (ID tokens for agent calls) |
 | `RUN_MIGRATIONS` | no | `false` | Apply `db/migrations` + seed on startup (the scripts and the `csa-db-init` job normally do this) |
 | `SUGGESTIONS_ENABLED` | no | `true` | Generate follow-up suggestion chips after each turn |
+| `A2UI_ENABLED` | no | `true` | Emit `a2ui` SSE surfaces for quote, serviceability and product tool results (`false` turns them off) |
 | `DEBUG` | no | `false` | Enables `GET /api/debug/session` and FastAPI debug mode |
 | `ALLOWED_ORIGINS` | no | `http://localhost:3000,http://localhost:5173` | CORS origins (comma-separated) |
 | `RATE_LIMIT_RPM` / `RATE_LIMIT_RPH` / `RATE_LIMIT_BURST` | no | `20` / `200` / `5` | Per-session token bucket, **per gateway instance** |
@@ -148,7 +158,7 @@ The shared template is the repo-root [`.env.example`](../.env.example). `super_a
 | `LANGFUSE_RELEASE` | no | — | Release label on traces (`deploy_cloud.sh` sets the image tag) |
 | `TELEMETRY_FLUSH_PER_REQUEST` / `TELEMETRY_FLUSH_TIMEOUT_MS` | no | `false` / `2000` | Export spans before each response completes (`true` on Cloud Run) |
 | `OTEL_SDK_DISABLED` | no | — | `true` forces tracing off (tests, `eval.sh` without `--langfuse`) |
-| `SAFETY_*` | no | `BLOCK_LOW_AND_ABOVE` | Gemini safety thresholds |
+| `SAFETY_*` | no | `BLOCK_MEDIUM_AND_ABOVE` | Gemini safety thresholds (`BLOCK_LOW_AND_ABOVE` blocked ordinary payment replies) |
 
 ## Running
 

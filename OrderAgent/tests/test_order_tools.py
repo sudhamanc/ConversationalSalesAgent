@@ -116,11 +116,11 @@ def test_create_order_unknown_offer_is_dropped(pg):
         service_type="Business Internet 200 Mbps",
         price=79.0,
         offer_id="OFF-DOESNOTEXIST",
+        contact_email="noquote@example.com",
     )
     assert result["success"], result
     assert result["offer_id"] is None and "warning" in result
     assert result["customer_id"].startswith("CUST-")
-    assert result["email_confirmation_sent"] is False  # no email, "Not provided" phone
 
 
 def test_missing_order(pg):
@@ -142,6 +142,7 @@ def test_same_day_orders_for_same_company_do_not_collide(pg):
             service_type="Business Fiber 1 Gbps",
             customer_id="CUST-REPEAT-1",
             price=100.0,
+            contact_email="repeat@example.com",
         )
         assert result["success"], result
         ids.append(result["order_id"])
@@ -149,3 +150,21 @@ def test_same_day_orders_for_same_company_do_not_collide(pg):
     assert db.fetch_one("SELECT count(*) AS n FROM orders WHERE order_id = ANY(%s)", (ids,))["n"] == 2
     carts = {create_cart("CUST-REPEAT-1")["cart_id"] for _ in range(3)}
     assert len(carts) == 3
+
+
+def test_order_requires_a_contact_email():
+    """Spec guided-checkout: no order without an email for its confirmations."""
+    result = create_order(customer_name="No Email Co", service_address="1 Main St", service_type="Business Fiber 1 Gbps",
+                          price=10.0, contact_email="not-an-email")
+    assert result == {"success": False, "error": "contact_email_required", "message": result["message"]}
+    assert "contact card" in result["message"]
+
+
+def test_order_email_comes_from_the_customer_contact(pg):
+    ctx = SimpleNamespace(state={"customer_context": {
+        "customer_id": "CUST-CONTACT-1", "company_name": "Contact Co",
+        "contact": {"name": "Jane Doe", "email": "jane@contact.example", "phone": "215-555-0100"}}})
+    result = create_order(customer_name=f"Contact Co {uuid.uuid4().hex[:6]}", service_address="1 Main St, Boston MA 02108",
+                          service_type="Business Fiber 1 Gbps", price=10.0, tool_context=ctx)
+    assert result["success"], result
+    assert result["contact_email"] == "jane@contact.example" and result["contact_phone"] == "215-555-0100"

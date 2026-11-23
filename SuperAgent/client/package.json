@@ -6,15 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "export:a2ui-catalog": "node scripts/export_a2ui_catalog.mjs"
   },
   "dependencies": {
+    "@ag-ui/client": "1.0.2",
+    "@copilotkit/react-core": "1.85.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "rxjs": "7.8.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",

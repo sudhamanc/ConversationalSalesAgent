@@ -32,6 +32,7 @@
 | **Vite** | 6.0.0 | Build tool + dev server |
 | **Tailwind CSS** | 3.4.17 | Utility-first styling |
 | **SSE (Server-Sent Events)** | Native | Real-time message streaming from backend |
+| **CopilotKit generative UI** | `@copilotkit/react-core` 1.85.0 (+ `zod` 3.25.76, `@ag-ui/client` 1.0.2, `rxjs` 7.8.1) | Renders A2UI 1.0 surfaces from the gateway's `a2ui` events with the standard catalog. No CopilotKit runtime or chat |
 
 **No Redux, No MobX, No Zustand** - Use React Context for state management.
 
@@ -306,6 +307,7 @@ All calls go through `src/utils/api.js` with relative URLs (`/api/...`); the Vit
 | `cart_update` | `onCartUpdate(data)` | Cart contents changed |
 | `activity_update` | `onActivityUpdate(payload)` | Agent/tool activity for the activity panel |
 | `structured_card` | `onStructuredCard(...)` | Rich card (products, quote, order, ...) |
+| `a2ui` | `onA2UI(payload)` | A2UI surface `{surface_id, kind, tool, operations}`; stored on the assistant message as `a2uiSurfaces` and rendered by `A2UISurface` |
 | `suggestions` | `onSuggestions(...)` | Customer-voice chips. A click pre-fills `ChatInput`. Templates with `[placeholders]` get the first placeholder selected, Tab/Enter move to the next, and sending is blocked until none remain |
 | `error` | `onError(message)` | Agent or model failure (e.g. Gemini quota `429`) |
 | `done` | `onDone(payload)` | Turn finished; with tracing on, `payload` has `trace_id` and `feedback_token` |
@@ -315,6 +317,16 @@ All calls go through `src/utils/api.js` with relative URLs (`/api/...`); the Vit
 Client logs are forwarded with `src/utils/remoteLog.js` to `POST /api/client-log`.
 
 ---
+
+## 🧩 A2UI Generative UI (spec: `openspec/specs/generative-ui`)
+
+- `src/a2ui/salesUI.js`: CopilotKit's `standardUI` (69 components), the app's `SecurePaymentForm` component and one function, `sendChatMessage({message})`.
+- `src/a2ui/SecurePaymentForm.jsx` (spec: guided-checkout): card / ACH entry inside the payment card. Details stay in component state (never in the A2UI data model or a chat message), go only to `savePaymentMethod()` → `POST /api/payment-methods`, and are cleared after submit; then it sends "I've added my Visa ending 1111. Please use it to pay for my order." Tailwind only. `ChatContext` mounts its handler with `useGenerativeUIFunction`; a button click sends `message` as the customer's next chat message.
+- `src/a2ui/GenerativeUIProvider.jsx` (in `main.jsx`): `CopilotKitProvider` with `generativeUI={{ ui: salesUI, theme: salesTheme }}` and one `InertAgent` (the provider requires an agent; this one never runs). No `runtimeUrl`, no `CopilotChat`.
+- `src/a2ui/theme.js`: `--a2ui-*` values mapped to the Tailwind palette. Do not restyle surfaces with inline styles.
+- `src/components/A2UISurface.jsx`: ingests a surface's operations into the generative UI runtime (thread `sales-chat`, target = `surface_id`) and renders `<GenerativeUISurface id>`. `MessageBubble` shows surfaces under the reply and skips the legacy card of the same `kind` (`quote`, `serviceability`, `products`, `order`, `payment`); it hides suggestion chips under a card that has buttons, hides the payment-methods card once the same turn has a receipt, and strips the payment JSON line when a payment card is shown.
+- Surfaces are built by the gateway (`SuperAgent/server/api/a2ui.py`), never by the LLM. After a CopilotKit upgrade or a change to `salesUI`, run `npm run export:a2ui-catalog` (loads `salesUI` through Vite SSR) (writes `SuperAgent/server/a2ui/catalog.json`) and `pytest SuperAgent/tests/test_a2ui.py`.
+- `postcss.config.js` runs Tailwind 3 on app CSS only: CopilotKit's stylesheet is prebuilt with Tailwind 4.
 
 ## 🧪 Testing (Future)
 

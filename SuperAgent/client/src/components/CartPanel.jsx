@@ -167,7 +167,6 @@ export default function CartPanel() {
             {payment.transaction_id && <DetailRow label="Transaction" value={payment.transaction_id} />}
             {payment.amount && <DetailRow label="Amount" value={`$${Number(payment.amount).toFixed(2)}`} />}
             {payment.status && <DetailRow label="Status" value={payment.status === "approved" ? "✅ Approved" : payment.status} highlight={payment.status === "approved"} />}
-            {payment.payment_method_token && <DetailRow label="Method" value={payment.payment_method_token} />}
           </Section>
         )}
 

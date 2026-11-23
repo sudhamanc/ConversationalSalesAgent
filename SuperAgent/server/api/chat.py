@@ -162,8 +162,11 @@ async def _run_turn(session: Session, user_message: str, record: _TurnRecord, do
     runner = get_runner()
     new_message = types.Content(role="user", parts=[types.Part(text=user_message)])
 
+    # Journey state at the start of the turn: A2UI surfaces read the checked
+    # address's products and the order total from it.
+    turn_state = await _session_state(runner, session) if settings.server.a2ui_enabled else {}
     for attempt in range(_MAX_RETRIES):
-        mapper = EventMapper()
+        mapper = EventMapper(a2ui_enabled=settings.server.a2ui_enabled, state=turn_state)
         record.mapper = mapper
         record.attempts = attempt + 1
         try:
@@ -247,6 +250,12 @@ async def chat(request: Request, authorization: str = Header(default="")):
     if len(user_message) > 4000:
         return _error_response("Message is too long (max 4000 characters).", 400)
 
+    # Card, CVV and bank account numbers never reach the router, agents or traces;
+    # they are entered in the secure payment form instead (spec: guided-checkout).
+    masked = telemetry.mask_text(user_message)
+    if masked != user_message:
+        logger.info("Masked payment details in a chat message")
+        user_message = masked
     logger.info("Chat turn received (%d chars)", len(user_message))
     return StreamingResponse(
         stream_turn(session, user_message),

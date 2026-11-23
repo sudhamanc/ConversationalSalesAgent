@@ -103,7 +103,7 @@ All business-critical values (addresses, prices, IDs, coverage) come from determ
   - **Streaming UX:** SSE event contract (`token`, `activity_update`, `structured_card`, `cart_update`, `suggestions`, `done`, `error`) is unchanged for the React client
   - **Durability:** sessions, A2A tasks, memory and business data live in PostgreSQL, and any gateway instance can serve any session
   - **Scalability:** every service is stateless apart from PostgreSQL and scales independently on Cloud Run (scale-to-zero by default)
-  - **Security:** only the gateway is public; tools and agents require Google ID tokens; secrets are held in Secret Manager; Gemini safety settings are `BLOCK_LOW_AND_ABOVE` on four harm categories; the rate limit is 20 req/min and 200 req/hr per session
+  - **Security:** only the gateway is public; tools and agents require Google ID tokens; secrets are held in Secret Manager; Gemini safety settings are `BLOCK_MEDIUM_AND_ABOVE` on four harm categories; the rate limit is 20 req/min and 200 req/hr per session
   - **Cost:** Cloud SQL `db-f1-micro`, services scale to zero, and `shutdown_cloud.sh` pauses the stack
   - **Compliance:** not PCI-DSS compliant; mock PII only
 - **Integration Points** (implemented programmatic integrations only)

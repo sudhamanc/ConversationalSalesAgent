@@ -8,6 +8,7 @@ callback forwards that to the gateway as ``_context_update``.
 
 import functools
 import logging
+import re
 from typing import Any, Callable, Optional
 
 import psycopg
@@ -63,6 +64,32 @@ def _address(company: dict, default: Any = "N/A") -> dict:
 
 def _customer_context(customer_id: str, company_name: str, address: dict) -> dict:
     return {"customer_id": customer_id, "company_name": company_name, "address": address}
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _valid_email(email: Any) -> bool:
+    return isinstance(email, str) and bool(_EMAIL_RE.match(email.strip()))
+
+
+def _publish_contact(tool_context: Optional[ToolContext], company_name: str, name: Optional[str],
+                     email: Optional[str], phone: Optional[str]) -> None:
+    """Record the customer's contact in ``customer_context.contact`` (spec: guided-checkout).
+
+    Quote, order, payment and installation emails go to ``contact.email``; the order
+    requires it. Only a valid email is published, and only for the session's company.
+    """
+    if tool_context is None or not _valid_email(email):
+        return
+    ctx = tool_context.state.get("customer_context")
+    if not isinstance(ctx, dict) or (ctx.get("company_name") or "").lower() != (company_name or "").lower():
+        return
+    contact = {"name": name or "", "email": email.strip()}
+    if phone and str(phone).strip().upper() != "N/A":
+        contact["phone"] = str(phone).strip()
+    tool_context.state["customer_context"] = {**ctx, "contact": contact}
+    logger.info("[STATE WRITE] customer_context.contact set for %s", company_name)
 
 
 @_db_guard
@@ -194,6 +221,9 @@ def get_company_profile(company_name: str, tool_context: Optional[ToolContext] =
             profile["customer_id"], profile["company_name"], _address(company, default="")
         )
         logger.info(f"[STATE WRITE] get_company_profile -> customer_context = {tool_context.state['customer_context']}")
+        on_file = next((c for c in db.get_contacts_for_company(profile["company_name"]) if _valid_email(c.get("Email"))), None)
+        if on_file:
+            _publish_contact(tool_context, profile["company_name"], on_file.get("Name"), on_file.get("Email"), on_file.get("Phone"))
 
     if profile.get("customer_id"):
         # Found in the CRM: tell the agent where this customer stands (and restore it).
@@ -508,6 +538,7 @@ def add_new_contact(
     email: Optional[str] = None,
     phone: Optional[str] = None,
     notes: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
 ) -> dict:
     """
     Add a new contact for a company.
@@ -539,6 +570,8 @@ def add_new_contact(
         company_name, contact_name, title, role_in_decision_making,
         email, phone, notes,
     )
+    if outcome in ("created", "duplicate"):
+        _publish_contact(tool_context, company_name, contact_name, email, phone)
     messages = {
         "created": f"Successfully added contact: {contact_name} at {company_name}",
         "duplicate": f"Contact {contact_name} already exists at {company_name}; use update_contact_info to change details.",
@@ -563,6 +596,7 @@ def update_contact_info(
     email: Optional[str] = None,
     phone: Optional[str] = None,
     notes: Optional[str] = None,
+    tool_context: Optional[ToolContext] = None,
 ) -> dict:
     """
     Update contact information.
@@ -591,6 +625,8 @@ def update_contact_info(
         return {"action": "update_contact", "success": False, "company_name": company_name, "contact_name": contact_name, "message": "No fields provided to update"}
 
     success = db.update_contact(company_name, contact_name, **updates)
+    if success:
+        _publish_contact(tool_context, company_name, contact_name, email, phone)
 
     return {
         "action": "update_contact",

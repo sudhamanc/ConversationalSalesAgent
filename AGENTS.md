@@ -162,6 +162,7 @@ Shared runtime code lives in `libs/sales_common/sales_common/` (`config`, `db`, 
 | **Session tokens** | itsdangerous | ≥ 2.2 | Signed, expiring chat tokens + revocation table |
 | **RAG** | ChromaDB + sentence-transformers (`all-MiniLM-L6-v2`) | chromadb ≥ 1.0 | Product knowledge search (catalog service only) |
 | **Frontend** | React + Vite + Tailwind CSS | React 19, Vite 6, Tailwind 3 | Chat UI with SSE streaming |
+| **Generative UI** | A2UI 1.0 + CopilotKit (`@copilotkit/react-core/v2/generative-ui`) | 1.85.0 (pinned) | Interactive cards in the chat from tool results; secure payment form |
 | **Deployment** | Docker Compose (local), Cloud Run + Cloud SQL (GCP) | - | One container per service |
 
 ### Model Configuration
@@ -298,6 +299,8 @@ graph TD
     DISPATCH -->|route by agent name| AGENTS["10 RemoteA2aAgent nodes"]
     AGENTS --> HANDOFF["HandoffPolicyNode<br/>custom Node, max 2 hops"]
     HANDOFF -->|serviceability_agent| AGENTS
+    HANDOFF -->|order_agent| AGENTS
+    HANDOFF -->|service_fulfillment_agent| AGENTS
     HANDOFF -->|payment_agent| AGENTS
     HANDOFF -->|end| FINISH["finish_turn<br/>persist user: profile keys"]
 ```
@@ -316,7 +319,9 @@ graph TD
 | From | To | Condition | Message sent to the target |
 |---|---|---|---|
 | `discovery_agent` | `serviceability_agent` | `customer_context` has a `customer_id` and an address `zip_code`, and serviceability was not yet checked for that ZIP | `Check service availability for this address: {street, city, state, zip_code}` (JSON) |
-| `service_fulfillment_agent` | `payment_agent` | `ContextBridgePlugin` saw a successful `schedule_installation` (`appointment_confirmed_order`), payment is not completed/approved/captured, and the order status is `pending_payment`, `draft` or empty | `Installation is scheduled for order <id>; total <amount>. Start payment: ...` |
+| `discovery_agent` | `order_agent` | `create_order` was refused for lack of an email (`order_waiting_for_contact`) and discovery has now saved `customer_context.contact.email` | `The customer's contact details are now on file (email …). Create the order from the cart now with create_order.` |
+| `order_agent` | `service_fulfillment_agent` | `ContextBridgePlugin` saw a successful `create_order` this turn (`order_created_order`) and no installation is scheduled for it | `Order <id> was just created for <service> at <address>. Call check_availability now ...` (the slots card follows) |
+| `service_fulfillment_agent` | `payment_agent` | `ContextBridgePlugin` saw a successful `schedule_installation` (`appointment_confirmed_order`), payment is not completed/approved/captured, and the order status is `pending_payment`, `draft` or empty | `Installation is scheduled for order <id>; total <amount>. Start payment: call get_payment_methods ...` (the payment card follows) |
 
 At most **2 handoff hops** per turn (`MAX_HANDOFF_HOPS`). Rules are pure functions and unit-tested without an LLM (`SuperAgent/tests/test_handoff_rules.py`).
 
@@ -327,8 +332,8 @@ This replaces the ADK 1.x design (LLM coordinator with `sub_agents`, three `afte
 | ADK feature | How it is used |
 |---|---|
 | **Sessions** | `DatabaseSessionService` on PostgreSQL (`postgresql+asyncpg://`, derived from `DATABASE_URL` or `SESSION_DB_URL`) in the gateway and in every agent service. Sessions survive restarts and work across instances. |
-| **State** | Session scope: `customer_context`, `serviceability_context`, `offer_context`, `order_context`, `payment_context`, plus `last_agent`, `last_reply`, `transcript`, `turn_user_message`, `handoff_hops`, `a2a_outbound_message`, `appointment_confirmed_order`. User scope: `user:customer_id`, `user:company_name`. |
-| **Events** | The SSE API maps workflow events to UI events (`token`, `activity_update`, `structured_card`, `cart_update`, `suggestions`, `done`, `error`). Only domain-agent events produce text; repeated final texts are de-duplicated. |
+| **State** | Session scope: `customer_context`, `serviceability_context`, `offer_context`, `order_context`, `payment_context`, plus `last_agent`, `last_reply`, `transcript`, `turn_user_message`, `handoff_hops`, `a2a_outbound_message`, `appointment_confirmed_order`, `order_created_order`, `order_waiting_for_contact`; `customer_context.contact` holds the contact email used for every notification. User scope: `user:customer_id`, `user:company_name`. |
+| **Events** | The SSE API maps workflow events to UI events (`token`, `activity_update`, `structured_card`, `cart_update`, `a2ui`, `suggestions`, `done`, `error`). `a2ui` carries an A2UI 1.0 surface built deterministically from the tool result (`SuperAgent/server/api/a2ui.py`) and rendered with CopilotKit's standard catalog; see README [A2UI Generative UI](README.md#a2ui-generative-ui). Only domain-agent events produce text; repeated final texts are de-duplicated. |
 | **Memory** | `sales_common.memory.PostgresMemoryService` (table `adk_memories`, PostgreSQL full-text search, always scoped by app and user). The session is added to memory after each turn; `prepare_turn` searches it for routing context. |
 | **Context compression** | `EventsCompactionConfig`: every 8 invocations with overlap 2, or above 60k tokens keeping 10 events (`COMPACTION_*`). |
 | **Model context caching** | `ContextCacheConfig`: TTL 1800 s, refresh every 10 invocations, min 4096 tokens (`CONTEXT_CACHE_*`). |
@@ -566,6 +571,7 @@ Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by Fa
 - ✅ Persistent quotes, carts, orders and pending carts (PostgreSQL tables `quotes`, `carts`, `cart_items`, `orders`, `order_items`).
 - ✅ `customer_master` written after successful activation.
 - ✅ Typed SSE events from tool responses (`activity_update`, `cart_update`, `structured_card` for quotes) instead of relying only on prose parsing.
+- ✅ A2UI generative UI: deterministic surfaces for serviceability, products, quotes, cart, order, installation times, payment and receipt; secure payment form; automatic scheduling after order creation; contact email required before ordering.
 - ✅ Durable sessions, long-term memory, compaction and context caching.
 - ✅ Deterministic handoffs; removal of `after_agent_callback` hacks, the synthetic payment re-run, importlib wrappers and `sys.modules` cross-calls.
 - ✅ Catalog and serviceability as REST + MCP services; multi-service scripts and Cloud Run deployment.
@@ -573,7 +579,7 @@ Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by Fa
 **Remaining:**
 
 1. **Known domain bugs:** all fixed with regression tests (see README "Recent Fixes and Known Limitations"). Residual limitations are listed in each agent's `AGENTS.md` under "Known issues".
-2. **Structured UI contracts:** extend `structured_card` to serviceability, product and order results so `responseFormatters.js` becomes a fallback only.
+2. **Golden evals** for the guided-checkout prompt and handoff changes (serviceability, product, order, fulfillment, payment, journeys) need a billed re-run and re-recording (`scripts/eval.sh`).
 3. **Rate limiting** is per gateway instance (in-memory token bucket); move to a shared store for multi-instance deployments.
 4. **Known environment limitations:** the RAG embedding model download is blocked in the build sandbox (the catalog service then reports `available: false` for knowledge search); Docker images were not built in the sandbox (run `docker compose build` / `scripts/deploy_cloud.sh` yourself).
 6. Per-service databases and IaC (Terraform) once table ownership is single-writer.

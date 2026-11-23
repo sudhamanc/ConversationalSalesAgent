@@ -330,6 +330,9 @@ def generate_offer_quote(items: str, term_months: int = 12, bant_score: float = 
             customer_id = state_cid
         if not company_name and isinstance(state_company, str):
             company_name = state_company
+        contact = cust_ctx.get("contact") if isinstance(cust_ctx.get("contact"), dict) else {}
+        if not customer_email and isinstance(contact.get("email"), str):
+            customer_email = contact["email"]  # spec: guided-checkout
 
     if isinstance(items, str):
         items = json.loads(items)

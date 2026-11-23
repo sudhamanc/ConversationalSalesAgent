@@ -36,7 +36,8 @@ def test_construction():
 def test_prompt_has_no_transfer_mechanics():
     assert "transfer_to_agent" not in SERVICE_FULFILLMENT_AGENT_INSTRUCTION
     assert "auto-route" not in SERVICE_FULFILLMENT_AGENT_INSTRUCTION
-    assert "Now let's proceed with payment." in SERVICE_FULFILLMENT_AGENT_INSTRUCTION
+    assert "Next, let's take care of payment." in SERVICE_FULFILLMENT_AGENT_INSTRUCTION
+    assert "do NOT list the dates or windows" in SERVICE_FULFILLMENT_AGENT_INSTRUCTION
 
 
 async def test_schedule_installation_via_runner(order, next_weekday):

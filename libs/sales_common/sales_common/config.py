@@ -66,7 +66,11 @@ _THRESHOLDS = {
 
 
 def safety_settings() -> list[types.SafetySetting]:
-    """Gemini safety settings from ``SAFETY_*`` env vars (default BLOCK_LOW_AND_ABOVE)."""
+    """Gemini safety settings from ``SAFETY_*`` env vars (default BLOCK_MEDIUM_AND_ABOVE).
+
+    BLOCK_LOW_AND_ABOVE blocked ordinary payment replies (false LOW/MEDIUM ratings;
+    spec change guided-checkout), so the default is Gemini's own threshold.
+    """
     pairs = [
         (types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "SAFETY_DANGEROUS"),
         (types.HarmCategory.HARM_CATEGORY_HARASSMENT, "SAFETY_HARASSMENT"),
@@ -75,7 +79,7 @@ def safety_settings() -> list[types.SafetySetting]:
     ]
     settings = []
     for category, var in pairs:
-        level = env_str(var, "BLOCK_LOW_AND_ABOVE").upper()
+        level = env_str(var, "BLOCK_MEDIUM_AND_ABOVE").upper()
         if level not in _THRESHOLDS:
             raise ConfigError(f"{var} must be one of {sorted(_THRESHOLDS)}, got {level!r}")
         settings.append(types.SafetySetting(category=category, threshold=_THRESHOLDS[level]))

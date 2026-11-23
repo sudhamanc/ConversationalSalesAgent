@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { streamChat, resetSession, getToken, sendFeedback } from "../utils/api";
 import { getAgentInfo } from "../utils/agentLabels";
+import { useGenerativeUIFunction } from "@copilotkit/react-core/v2/generative-ui";
+import { salesUI } from "../a2ui/salesUI";
 
 const ChatContext = createContext(null);
 
@@ -291,11 +293,34 @@ export function ChatProvider({ children }) {
             }
             return updated;
           });
+        },
+        // onA2UI — append an A2UI surface (spec: generative-ui) to the current assistant message
+        (event) => {
+          if (!event || !event.surface_id || !Array.isArray(event.operations)) return;
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === "assistant") {
+              const surfaces = (last.a2uiSurfaces || []).filter((s) => s.surface_id !== event.surface_id);
+              updated[updated.length - 1] = {
+                ...last,
+                a2uiSurfaces: [...surfaces, { surface_id: event.surface_id, kind: event.kind, tool: event.tool, operations: event.operations }],
+              };
+            }
+            return updated;
+          });
         }
       );
     },
     [isStreaming, finalizeCurrentStep, startNewAgentStep]
   );
+
+  // A2UI Buttons call sendChatMessage({message}): the click is the customer's next message.
+  useGenerativeUIFunction(salesUI, "sendChatMessage", ({ message }) => {
+    if (isStreaming) return { sent: false, reason: "A reply is still streaming" };
+    sendMessage(message);
+    return { sent: true };
+  });
 
   /**
    * Thumbs up/down on the assistant message at `index`. Optimistic; reverts

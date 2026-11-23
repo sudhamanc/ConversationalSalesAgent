@@ -176,6 +176,8 @@ def test_process_payment_persists_everything(make_order):
     assert meta["args"]["transaction_id"] == result["transaction_id"]
     assert meta["args"]["payment_status"] == "success"
     assert meta["args"]["amount"] == 249.0
+    # The email names the method, never the token (spec: guided-checkout).
+    assert "tok_" not in notif["metadata_json"]
 
 
 @requires_db
@@ -369,3 +371,25 @@ def test_process_payment_allows_draft_and_keeps_idempotent_replay(make_order):
                              idempotency_key=key)
     assert replay["success"] is True and replay["idempotent"] is True
     assert replay["transaction_id"] == first["transaction_id"]
+
+
+@requires_db
+def test_payment_email_goes_to_the_customer_contact(make_order):
+    from types import SimpleNamespace
+
+    from sales_common import db
+
+    order = make_order(total=99.0, email=None)
+    ctx = SimpleNamespace(state={
+        "order_context": {"order_id": order["order_id"]},
+        "customer_context": {"customer_id": order["customer_id"], "contact": {"email": "ap@contact.example"}},
+    })
+    card = tokenize_payment_method("credit_card", card_number="4111111111111111", expiry_month=12,
+                                   expiry_year=2030, cvv="123", customer_id=order["customer_id"])
+    result = process_payment(amount=99.0, payment_method_token=card["token"], tool_context=ctx)
+    assert result["success"], result
+    notif = db.fetch_one("SELECT * FROM notifications WHERE order_id=%s AND notification_type='payment_confirmation'",
+                         (order["order_id"],))
+    assert notif["recipient_email"] == "ap@contact.example"
+    assert "card ending 1111" in json.loads(notif["metadata_json"])["args"]["payment_method"]
+    assert card["token"] not in notif["metadata_json"]

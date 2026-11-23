@@ -106,8 +106,18 @@ There is no in-memory fallback: without `DATABASE_URL`, `sales_common.db` raises
 ## Conversation behaviour
 
 - The gateway workflow engages this agent after installation scheduling with an explicit
-  message ("Installation is scheduled for order <id>; total <amount>. Start payment.").
-  The agent asks for payment details immediately (no SuperAgent opener callback any more).
+  message ("Installation is scheduled for order <id>; total <amount>. Start payment: call
+  get_payment_methods ..."). The agent calls `get_payment_methods`; the gateway turns that
+  result into the payment card (amount due, saved methods, secure form).
+- **Card and bank details never reach this agent** (spec: guided-checkout). The secure form
+  posts them to the gateway's `POST /api/payment-methods`, which forwards them with the
+  session's `customer_id` to this service's model-free REST route `POST /payment-methods`
+  (`payment_agent/rest.py`, mounted through `create_a2a_app(extra_routes=...)`). It calls
+  `tokenize_payment_method` directly and returns only the masked method (no token). The
+  chat then sends "I've added my Visa ending 1111. Please use it to pay for my order."; the
+  agent finds the token with `get_payment_methods` and calls `process_payment`.
+- The prompt never asks for card numbers or CVVs in chat (with the old prompt Gemini's
+  safety filter blocked ordinary payment replies under `BLOCK_LOW_AND_ABOVE`).
 - After payment the agent replies with the one-line JSON block the UI parses:
   `{"payment_confirmation": true, "amount": ..., "payment_method": "...", "transaction_id": "...", "status": "Approved"}`
 - The agent cannot transfer; the gateway routes the next step (order confirmation).

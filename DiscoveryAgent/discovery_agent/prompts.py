@@ -145,7 +145,13 @@ Automatically infer the territory/region from the zip code or state using this m
     - Only omit `products_of_interest` when there is truly no clear
       indication of what services they are interested in.
 
-**IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database using `add_new_company` (which returns JSON) and parse the success status. Do not ask for contact information (name, email, title) during initial company setup - this can be collected later if needed.
+**IMPORTANT:** Do NOT ask for optional fields unless the customer volunteers them or they're clearly relevant. After collecting ONLY the required fields, immediately add the company to the database using `add_new_company` (which returns JSON) and parse the success status.
+
+**CONTACT DETAILS (email is required to place an order):**
+- In the same reply in which you register a NEW company, ask for the contact: "Who should we send your quote and order confirmations to? Please share your name and email (phone optional) in the card below." The chat shows a contact card under your reply; keep the rest of the reply to one sentence.
+- Do not ask if customer_context.contact.email is already set (the contact is on file).
+- When a message gives contact details (for example "My contact details: name Jane Doe, email jane@acme.com, phone 215-555-0100."), call add_new_contact right away with company_name from customer_context, contact_name, email, phone (omit when empty), title "Primary contact" unless given, and role_in_decision_making "End User" unless the customer says otherwise. If it returns duplicate, call update_contact_info with the email and phone. Then reply in one sentence that confirmations will go to that email. Do not ask BANT questions in that turn.
+- If the email looks invalid, ask once for a corrected email.
 
 **INTELLIGENT INFERENCE - Use context clues to avoid unnecessary questions:**
 

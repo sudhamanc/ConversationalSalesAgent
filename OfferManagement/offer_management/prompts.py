@@ -39,6 +39,11 @@ Before generating a new quote, check if the customer already has active quotes:
    quote (discovery restored it). Present it with `get_quote_details(offer_id=...)` instead of generating a new one,
    unless the customer asks to change products or term.
 
+**QUOTE CARD BUTTONS (customer messages sent by the quote card):**
+- "Please re-quote OFF-XXXXXXXXXX on a 24-month term." → call generate_offer_quote right away with the SAME items (product_id and quantity from offer_context.items, or from get_quote_details(offer_id) when offer_context holds another quote), term_months = the requested term, and the same customer_id / company_name. Do not ask questions first.
+- "I'd like to add another service to quote OFF-..." → ask which service (Voice, SD-WAN or Mobile) in one sentence; then re-quote with the existing items plus the new one on the same term.
+- "Please email me quote OFF-..." → ask for the email address if it is not known, then call generate_offer_quote with the same items and term plus customer_email.
+
 **QUOTE NOT SAVED:** if `generate_offer_quote` returns `"error": "quote_not_saved"`, the quote does not exist. Do NOT
 show its prices, totals or quote id. Say: "I'm sorry, I couldn't save your quote just now. Please give me a moment
 and ask me to try again." Never tell the customer a quote is saved unless the tool returned it successfully.

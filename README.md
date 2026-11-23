@@ -1,6 +1,6 @@
 # B2B Conversational Sales Agent
 
-A multi-agent system for end-to-end B2B telecom sales conversations, built on Google ADK 2.x with Gemini: an orchestration **workflow** in a gateway, **10 domain agents as independent A2A services**, and **REST + MCP tool services**, all backed by PostgreSQL.
+A multi-agent system for end-to-end B2B telecom sales conversations, built on Google ADK 2.x with Gemini: an orchestration **workflow** in a gateway, **10 domain agents as independent A2A services**, **REST + MCP tool services**, and an **A2UI generative UI** that turns every step of the journey into interactive cards in the chat, all backed by PostgreSQL.
 
 ---
 
@@ -15,13 +15,23 @@ Built on **Google ADK 2.10 (Agent Development Kit)** with **Google Gemini**, the
 
 The LLM decides *what* the customer wants; critical business data (addresses, prices, orders) always comes from deterministic tools, never from generated text.
 
+The conversation is also **visual and clickable**. Tool results reach the browser as **[A2UI 1.0](https://a2ui.org) surfaces** (coverage, plans, quotes, cart, order, installation times, payment, receipt) rendered with **CopilotKit's** standard component catalog. Card buttons send the customer's next message, payment details are entered in a secure form that bypasses the model, and agents keep their replies to one or two sentences because the card shows the data. See [A2UI Generative UI](#a2ui-generative-ui).
+
+| Protocol | Role in this system |
+|---|---|
+| **A2A** | Gateway ⇄ 10 agent services (one agent per turn plus deterministic handoffs) |
+| **MCP** | Agents ⇄ catalog and serviceability tool services |
+| **A2UI** | Gateway → browser: interactive UI built from tool results |
+
 ---
 
 ## Architecture
 
 ```mermaid
 graph TD
-    USER["Browser<br/>React 19 UI"] -->|HTTPS SSE| GW["Gateway :8000<br/>FastAPI + sales_journey Workflow"]
+    USER["Browser<br/>React 19 UI + CopilotKit<br/>A2UI renderer"] -->|HTTPS SSE<br/>text + A2UI surfaces| GW["Gateway :8000<br/>FastAPI + sales_journey Workflow<br/>+ A2UI surface builders"]
+    USER -->|secure payment form| GW
+    GW -->|POST /payment-methods<br/>no LLM| PAYS["payment service<br/>(payment_agent :8206)"]
     GW -->|A2A JSON-RPC| AG["10 agent services :8201-8210<br/>ADK agents served with to_a2a"]
     AG -->|MCP streamable HTTP| TS["Tool services<br/>catalog :8101, serviceability :8102<br/>REST /api/v1 + MCP /mcp/"]
     GW --> PG[("PostgreSQL 16<br/>sessions, memory, A2A tasks,<br/>business tables")]
@@ -39,13 +49,15 @@ User → React UI → Gateway (FastAPI → ADK Runner → sales_journey Workflow
      → RemoteA2aAgent → Agent service (ADK agent → tools / MCP) → PostgreSQL
 ```
 
-Responses stream back to the browser via Server-Sent Events (SSE). When Langfuse keys are set, every service also exports OpenTelemetry traces, one trace per turn across all hops ([Agent Observability](#agent-observability-langfuse)). A per-service overview with the full node graph is in [AGENTS.md](AGENTS.md#system-architecture).
+Responses stream back to the browser via Server-Sent Events (SSE): the agents' text, plus an `a2ui` event with an A2UI surface for every tool result that has a card ([A2UI Generative UI](#a2ui-generative-ui)). When Langfuse keys are set, every service also exports OpenTelemetry traces, one trace per turn across all hops ([Agent Observability](#agent-observability-langfuse)). A per-service overview with the full node graph is in [AGENTS.md](AGENTS.md#system-architecture).
 
 ### Architectural Layers
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PRESENTATION    React 19 + Vite + Tailwind  ⇄  FastAPI SSE gateway │
+│  GENERATIVE UI   A2UI 1.0 surfaces (gateway builders, deterministic) │
+│                  → CopilotKit renderer, standard catalog, actions   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  ORCHESTRATION   sales_journey Workflow: router LLM, dispatch,      │
 │                  deterministic handoffs, sessions, memory           │
@@ -75,6 +87,8 @@ Responses stream back to the browser via Server-Sent Events (SSE). When Langfuse
 | **Structured data contracts** | Tools return JSON (not prose) to prevent LLM rephrasing of critical values |
 | **Shared journey-state contracts** | Agents publish authoritative context into ADK session state; it crosses the A2A boundary through metadata and `_context_update` |
 | **A2A service per agent** | No in-process coupling: no `importlib` loading or `sys.modules` calls between agents (see [Agent Service Guide](#agent-service-guide)) |
+| **Deterministic generative UI** | A2UI surfaces are built by the gateway from tool results and journey state, never written by a model; card buttons send customer-voice messages |
+| **Payment data never touches a model** | Card and bank details go from the secure form to a model-free REST route; numbers typed into chat are masked before routing |
 
 ### How Agents Communicate
 
@@ -91,9 +105,13 @@ User message → Gateway workflow (sales_journey)
                  ├─ agent tools change journey keys → "_context_update" in tool responses
                  │     ContextBridgePlugin merges them into gateway session state
                  │
-                 └─ HandoffPolicyNode (deterministic, same turn, ≤ 2 hops)
-                       discovery_agent           → serviceability_agent
-                       service_fulfillment_agent → payment_agent
+                 ├─ HandoffPolicyNode (deterministic, same turn, ≤ 2 hops)
+                 │     discovery_agent           → serviceability_agent   (address not yet checked)
+                 │     discovery_agent           → order_agent            (contact saved for a waiting order)
+                 │     order_agent               → service_fulfillment_agent (order created: show slots)
+                 │     service_fulfillment_agent → payment_agent          (installation booked)
+                 │
+                 └─ EventMapper → SSE: token text + one `a2ui` surface per tool result with a card
 ```
 
 - **Gateway → agent** is A2A. Each domain node in the workflow is a `RemoteA2aAgent` that fetches the agent's card (`/.well-known/agent-card.json`) and sends only the directed message for that agent, with the gateway session id as the A2A context id.
@@ -108,12 +126,12 @@ The system uses **ADK session state as a shared, structured memory layer** acros
 
 | Scope | Keys | Written by |
 |---|---|---|
-| Session (journey) | `customer_context` | discovery tools after registration or lookup |
+| Session (journey) | `customer_context` (incl. `contact: {name, email, phone}`) | discovery tools after registration, lookup or saving a contact |
 | | `serviceability_context` | serviceability agent callback after a coverage check |
 | | `offer_context` | offer management tools after a quote |
 | | `order_context` | order tools after order creation |
 | | `payment_context` | payment tools after processing |
-| Session (workflow) | `last_agent`, `last_reply`, `transcript`, `turn_user_message`, `handoff_hops`, `a2a_outbound_message`, `appointment_confirmed_order` | gateway workflow nodes and `ContextBridgePlugin` |
+| Session (workflow) | `last_agent`, `last_reply`, `transcript`, `turn_user_message`, `handoff_hops`, `a2a_outbound_message`, `appointment_confirmed_order`, `order_created_order`, `order_waiting_for_contact` | gateway workflow nodes and `ContextBridgePlugin` |
 | User (`user:`) | `user:customer_id`, `user:company_name` | `finish_turn`, so a returning browser is recognized in a new session |
 
 - **Sessions** are durable: ADK `DatabaseSessionService` on PostgreSQL in the gateway and in every agent service. They survive restarts and are shared by all instances.
@@ -122,6 +140,208 @@ The system uses **ADK session state as a shared, structured memory layer** acros
 - **Context management:** every ADK `App` uses events compaction (every 8 invocations with overlap 2, or above 60k tokens) and Gemini context caching (TTL 30 min, min 4096 tokens).
 
 **Why:** exact values (zip codes, order ids, offer ids, transaction ids) are never regenerated from conversation text; multi-turn steps (payment, scheduling, activation) resume from state; retries and restarts are safe; and each state write is observable in logs.
+
+---
+
+## A2UI Generative UI
+
+The chat does not only stream text. Every step of the sales journey that produces structured data (coverage result, plans, quote, cart, order, installation times, payment, receipt) appears **inside the conversation as an interactive card** built with **[A2UI 1.0](https://a2ui.org)**, the open, declarative format for agent-generated UI, and rendered by **CopilotKit's generative UI renderer** with its standard component catalog. Buttons on the cards drive the conversation: a click sends a customer message, so the customer can complete a purchase almost entirely by clicking.
+
+A2UI is the third pillar of the system next to **A2A** (agents talk to each other) and **MCP** (agents use tools):
+
+| Protocol | Between | Carries |
+|---|---|---|
+| A2A | gateway ⇄ agent services | messages, journey context, tool results |
+| MCP | agent ⇄ tool services | tool calls (catalog, serviceability) |
+| **A2UI** | gateway → browser | **UI as data**: components, data model, actions |
+
+### Why A2UI, and why the gateway builds it
+
+- **No parsing of prose.** Before A2UI, cards were recovered by regular expressions from the agent's reply text and broke whenever an agent reworded a reply. A2UI surfaces are built from the **tool results** themselves.
+- **Zero hallucination in the UI.** The gateway builds every surface **deterministically** in `SuperAgent/server/api/a2ui.py` from the JSON a tool returned (prices, speeds, slots, ids) plus the journey state. No model writes UI, so a card can never show a price or a time slot the tools did not return. This follows the same rule as the rest of the system: critical data comes from tools, never from generated text.
+- **Short replies.** Because the card shows the data, agents answer in one or two sentences (the shared "Cards in the chat" instruction in `sales_common/prompts.py`) instead of repeating lists, prices and ids.
+- **A standard, portable format.** Surfaces use only components of CopilotKit's standard catalog (69 components: Card, Row, Column, Text, Table, Button, TextField, Badge, …) plus one app component. The catalog is exported as an A2UI 1.0 document, so another renderer, a validator or a future LLM-authored surface can use the same contract.
+
+### Architecture
+
+```mermaid
+graph LR
+    subgraph Agents["A2A agent services"]
+      T["tool result JSON<br/>(quote, slots, payment methods, ...)"]
+    end
+    subgraph Gateway["Gateway :8000"]
+      CB["ContextBridgePlugin<br/>journey state"]
+      EM["EventMapper<br/>(api/sse.py)"]
+      B["A2UI builders<br/>(api/a2ui.py)"]
+      PM["POST /api/payment-methods"]
+    end
+    subgraph Browser["React UI :3000"]
+      API["streamChat (utils/api.js)"]
+      CTX["ChatContext<br/>message.a2uiSurfaces"]
+      SURF["A2UISurface<br/>manager.ingest + GenerativeUISurface"]
+      RT["CopilotKitProvider<br/>generativeUI = salesUI + theme"]
+      FORM["SecurePaymentForm"]
+    end
+    PAY["payment service<br/>POST /payment-methods (no LLM)"]
+
+    T -->|function_response over A2A| EM
+    CB -->|state at turn start + _context_update| EM
+    EM --> B
+    B -->|A2UI 1.0 operations| EM
+    EM -->|"SSE a2ui event"| API
+    API --> CTX --> SURF
+    SURF --> RT
+    RT -->|"Button → sendChatMessage(message)"| CTX
+    CTX -->|"POST /api/chat (next turn)"| Gateway
+    FORM -->|card / bank details| PM --> PAY
+```
+
+The whole loop for one click:
+
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant UI as React + CopilotKit renderer
+    participant G as Gateway (sales_journey)
+    participant A as Agent (A2A)
+    C->>UI: clicks "Place my order" on the cart card
+    UI->>G: POST /api/chat "That's everything. Please place my order."
+    G->>A: order_agent (A2A) → create_order
+    A-->>G: function_response {order_id, status, ...} + _context_update
+    G-->>UI: SSE a2ui {kind: order, operations: [createSurface …]}
+    G->>A: handoff → service_fulfillment_agent → check_availability
+    A-->>G: function_response {available_slots: [...]}
+    G-->>UI: SSE a2ui {kind: scheduling, one Button per slot}
+    G-->>UI: SSE token "Please pick an installation time below."
+    C->>UI: clicks "8 AM–12 PM" on Fri, Nov 27
+    UI->>G: POST /api/chat "Please book my installation for Friday, November 27, 2026, 8 AM–12 PM (morning)."
+```
+
+### Components
+
+| Piece | Where | Role |
+|---|---|---|
+| Surface builders | `SuperAgent/server/api/a2ui.py` | `build_surface(tool, response, state)` → `{surface_id, kind, operations}` or `None`. Pure functions, no model; unwraps MCP results (`sales_common.mcp_client.mcp_result_payload`); whole numbers shown without `.0` (A2A carries ints as floats) |
+| Event mapping | `SuperAgent/server/api/sse.py` (`EventMapper`) | Calls the builders for every remote `function_response`, sends each surface once per turn, keeps a journey-state copy (session state at turn start + each tool's `_context_update`), strips payment tokens from every browser-bound payload |
+| Exported catalog | `SuperAgent/server/a2ui/catalog.json` | A2UI 1.0 catalog document of `salesUI` (70 components, 17 functions) produced by `npm run export:a2ui-catalog`; the gateway tests validate every surface against it |
+| Generative UI | `SuperAgent/client/src/a2ui/salesUI.js` | `createGenerativeUI({ extends: [standardUI], components: { SecurePaymentForm }, functions: { sendChatMessage } })` |
+| Provider | `SuperAgent/client/src/a2ui/GenerativeUIProvider.jsx` | `CopilotKitProvider` with `generativeUI={{ ui: salesUI, theme: salesTheme }}`. The app has no CopilotKit runtime: replies come from the ADK gateway, so the provider gets one inert local agent (`InertAgent.js`, never run, no keys) |
+| Renderer | `SuperAgent/client/src/components/A2UISurface.jsx` | Ingests a surface's operations into the generative UI runtime (`useGenerativeUIRuntime().manager.ingest`, thread `sales-chat`, target = `surface_id`) and draws it with `<GenerativeUISurface id>` inside the assistant message |
+| Actions | `SuperAgent/client/src/contexts/ChatContext.jsx` | `useGenerativeUIFunction(salesUI, "sendChatMessage", …)` sends the button's message as the customer's next turn |
+| Theme | `SuperAgent/client/src/a2ui/theme.js` | `--a2ui-*` CSS variables mapped to the app's Tailwind palette (primary blue, slate text, rounded corners) |
+| Secure payment form | `SuperAgent/client/src/a2ui/SecurePaymentForm.jsx` | App component in the catalog; card/ACH entry that never reaches a model (below) |
+
+### Surface catalog
+
+| `kind` | Built from (tool) | Shows | Buttons → message sent |
+|---|---|---|---|
+| `contact` | `add_new_company` (new company, no contact on file); `create_order` refused with `contact_email_required` | Name, email, phone fields (data model `/contact/*`); Save disabled until the email is valid (`email` / `required` checks) | Save → `My contact details: name …, email …, phone ….` (built with `formatString`; at order time `… Please place my order.`) |
+| `serviceability` | `check_service_availability` (MCP) | Serviceable badge, address, network type, max speed, install lead time, services | Show plans · Get a quote (or Other options · Try another address) |
+| `products` | `list_available_products`, `search_products_by_criteria` (MCP) | Plans table (name, technology, download, upload); internet plans filtered to the address's `available_products`; **no prices** | Quote *plan* · About *plan* |
+| `products` | `compare_products` | Side-by-side table, recommendation | Quote *fastest* · Quote *other* |
+| `products` | `get_product_by_id` | Description, speeds, included features | Quote *plan* · Compare plans |
+| `quote` | `generate_offer_quote`, `find_best_bundle_offer`, `get_quote_details` | Items (qty, unit price, price), term, discount, monthly and yearly totals, quote id and expiry | Accept quote → `I'll take quote OFF-… (24 months). Please place my order.` · **12 / 24 / 36 months** (the other terms) → `Please re-quote OFF-… on a 36-month term.` · Add a service · Email it to me |
+| `cart` | `add_to_cart`, `remove_from_cart`, `get_cart` | Items and monthly total | Place my order · Add another service |
+| `order` | `create_order`, `get_order` | Order id, status badge, service, address, total, next step | — |
+| `scheduling` | `check_availability` | One row per day, one button per window (earliest highlighted) | `8 AM–12 PM` → `Please book my installation for Friday, November 27, 2026, 8 AM–12 PM (morning).` |
+| `scheduling` | `schedule_installation` | Confirmed badge, date, window, appointment id, address | — |
+| `payment` | `get_payment_methods` (+ `order_context` total) | Amount due, saved methods, `SecurePaymentForm` | Pay with *Visa ending 1111* → `Pay for my order with my Visa ending 1111.` |
+| `payment` | `process_payment` | Paid badge, amount, order, transaction, receipt email note | — |
+
+Rules every surface follows (enforced by `SuperAgent/tests/test_a2ui.py`): components and props exist in the exported catalog with valid enum values and required props; every Button calls `sendChatMessage` with a non-empty, first-person message and no `[placeholder]` (a click sends immediately); product surfaces contain no price; failed or unknown results produce no surface; no payment token ever appears.
+
+### Wire format
+
+One SSE event per surface, next to the usual `token`, `activity_update`, `structured_card`, `cart_update`, `suggestions` and `done` events (additive: older clients ignore it):
+
+```json
+{
+  "type": "a2ui",
+  "surface_id": "check_availability-3f9a1c0b2e7d",
+  "kind": "scheduling",
+  "tool": "check_availability",
+  "author": "service_fulfillment_agent",
+  "operations": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "check_availability-3f9a1c0b2e7d",
+        "components": [
+          {"id": "root", "component": "Card", "children": ["title-1", "caption-2", "row-5"]},
+          {"id": "title-1", "component": "Title", "text": "Choose an installation time", "size": "lg"},
+          {"id": "caption-2", "component": "Caption", "text": "314 Main Street, Philadelphia, PA 19103"},
+          {"id": "button-3", "component": "Button", "label": "8 AM–12 PM", "variant": "primary",
+           "onClick": {"functionCall": {"@call": "sendChatMessage", "args": {
+             "message": "Please book my installation for Friday, November 27, 2026, 8 AM–12 PM (morning)."}}}},
+          "…"
+        ]
+      }
+    }
+  ]
+}
+```
+
+`surface_id` is `<tool>-<sha256(result)[:12]>`: stable for the same result, so a result repeated by the A2A transport is sent once. Surfaces carry a `dataModel` only when they have input fields (the contact card).
+
+### Actions: how a click becomes the next turn
+
+CopilotKit forwards `{event}` actions to a CopilotKit agent, which this app does not have. Every button therefore uses a **client function call**: `onClick: {functionCall: {"@call": "sendChatMessage", "args": {"message": …}}}`. `sendChatMessage` is declared in `salesUI` (`requiresUserActivation: true`, so only a real click can run it) and handled in `ChatContext`, which sends the message exactly as if the customer typed it. Messages are written in the customer's voice ("I'll take quote OFF-… (24 months). Please place my order."), so the router, the transcript and the evals treat clicks and typed messages the same. The message can be a literal or a renderer-side function: the contact card uses `formatString` over its data model (`${/contact/email}`).
+
+Gateway rules that make clicks deterministic:
+
+- **Quote selection:** when a message names an active quote of the customer (`OFF-…`) that is not the current `offer_context`, `prepare_turn` loads it (`sales_common.repositories.quotes.load_offer_context`), so accepting the 24-month card orders the 24-month quote even if a 36-month quote was generated later. The quote panel is updated too.
+- **Order → scheduling:** after `create_order` succeeds the workflow hands off to `service_fulfillment_agent` in the same turn, so the slots card follows the order card without a question.
+- **Contact before order:** `create_order` refuses an order without a valid email (`contact_email_required`); the contact card appears and, once discovery has saved the contact, the workflow hands off back to `order_agent` to create the order.
+
+### Secure payment entry
+
+Card and bank details are collected **in the card, not in the chat**, and never reach a model, an SSE event, a log or the A2UI data model:
+
+```
+SecurePaymentForm (React state only)
+  → POST /api/payment-methods            gateway: session bearer, customer_id from session state, body never logged
+  → POST /payment-methods                payment service REST route (payment_agent/rest.py), no LLM:
+                                         tokenize_payment_method → Luhn/expiry checks → opaque tok_… token,
+                                         masked method saved to customer_payment_methods
+  ← {payment_type, card_brand, last_four, expiry}   (no token, no numbers)
+  → chat: "I've added my Visa ending 1111. Please use it to pay for my order."
+  → payment_agent: get_payment_methods → token of Visa 1111 → process_payment
+```
+
+Defense in depth: the form clears its fields after every submit; the gateway masks card numbers (Luhn-checked), CVVs and account numbers typed into chat (`[REDACTED_CARD]` …) before routing; payment tokens are stripped from SSE payloads; payment emails name the method ("Visa card ending 1111"), not its token. The payment prompt never asks for card data, which also removed Gemini safety-filter false positives on payment replies.
+
+### Theming and layout
+
+`salesTheme` sets the `--a2ui-*` variables (accent `#2563eb`, slate text and borders, 1rem card radius, system font), passed as `generativeUI.theme`; CopilotKit's stylesheet (`@copilotkit/react-core/v2/styles.css`) is prebuilt with Tailwind 4, so `postcss.config.js` runs the app's Tailwind 3 only on the app's own CSS. In `MessageBubble`, surfaces render under the agent's short reply; suggestion chips are hidden when the card has buttons; after a receipt, the same turn's payment-methods card is hidden and the agent's machine-readable payment JSON line is not shown.
+
+### Fallback and configuration
+
+| Setting | Default | Effect |
+|---|---|---|
+| `A2UI_ENABLED` (gateway) | `true` | `false` stops all `a2ui` events; the UI falls back to the legacy cards (`QuoteCard` from `structured_card`, and text-parsed serviceability/product/order/payment cards) |
+
+The legacy cards are also used for any message without a surface of the same `kind`.
+
+### Adding a surface
+
+1. Add a builder `def _thing(data: dict, state: dict) -> Optional[_Surface]` in `api/a2ui.py` using `_Surface` helpers (`title`, `caption`, `label_value`, `buttons`, `card`) and register it in `_BUILDERS` with a `kind`. Use only catalog components; take every value from `data` or `state`; write button messages in the customer's voice with no placeholders.
+2. Add the tool to the "Cards in the chat" list in `libs/sales_common/sales_common/prompts.py`, so the agent stops repeating the data in prose.
+3. Add a case to `SuperAgent/tests/test_a2ui.py` (catalog validity, buttons, values) and run `pytest SuperAgent/tests -q`.
+4. If you add a component or function to `salesUI`, run `npm run export:a2ui-catalog` in `SuperAgent/client` and commit `catalog.json`.
+5. Check it in the browser; the console reports catalog errors (`[generativeUI] …`).
+
+### Testing
+
+- **Contract:** `SuperAgent/tests/test_a2ui.py` validates every surface against `catalog.json`; `test_sse.py` covers emission, de-duplication, the disable flag, MCP results, token stripping and the quote panel.
+- **Payment path:** `PaymentAgent/tests/test_rest.py` (REST route) and `SuperAgent/tests/test_api.py` (proxy, chat masking).
+- **Browser:** surfaces, button clicks, the contact card's validation and the secure form were verified in headless Chrome against both a mock gateway (no model calls) and the full local stack.
+
+### Limitations
+
+- CopilotKit's generative UI is marked experimental; versions are pinned exactly (`@copilotkit/react-core` 1.85.0, `zod` 3.25.76, `@ag-ui/client` 1.0.2, `rxjs` 7.8.1) and the catalog contract test catches renamed components.
+- The provider's local agent uses `agents__unsafe_dev_only` (CopilotKit's `selfManagedAgents` belongs to a paid tier); the agent is inert and holds no secrets.
+- The UI bundle grows by roughly 0.9 MB gzipped (CopilotKit, charts, maps, markdown); lazy-loading the renderer is a possible follow-up.
+- Surfaces are deterministic by design; agents do not author A2UI yet. The exported catalog is ready for that (for example via `SkillGenerator` from `@a2ui/agent`).
 
 ---
 
@@ -694,6 +914,7 @@ The PaymentAgent is a **deterministic, defense-in-depth payment workflow** rathe
 - **CVV discard** after validation; sensitive verification data is never stored.
 - **Order-linked persistence** in PostgreSQL, with `orders.status` updated to `paid` only after successful completion, in the same transaction as the payment-receipt outbox row.
 - **Journey-state propagation:** `payment_context` is written to state and returned to the gateway as `_context_update`, so downstream steps never re-infer payment results from conversation text.
+- **Secure payment form:** customers enter card or bank details in the A2UI payment card; the gateway forwards them (with the session's `customer_id`) to the payment service's model-free `POST /payment-methods`, so card data never enters a prompt, a chat message or a trace. The agent only sees "Visa ending 1111" and charges the saved token. Payment emails name the masked method, never the token.
 
 ---
 
@@ -712,24 +933,28 @@ User: "We're Crane.io at 123 Main St, Philadelphia PA 19103"
   (Same turn: no user message needed between Discovery and Serviceability)
 ```
 
-### Product → Offer → Order → Scheduling → Payment (zero-click handoff)
+### Guided checkout with A2UI cards (quote → order → installation → payment)
+
+Each line marked 🖱 is a card button; the customer can finish the purchase without typing.
 
 ```
-User: "Fiber 5G pricing with SD-WAN?"
-  ↓ route_intent → offer_management_agent
-  ↓ Pricing calculation (JSON quote) → quote card in the UI
-  ↓ "Quote #12345: $X,XXX/month"
-
-User: "Proceed"
-  ↓ route_intent → order_agent → cart + order (status: pending_payment)
-
-User: "Schedule installation for tomorrow morning"
-  ↓ route_intent → service_fulfillment_agent → schedule_installation → "Confirmed! APT-20260505-482"
-  ↓ ContextBridgePlugin records appointment_confirmed_order
-  ↓ HandoffPolicyNode: order unpaid → payment_agent
-  ↓ PaymentAgent asks for the payment method, then credit check + authorization
-  (Same turn: no user message needed between Scheduling and Payment)
+User: "We're Juicer Inc at 314 Main Street, Philadelphia PA 19103 and need business internet."
+  ↓ discovery_agent registers the company            → 🃏 contact card (name, email, phone)
+  ↓ handoff → serviceability_agent (same turn)       → 🃏 "Service is available" (FTTP, 5,000 Mbps)
+🖱 Save contact details   → discovery saves the contact → customer_context.contact.email
+🖱 Show plans             → product_agent              → 🃏 plans at this address (no prices)
+🖱 Quote Business Fiber 1 Gbps → offer_management_agent → 🃏 quote (12 months)
+🖱 36 months              → "Please re-quote OFF-… on a 36-month term." → 🃏 quote (36 months, 10% off)
+🖱 Accept quote           → prepare_turn selects that quote → order_agent
+  ↓ create_order (email from customer_context.contact) → 🃏 order created
+  ↓ handoff → service_fulfillment_agent (same turn) → check_availability → 🃏 installation times
+🖱 Fri, Nov 27 · 8 AM–12 PM → schedule_installation  → 🃏 installation scheduled
+  ↓ handoff → payment_agent (same turn) → get_payment_methods → 🃏 payment (amount, saved methods, secure form)
+🖱 Save and pay $224.10   → secure form → POST /api/payment-methods (tokenized, no LLM)
+  ↓ "I've added my Visa ending 1111. Please use it to pay for my order." → process_payment → 🃏 payment received
 ```
+
+Without A2UI (`A2UI_ENABLED=false`) the same journey works by typing, with the legacy cards.
 
 ---
 
@@ -769,13 +994,13 @@ Details: [services/catalog/README.md](services/catalog/README.md).
 
 Typical end-to-end flow:
 
-1. **Discovery** — collect business/location context
+1. **Discovery** — collect business/location context and the contact (name, email: required before ordering)
 2. **Serviceability** — verify address + infrastructure (automatic after discovery)
 3. **Product** — recommend technically compatible products
 4. **Offer Management** — compute quote JSON (pricing + discounts + totals)
-5. **Order** — cart/checkout and contract creation
-6. **Fulfillment** — schedule installation
-7. **Payment** — credit check + authorization (automatic after scheduling)
+5. **Order** — cart/checkout and contract creation (needs the contact email)
+6. **Fulfillment** — installation times shown automatically after the order; one click books
+7. **Payment** — secure form or saved method, then authorization (automatic after scheduling)
 8. **Activation** — install day, activation, `customer_master`
 9. **Customer Comms** — confirmations and reminders via the notification outbox
 
@@ -786,12 +1011,13 @@ Typical end-to-end flow:
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19 + Vite 6 + Tailwind CSS 3 |
+| Generative UI | A2UI 1.0 (surfaces built by the gateway) rendered with CopilotKit `@copilotkit/react-core` 1.85 (`v2/generative-ui`: `standardUI`, `GenerativeUISurface`, `useGenerativeUIFunction`) |
 | Gateway / services | FastAPI / Starlette, Python 3.12 |
 | Agent Framework | Google ADK 2.10.0 (`google-adk[a2a,mcp,db]`): `Workflow`, `App`, `DatabaseSessionService`, `RemoteA2aAgent`, `to_a2a`, `McpToolset` |
 | Agent protocol | A2A (a2a-sdk 1.x) with agent cards and a PostgreSQL task store |
 | Tool protocol | MCP (`mcp` 2.x `MCPServer`, streamable HTTP) |
 | LLM | Gemini (configured via `GEMINI_MODEL`, e.g. `gemini-3-flash-preview`) |
-| Streaming | Server-Sent Events (SSE) |
+| Streaming | Server-Sent Events (SSE): text, activity, cart and `a2ui` events |
 | Database | PostgreSQL 16 (psycopg 3, SQLAlchemy 2.1 + asyncpg), versioned SQL migrations |
 | RAG | ChromaDB + sentence-transformers (catalog service) |
 | Observability | OpenTelemetry (OTLP/HTTP) + OpenInference ADK instrumentation → Langfuse Cloud (traces, sessions, scores, datasets) |
@@ -819,8 +1045,12 @@ ConversationalSalesAgent/
 │   └── serviceability/              # Address + coverage REST + MCP (port 8102)
 ├── SuperAgent/                      # Gateway (port 8000)
 │   ├── super_agent/                 #   sales_journey workflow, registry, router prompt, plugins
-│   ├── server/                      #   FastAPI app: session, chat (SSE), feedback, debug endpoints
+│   ├── server/                      #   FastAPI app: session, chat (SSE), feedback, payment-methods, debug endpoints
+│   │   ├── api/a2ui.py              #     A2UI surface builders (one per tool result kind)
+│   │   └── a2ui/catalog.json        #     exported A2UI 1.0 catalog (contract for the builders)
 │   ├── client/                      #   React UI
+│   │   ├── src/a2ui/                #     salesUI (standard catalog + SecurePaymentForm), theme, provider
+│   │   └── src/components/A2UISurface.jsx  # renders a surface inside a chat message
 │   └── tests/
 ├── DiscoveryAgent/                  # A2A agent services (ports 8201-8210), each with
 ├── ServiceabilityAgent/             #   <pkg>/agent.py, prompts.py, tools/, server.py,
@@ -1209,6 +1439,8 @@ Open your project in Langfuse and pick the environment in the top bar (`local`, 
 - All configuration is environment variables. Shared defaults live in [.env.example](./.env.example); copy it to `.env` (git-ignored, as is any `.env.*` other than `.env.example`). Never commit real keys.
 - Required: `GEMINI_MODEL`, `GOOGLE_API_KEY` (or Vertex AI env), `DATABASE_URL`, `SESSION_SECRET_KEY` (gateway), `PUBLIC_URL` (each agent service). Services fail fast at startup when a required variable is missing.
 - In GCP, secrets come from Secret Manager (`GOOGLE_API_KEY`, `SESSION_SECRET_KEY`, `DB_PASSWORD`, and the optional `SMTP_USER`, `SMTP_PASSWORD`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`); service-to-service calls use Google-signed ID tokens (`SERVICE_AUTH=gcp_id_token`).
+- Card numbers, CVVs and bank account numbers typed into chat are masked before the message is routed or stored; payment details are entered only in the secure payment form ([A2UI Generative UI](#secure-payment-entry)). Payment tokens are stripped from every SSE payload.
+- Gemini safety thresholds default to `BLOCK_MEDIUM_AND_ABOVE` (`SAFETY_*`); `BLOCK_LOW_AND_ABOVE` blocked ordinary payment replies as false positives.
 - Database passwords are masked in logs; the browser log endpoint (`POST /api/client-log`) requires a session token, is rate-limited and strips control characters. Traces sent to Langfuse have card numbers, CVVs and account numbers masked (`LANGFUSE_CAPTURE_CONTENT=false` sends no content at all).
 
 ---
@@ -1220,6 +1452,7 @@ Open your project in Langfuse and pick the environment in the top bar (`local`, 
 - `contacts` and `opportunities` have no unique index (seed data contains legacy duplicates); duplicates are prevented in code under an advisory lock.
 - The catalog image downloads the embedding model at build time; knowledge search reports `available: false` if the index is missing.
 - ADK compaction, context caching and `to_a2a` are experimental in google-adk 2.10.0 (pinned).
+- **A2UI:** CopilotKit's generative UI is experimental (versions pinned exactly); the provider uses an inert local agent through `agents__unsafe_dev_only`; the UI bundle is about 0.9 MB gzipped larger. Surfaces are deterministic; agents do not author A2UI yet.
 - **Tracing:** `openinference-instrumentation-google-adk` (pinned 1.1.6) patches ADK internals, so an ADK upgrade must re-run the tracing tests. On Cloud Run each request waits for its spans to be sent (bounded by `TELEMETRY_FLUSH_TIMEOUT_MS`); a span batch can still be lost if an instance is stopped mid-export. The Langfuse eval export (langfuse SDK 5.x) needs OpenTelemetry ≥ 1.45 while google-adk 2.10 pins ≤ 1.42.1, so it runs in an isolated environment.
 
 ---
@@ -1249,8 +1482,9 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment va
 | [openspec/BASELINE.md](./openspec/BASELINE.md) | **Start here:** maintained system map (services, ports, agents, tools, context keys, handoffs, commands, observability) |
 | [AGENTS.md](./AGENTS.md) | Architecture, ADK standards, workflow and handoffs, development workflow |
 | [Agent Service Guide](#agent-service-guide) (this README) | Building, serving and testing an agent service |
-| [SuperAgent/README.md](./SuperAgent/README.md) | Gateway: workflow, API (incl. `/api/feedback`), environment variables, tests |
-| [SuperAgent/client/AGENTS.md](./SuperAgent/client/AGENTS.md) | React UI: structure, SSE events, feedback buttons |
+| [A2UI Generative UI](#a2ui-generative-ui) (this README) | Interactive cards: architecture, surface catalog, actions, secure payment form, adding a surface |
+| [SuperAgent/README.md](./SuperAgent/README.md) | Gateway: workflow, API (incl. `/api/feedback`, `/api/payment-methods`, the `a2ui` SSE event), environment variables, tests |
+| [SuperAgent/client/AGENTS.md](./SuperAgent/client/AGENTS.md) | React UI: structure, SSE events, A2UI rendering, secure payment form, feedback buttons |
 | [services/catalog/README.md](./services/catalog/README.md) | Catalog REST + MCP + RAG service |
 | [services/serviceability/README.md](./services/serviceability/README.md) | Serviceability REST + MCP service |
 | [db/README.md](./db/README.md) | Migrations, seed files, table ownership |
@@ -1259,6 +1493,6 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment va
 | [evals/README.md](./evals/README.md) | Golden evals: tiers, running, Langfuse export, golden lifecycle |
 | [tests/integration/README.md](./tests/integration/README.md) | Multi-process integration test |
 | [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
-| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth) and change proposals (none open; history, including `2026-11-15-langfuse-observability` and the declined `2026-11-16-mcp-remaining-domains`, in `archive/`) |
+| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth, incl. `generative-ui`) and change proposals (open: `guided-checkout`; history, including `a2ui-generative-cards`, `2026-11-15-langfuse-observability` and the declined `2026-11-16-mcp-remaining-domains`, in `archive/`) |
 | Each `<Agent>/AGENTS.md` | Individual agent documentation |
 

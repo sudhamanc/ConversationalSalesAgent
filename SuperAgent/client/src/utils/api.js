@@ -84,6 +84,7 @@ export function resetSession() {
  * @param {function} [onSuggestions] - Called with (suggestionsArray, authorString) for LLM suggestion events.
  * @param {function} [onActivityUpdate] - Called with {category, tool, data} for activity panel events.
  * @param {function} [onStructuredCard] - Called with {card_type, data} for inline structured cards in chat.
+ * @param {function} [onA2UI] - Called with {surface_id, kind, tool, author, operations} for A2UI surfaces (spec: generative-ui).
  */
 export async function streamChat(
   message,
@@ -93,7 +94,8 @@ export async function streamChat(
   onCartUpdate,
   onSuggestions,
   onActivityUpdate,
-  onStructuredCard
+  onStructuredCard,
+  onA2UI
 ) {
   const token = await getToken();
   console.info("[chat] send", { length: (message || "").length });
@@ -111,7 +113,7 @@ export async function streamChat(
     if (res.status === 401) {
       // Session expired – create a new one and retry once
       await createSession();
-      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions, onActivityUpdate, onStructuredCard);
+      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions, onActivityUpdate, onStructuredCard, onA2UI);
     }
 
     const reader = res.body.getReader();
@@ -141,6 +143,8 @@ export async function streamChat(
             onActivityUpdate?.(payload);
           } else if (payload.type === "structured_card") {
             onStructuredCard?.(payload);
+          } else if (payload.type === "a2ui") {
+            onA2UI?.(payload);
           } else if (payload.type === "suggestions") {
             onSuggestions?.(payload.data, payload.author);
           } else if (payload.type === "done") {
@@ -192,5 +196,34 @@ export async function sendFeedback(traceId, feedbackToken, value) {
   } catch (err) {
     console.warn("[feedback] network error", err);
     return false;
+  }
+}
+
+/**
+ * Save a card or bank account from the secure payment form (spec: guided-checkout).
+ * The gateway forwards it to the payment service, which tokenizes and saves the
+ * masked method; the details never go through the chat or a model.
+ *
+ * @param {object} details - {payment_type: "credit_card"|"ach", card_number, expiry_month,
+ *   expiry_year, cvv} or {payment_type: "ach", routing_number, account_number, account_type}.
+ * @returns {Promise<{ok: boolean, method?: object, error?: string}>} The masked method
+ *   ({payment_type, card_brand|account_type, last_four}) or a message to show.
+ */
+export async function savePaymentMethod(details) {
+  const token = await getToken();
+  try {
+    const res = await fetch(`${API_BASE}/payment-methods`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(details),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.success) {
+      return { ok: false, error: body.error || "The payment method could not be saved. Please try again." };
+    }
+    return { ok: true, method: body };
+  } catch (err) {
+    console.warn("[payment] network error");
+    return { ok: false, error: "Network error. Please try again." };
   }
 }

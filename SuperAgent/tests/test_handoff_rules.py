@@ -98,3 +98,86 @@ def test_handoff_node_records_acknowledgement():
     (event,) = asyncio.run(run())
     assert event.actions.state_delta[ACK_KEY] == "C1"
     assert "handoff_hops" not in event.actions.state_delta  # no serviceability handoff this turn
+
+
+# --- order -> scheduling (spec: guided-checkout) ------------------------------
+
+ORDER = {"order_id": "ORD-1", "status": "pending_payment", "service_type": "Business Fiber 1 Gbps",
+         "service_address": "314 Main Street, Philadelphia, PA 19103", "total_amount": 224.1}
+
+
+def test_order_created_hands_off_to_scheduling():
+    h = evaluate_handoff({"order_created_order": "ORD-1", "order_context": ORDER}, "order_agent", 0)
+    assert h.target == "service_fulfillment_agent"
+    assert "ORD-1" in h.message and "check_availability" in h.message and "314 Main Street" in h.message
+    assert h.clear_keys == ("order_created_order",)
+
+
+def test_no_scheduling_handoff_without_new_order_or_when_scheduled():
+    assert evaluate_handoff({"order_context": ORDER}, "order_agent", 0) is None
+    scheduled = {**ORDER, "installation": {"status": "scheduled"}}
+    assert evaluate_handoff({"order_created_order": "ORD-1", "order_context": scheduled}, "order_agent", 0) is None
+    assert evaluate_handoff({"order_created_order": "ORD-1", "order_context": ORDER,
+                             "installation_scheduled_order": "ORD-1"}, "order_agent", 0) is None
+    paid = {**ORDER, "status": "paid"}
+    assert evaluate_handoff({"order_created_order": "ORD-1", "order_context": paid}, "order_agent", 0) is None
+    assert evaluate_handoff({"order_created_order": "ORD-1", "order_context": ORDER}, "order_agent",
+                            MAX_HANDOFF_HOPS) is None
+
+
+def test_payment_handoff_asks_for_the_secure_form():
+    state = {"appointment_confirmed_order": "ORD-1", "order_context": ORDER}
+    h = evaluate_handoff(state, "service_fulfillment_agent", 0)
+    assert h.target == "payment_agent" and "get_payment_methods" in h.message and "$224.10" in h.message
+
+
+# --- quote selection ----------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from super_agent import workflow  # noqa: E402
+
+
+def _select(state, message, monkeypatch, found=None):
+    calls = []
+
+    def fake_load(offer_id, customer_id):
+        calls.append((offer_id, customer_id))
+        return found
+
+    monkeypatch.setattr(workflow, "_load_offer", fake_load)
+    return asyncio.run(workflow._selected_offer(state, message)), calls
+
+
+def test_named_quote_becomes_offer_context(monkeypatch):
+    state = {"customer_context": CUSTOMER, "offer_context": {"offer_id": "OFF-520C223CCB"}}
+    chosen = {"offer_id": "OFF-11EB15AA3C", "term_months": 24, "selected": True}
+    result, calls = _select(state, "I'll take quote OFF-11EB15AA3C (24 months). Please place my order.",
+                            monkeypatch, chosen)
+    assert result == chosen and calls == [("OFF-11EB15AA3C", "C1")]
+
+
+def test_current_or_unknown_quote_is_not_loaded(monkeypatch):
+    state = {"customer_context": CUSTOMER, "offer_context": {"offer_id": "OFF-520C223CCB"}}
+    assert _select(state, "I'll take quote OFF-520C223CCB", monkeypatch, {"x": 1}) == (None, [])
+    assert _select(state, "place my order", monkeypatch, {"x": 1}) == (None, [])
+    assert _select({"offer_context": {}}, "quote OFF-11EB15AA3C", monkeypatch, {"x": 1}) == (None, [])
+    assert _select(state, "quote OFF-11EB15AA3C", monkeypatch, None)[0] is None
+
+
+# --- contact before order (spec: guided-checkout) -----------------------------
+
+def test_saved_contact_resumes_the_waiting_order():
+    customer = {**CUSTOMER, "contact": {"name": "Jane", "email": "jane@crane.io"}}
+    h = evaluate_handoff({"customer_context": customer, "order_waiting_for_contact": True}, "discovery_agent", 0)
+    assert h.target == "order_agent" and "create_order" in h.message and "jane@crane.io" in h.message
+    assert h.clear_keys == ("order_waiting_for_contact",)
+
+
+def test_no_order_handoff_without_email_or_waiting_order():
+    waiting = {"customer_context": CUSTOMER, "order_waiting_for_contact": True,
+               "serviceability_context": {"service_address": {"zip_code": "19103"}}}
+    assert evaluate_handoff(waiting, "discovery_agent", 0) is None
+    customer = {**CUSTOMER, "contact": {"email": "jane@crane.io"}}
+    state = {"customer_context": customer, "serviceability_context": {"service_address": {"zip_code": "19103"}}}
+    assert evaluate_handoff(state, "discovery_agent", 0) is None

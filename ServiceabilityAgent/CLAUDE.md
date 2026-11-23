@@ -32,7 +32,7 @@ When working on Serviceability Agent:
 2. **Deterministic only** - Temperature = 0.0, no LLM creativity
 3. **PRE-SALE agent** - Returns infrastructure, NOT products/pricing
 4. **No local tools** - tools come from the serviceability MCP server (`SERVICEABILITY_MCP_URL`)
-5. **Keep the UI-parsed output format** in `prompts.py`
+5. **Keep replies short** (`prompts.py`): the A2UI card shows the result; keep the `✅ This location is serviceable` line and `• **SKU** - Name` lines for the legacy card, never internal network ids
 6. **Test changes** with `pytest ServiceabilityAgent/tests services/serviceability/tests`
 
 ---
