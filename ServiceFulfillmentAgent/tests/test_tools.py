@@ -104,6 +104,8 @@ def test_schedule_installation_persists_and_enqueues(order, tool_context, next_w
     assert (result["start_time"], result["end_time"]) == ("08:00", "12:00")
     assert result["status"] == "scheduled"
     assert result["notification_queued"] is True
+    queued = db.fetch_one("SELECT notification_type FROM notifications WHERE notification_id = %s", (result["notification_id"],))
+    assert queued["notification_type"] == "installation_scheduled"
     json.dumps(result)  # JSON-serializable
 
     row = db.fetch_one("SELECT * FROM fulfillments WHERE fulfillment_id = %s", (result["appointment_id"],))

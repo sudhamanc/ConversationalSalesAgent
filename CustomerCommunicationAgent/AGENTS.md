@@ -24,7 +24,8 @@ CustomerCommunicationAgent/
 ├── customer_communication_agent/
 │   ├── agent.py                   # build_agent(model=None) ; root_agent
 │   ├── prompts.py                 # static_instruction (not templated)
-│   ├── server.py                  # create_a2a_app(root_agent, extra_lifespan=dispatcher_lifespan)
+│   ├── server.py                  # create_a2a_app(root_agent, extra_lifespan=dispatcher_lifespan, extra_routes=ROUTES)
+│   ├── rest.py                    # POST /dispatch: dispatch_pending() in the request (no model)
 │   ├── dispatcher.py              # dispatch_pending(), background loop, dedup, retries
 │   ├── templates.py               # subject/body per notification type (TEMPLATES, TEMPLATE_ARGS)
 │   ├── delivery.py                # SMTP settings + send_email (never logs passwords)
@@ -53,6 +54,11 @@ CustomerCommunicationAgent/
    `NOTIFY_RETRY_SECONDS * attempts` seconds old (60 s, then 120 s with the default).
 7. `dispatcher_lifespan` runs `dispatch_pending` every `NOTIFY_POLL_SECONDS` via
    `asyncio.to_thread`; on shutdown it lets an in-flight batch finish (max 30 s), then stops.
+8. `POST /dispatch` (`rest.py`) runs `dispatch_pending` inside the request and returns
+   `{success, processed, sent, simulated, deduped, retrying, failed}` (503 when the database is
+   unavailable). The gateway calls it when a turn queued a notification and at session start:
+   on Cloud Run the service only has CPU while serving a request. `FOR UPDATE SKIP LOCKED`
+   keeps it safe next to the loop.
 
 Statuses: `pending`, `sent`, `simulated`, `deduped`, `failed`.
 

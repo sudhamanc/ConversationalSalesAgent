@@ -85,6 +85,8 @@ export function resetSession() {
  * @param {function} [onActivityUpdate] - Called with {category, tool, data} for activity panel events.
  * @param {function} [onStructuredCard] - Called with {card_type, data} for inline structured cards in chat.
  * @param {function} [onA2UI] - Called with {surface_id, kind, tool, author, operations} for A2UI surfaces (spec: generative-ui).
+ * @param {function} [onProgress] - Called with {stage, agent?} while the turn runs
+ *                                  (stage: routing | agent | retrying | suggestions).
  */
 export async function streamChat(
   message,
@@ -95,7 +97,8 @@ export async function streamChat(
   onSuggestions,
   onActivityUpdate,
   onStructuredCard,
-  onA2UI
+  onA2UI,
+  onProgress
 ) {
   const token = await getToken();
   console.info("[chat] send", { length: (message || "").length });
@@ -113,7 +116,7 @@ export async function streamChat(
     if (res.status === 401) {
       // Session expired – create a new one and retry once
       await createSession();
-      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions, onActivityUpdate, onStructuredCard, onA2UI);
+      return streamChat(message, onToken, onDone, onError, onCartUpdate, onSuggestions, onActivityUpdate, onStructuredCard, onA2UI, onProgress);
     }
 
     const reader = res.body.getReader();
@@ -145,6 +148,8 @@ export async function streamChat(
             onStructuredCard?.(payload);
           } else if (payload.type === "a2ui") {
             onA2UI?.(payload);
+          } else if (payload.type === "progress") {
+            onProgress?.(payload);
           } else if (payload.type === "suggestions") {
             onSuggestions?.(payload.data, payload.author);
           } else if (payload.type === "done") {

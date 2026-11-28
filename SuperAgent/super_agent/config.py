@@ -56,6 +56,11 @@ class ServerConfig:
     suggestions_enabled: bool = os.getenv("SUGGESTIONS_ENABLED", "true").lower() == "true"
     # A2UI surfaces (SSE `a2ui`) built from quote, serviceability and product tool results.
     a2ui_enabled: bool = os.getenv("A2UI_ENABLED", "true").lower() != "false"
+    # Warm every agent service when a chat session starts (hides Cloud Run cold starts).
+    warmup_enabled: bool = os.getenv("WARMUP_ENABLED", "true").lower() != "false"
+    warmup_interval_s: int = _int("WARMUP_INTERVAL_S", 300)
+    # Longest wait before `done` for the turn's email dispatch, to report delivery status.
+    notify_status_wait_s: int = _int("NOTIFY_STATUS_WAIT_S", 5)
 
 
 @dataclass(frozen=True)

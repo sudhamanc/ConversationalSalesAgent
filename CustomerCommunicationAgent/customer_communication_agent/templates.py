@@ -27,7 +27,7 @@ TEMPLATE_ARGS: dict[str, tuple[str, ...]] = {
         "transaction_id", "failure_reason",
     ),
     "installation_scheduled": (
-        "order_id", "customer_name", "appointment_date", "window", "service_address",
+        "order_id", "customer_name", "appointment_date", "window", "start_time", "end_time", "service_address",
     ),
     "installation_reminder": (
         "order_id", "customer_name", "installation_date", "installation_time", "service_address",
@@ -64,6 +64,32 @@ def _money(value: Any, default: str) -> str:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
         return default
+
+
+_WINDOW_NAMES = {"AM": "morning", "PM": "afternoon", "ALL_DAY": "all day"}
+
+
+def _clock(value: Any) -> Optional[str]:
+    """``"13:00"`` -> ``"1 PM"``, ``"08:30"`` -> ``"8:30 AM"``; ``None`` when unparseable."""
+    try:
+        hour, minute = (int(part) for part in str(value).split(":")[:2])
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= hour < 24 and 0 <= minute < 60):
+        return None
+    suffix = "AM" if hour < 12 else "PM"
+    hour12 = hour % 12 or 12
+    return f"{hour12} {suffix}" if minute == 0 else f"{hour12}:{minute:02d} {suffix}"
+
+
+def _time_window(a: Mapping[str, Any]) -> str:
+    """Readable installation window (spec: agent-services, installation emails show the time window)."""
+    window = _text(a.get("window"), "")
+    name = _WINDOW_NAMES.get(window.upper(), window)
+    start, end = _clock(a.get("start_time")), _clock(a.get("end_time"))
+    if start and end:
+        return f"{start}–{end} ({name})" if name else f"{start}–{end}"
+    return name or "TBD"
 
 
 def _name(args: Mapping[str, Any]) -> str:
@@ -192,7 +218,7 @@ Installation Details:
 {RULE}
 Order ID: {order_id}
 Date: {_text(a.get('appointment_date'), 'TBD')}
-Time Window: {_text(a.get('window'), 'TBD')}
+Time Window: {_time_window(a)}
 Address: {_text(a.get('service_address'), 'On file')}
 
 Our technician will call 30 minutes before arrival.

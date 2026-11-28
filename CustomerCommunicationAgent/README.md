@@ -9,6 +9,9 @@ It has two parts:
 - **Outbox dispatcher.** Other services enqueue `pending` rows in the PostgreSQL
   `notifications` table (`sales_common.notifications.enqueue`). A background loop in this
   service renders and delivers them every `NOTIFY_POLL_SECONDS`, with de-duplication and retries.
+  `POST /dispatch` (no model) delivers due rows inside the request and returns the counts; the
+  gateway calls it whenever a turn queued a notification, because on Cloud Run the service has
+  no CPU between requests and the loop alone would not run.
 - **LLM agent.** It handles explicit requests such as "resend the order confirmation", "send the
   installation reminder" or "show notification history". Its `send_*` tools enqueue a row and
   dispatch it immediately, so the reply reports the real delivery status.

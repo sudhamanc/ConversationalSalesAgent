@@ -192,6 +192,7 @@ def activate_service(
         "already_active": already_active,
         "customer_master_created": customer_master_created,
         "notification_queued": notification_id is not None,
+        "notification_id": notification_id,
         **_get_service_parameters(service_type),
         "message": f"Service activated successfully on circuit {circuit_id}",
     }

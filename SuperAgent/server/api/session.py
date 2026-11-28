@@ -7,6 +7,7 @@ GET    /api/session/health   – liveness
 
 from fastapi import APIRouter, Header, Request
 
+from api.background import warm_services
 from middleware.auth import get_authenticator
 from runtime import ensure_adk_session
 from utils.logger import get_logger
@@ -26,6 +27,7 @@ async def create_session(request: Request):
         pass
     session = get_authenticator().create_session(client_id)
     await ensure_adk_session(session.user_id, session.session_id)
+    warm_services()  # background; at most once per WARMUP_INTERVAL_S
     return {"session_id": session.session_id, "token": session.token}
 
 

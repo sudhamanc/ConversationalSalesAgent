@@ -147,6 +147,7 @@ def dispatch_technician(
         "dispatched_at": db.now_iso(),
         "status": "dispatched",
         "notification_queued": notification_id is not None,
+        "notification_id": notification_id,
         "message": f"Technician {tech['name']} assigned and dispatched",
     }
 
@@ -274,6 +275,7 @@ def complete_installation(
         "customer_signature": customer_signature,
         "notes": notes,
         "notification_queued": notification_id is not None,
+        "notification_id": notification_id,
         "next_steps": [
             "Service activation initiated",
             "Customer portal access will be emailed",

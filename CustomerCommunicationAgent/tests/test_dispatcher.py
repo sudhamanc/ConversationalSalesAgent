@@ -313,3 +313,15 @@ def test_install_dispatched_enqueue_and_render(clean_db):
     assert "Dear Acme" in row["message"]
     assert "Technician: Sam Tech" in row["message"]
     assert "Technician Phone: 555-0101" in row["message"]
+
+
+@pytest.mark.parametrize("args,expected", [
+    ({"window": "PM", "start_time": "13:00", "end_time": "17:00"}, "Time Window: 1 PM–5 PM (afternoon)"),
+    ({"window": "AM", "start_time": "08:00", "end_time": "12:00"}, "Time Window: 8 AM–12 PM (morning)"),
+    ({"window": "all_day", "start_time": "08:00", "end_time": "17:00"}, "Time Window: 8 AM–5 PM (all day)"),
+    ({"window": "PM"}, "Time Window: afternoon"),
+    ({}, "Time Window: TBD"),
+])
+def test_installation_scheduled_shows_the_time_window(args, expected):
+    _, message = render("installation_scheduled", {"order_id": "ORD-1", "appointment_date": "2026-12-02", **args})
+    assert expected in message

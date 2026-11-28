@@ -24,7 +24,13 @@ export const salesUI = createGenerativeUI({
   functions: {
     sendChatMessage: {
       description: "Send a message to the sales assistant as the customer's next chat message.",
-      parameters: z.object({ message: z.string().min(1) }),
+      parameters: z.object({
+        message: z.string().min(1),
+        // Set by the gateway on every Button: which card and which button was clicked,
+        // so the card can show the choice as done (spec: generative-ui, acted surfaces).
+        surface: z.string().optional().describe("Id of the surface the button belongs to"),
+        button: z.string().optional().describe("Component id of the clicked button"),
+      }),
       requiresUserActivation: true,
     },
   },

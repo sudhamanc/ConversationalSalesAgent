@@ -12,7 +12,7 @@ for deterministic handoffs)::
 
 State written here (session scope unless noted):
     turn_user_message, handoff_hops, last_agent, last_reply, transcript,
-    appointment_confirmed_order, order_created_order, order_waiting_for_contact (set by ContextBridgePlugin),
+    appointment_confirmed_order, order_created_order, order_waiting_for_contact, registration_waiting_for_contact, payment_completed_order (set by ContextBridgePlugin),
     offer_context (when the customer names one of their active quotes),
     user:customer_id, user:company_name (user scope, visible to later sessions)
 """
@@ -157,6 +157,10 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
 
     if last_agent == "discovery_agent" and not unacknowledged_returning_customer(state):
         customer = state.get("customer_context") or {}
+        waiting = bool(state.get("registration_waiting_for_contact"))
+        if waiting and not ((customer.get("contact") or {}).get("email")):
+            # New registration: the contact card comes first, then the coverage check.
+            return None
         address = customer.get("address") or {}
         zip_code = str(address.get("zip_code") or "").strip()
         svc = state.get("serviceability_context") or {}
@@ -168,6 +172,7 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
             return Handoff(
                 target="serviceability_agent",
                 message="Check service availability for this address: " + json.dumps(payload),
+                clear_keys=("registration_waiting_for_contact",) if waiting else (),
             )
 
     if last_agent == "order_agent":
@@ -207,6 +212,21 @@ def evaluate_handoff(state: Mapping[str, Any], last_agent: str, hops: int) -> Op
                     "Start payment: call get_payment_methods so the secure payment form is shown."
                 ),
                 clear_keys=("appointment_confirmed_order",),
+            )
+
+    if last_agent == "payment_agent" and state.get("payment_completed_order"):
+        order_id = state["payment_completed_order"]
+        order = state.get("order_context") or {}
+        installation = order.get("installation") if isinstance(order.get("installation"), Mapping) else {}
+        if installation.get("status") == "scheduled":
+            return Handoff(
+                target="service_fulfillment_agent",
+                message=(
+                    f"Payment is complete for order {order_id}. Provision the equipment and dispatch the "
+                    "technician for the scheduled installation now (provision_equipment, then "
+                    "dispatch_technician). Do not activate the service yet."
+                ),
+                clear_keys=("payment_completed_order",),
             )
     return None
 

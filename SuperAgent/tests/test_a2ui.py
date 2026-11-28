@@ -141,6 +141,9 @@ def test_surfaces_are_valid_against_the_catalog(tool, response, kind):
     _assert_buttons(surface)
 
 
+SEND_ARGS = CATALOG["functions"][SEND_FUNCTION]["properties"]["args"]
+
+
 def _assert_buttons(surface, required=True):
     buttons = _buttons(surface)
     if required:
@@ -150,8 +153,18 @@ def _assert_buttons(surface, required=True):
         assert call["@call"] == SEND_FUNCTION
         assert call["args"]["message"].strip()
         assert "[" not in call["args"]["message"], "a click sends immediately, so no placeholders"
+        _assert_send_args(surface, button)
     if required:
         assert any(b.get("variant") == "primary" for b in buttons)
+
+
+def _assert_send_args(surface, button):
+    """Args name the surface and the button (spec: generative-ui) and fit the catalog's function schema."""
+    args = button["onClick"]["functionCall"]["args"]
+    assert args["surface"] == surface["surface_id"]
+    assert args["button"] == button["id"]
+    assert set(args) <= set(SEND_ARGS["properties"]), "args the renderer would reject"
+    assert set(SEND_ARGS["required"]) <= set(args)
 
 
 def test_quote_shows_items_and_totals():
@@ -330,6 +343,7 @@ def test_contact_card(tool, response, then):
     assert message["args"]["value"] == (
         "My contact details: name ${/contact/name}, email ${/contact/email}, phone ${/contact/phone}." + then)
     assert [c["condition"]["@call"] for c in button["checks"]] == ["required", "email"]
+    _assert_send_args(surface, button)
 
 
 def test_no_registration_card_when_contact_is_on_file():

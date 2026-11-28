@@ -5,7 +5,7 @@ from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from fakes import build_fake_agents, router
+from fakes import DISCOVERY_SAVES_CONTACT, DISCOVERY_WITHOUT_CONTACT, PAYMENT_PAYS, build_fake_agents, router
 from super_agent.agent import build_gateway_app
 
 
@@ -25,9 +25,9 @@ def _texts(events):
             for p in e.content.parts if p.text]
 
 
-async def _setup(target, state=None):
+async def _setup(target, state=None, scripts=None):
     router_llm = router(target)
-    app = build_gateway_app(agents=build_fake_agents(), router_model=router_llm)
+    app = build_gateway_app(agents=build_fake_agents(scripts), router_model=router_llm)
     ss = InMemorySessionService()
     runner = Runner(app=app, session_service=ss)
     session = await ss.create_session(app_name=app.name, user_id="web:u1", state=state or {})
@@ -68,6 +68,28 @@ async def test_discovery_then_serviceability_same_turn():
     assert s.state["last_agent"] == "serviceability_agent"
 
 
+async def test_registration_without_contact_waits_for_the_contact_card():
+    """Spec: conversation-orchestration, discovery-to-serviceability handoff (contact first)."""
+    agents = build_fake_agents({"discovery_agent": DISCOVERY_WITHOUT_CONTACT})
+    app = build_gateway_app(agents=agents, router_model=router("discovery_agent"))
+    ss = InMemorySessionService()
+    runner = Runner(app=app, session_service=ss)
+    session = await ss.create_session(app_name=app.name, user_id="web:u1", state={})
+    authors = [a for a, _ in _texts(await _turn(runner, session, "We're Crane.io at 123 Main St, Philadelphia PA 19103"))]
+    assert "discovery_agent" in authors and "serviceability_agent" not in authors
+    s = await ss.get_session(app_name=runner.app_name, user_id="web:u1", session_id=session.id)
+    assert s.state["registration_waiting_for_contact"] is True
+    assert "serviceability_context" not in s.state
+
+    # The customer saves the contact card; discovery records it with add_new_contact.
+    agents["discovery_agent"].model.steps = DISCOVERY_SAVES_CONTACT
+    authors = [a for a, _ in _texts(await _turn(runner, s, "My contact details: name Jane, email jane@crane.io, phone ."))]
+    assert authors.index("discovery_agent") < authors.index("serviceability_agent")
+    s = await ss.get_session(app_name=runner.app_name, user_id="web:u1", session_id=session.id)
+    assert s.state["serviceability_context"]["service_address"]["zip_code"] == "19103"
+    assert not s.state.get("registration_waiting_for_contact")
+
+
 async def test_scheduling_then_payment_same_turn():
     state = {"order_context": {"order_id": "ORD-1", "status": "pending_payment", "total_amount": 500.0}}
     runner, ss, session, _ = await _setup("service_fulfillment_agent", state)
@@ -76,6 +98,16 @@ async def test_scheduling_then_payment_same_turn():
     assert authors[:1] == ["service_fulfillment_agent"] and "payment_agent" in authors
     s = await ss.get_session(app_name=runner.app_name, user_id="web:u1", session_id=session.id)
     assert s.state.get("appointment_confirmed_order") is None
+
+
+async def test_payment_then_provisioning_same_turn():
+    state = {"order_context": {"order_id": "ORD-1", "status": "pending_payment",
+                               "installation": {"appointment_id": "APT-1", "status": "scheduled"}}}
+    runner, ss, session, _ = await _setup("payment_agent", state, scripts={"payment_agent": PAYMENT_PAYS})
+    authors = [a for a, _ in _texts(await _turn(runner, session, "Use my savings account ending 7890"))]
+    assert authors.index("payment_agent") < authors.index("service_fulfillment_agent")
+    s = await ss.get_session(app_name=runner.app_name, user_id="web:u1", session_id=session.id)
+    assert not s.state.get("payment_completed_order")
 
 
 async def test_no_payment_handoff_when_already_paid():

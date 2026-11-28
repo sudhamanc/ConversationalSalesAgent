@@ -50,7 +50,7 @@ client/
 │   │   ├── ChatInput.jsx           # User input field
 │   │   ├── MessageBubble.jsx       # Message display (agent label, markdown, feedback)
 │   │   ├── FeedbackButtons.jsx     # Thumbs up/down on traced replies (POST /api/feedback)
-│   │   ├── TypingIndicator.jsx     # Loading state
+│   │   ├── TurnProgress.jsx        # Status line for the running turn (SSE `progress`, elapsed seconds)
 │   │   ├── SuggestionCard.jsx      # Customer-voice suggestion chips (pencil = fill-in template)
 │   │   ├── JourneySidebar.jsx      # Sales journey progress (JourneyStep.jsx)
 │   │   ├── CartPanel.jsx           # Cart (CartItem.jsx)
@@ -320,7 +320,8 @@ Client logs are forwarded with `src/utils/remoteLog.js` to `POST /api/client-log
 
 ## 🧩 A2UI Generative UI (spec: `openspec/specs/generative-ui`)
 
-- `src/a2ui/salesUI.js`: CopilotKit's `standardUI` (69 components), the app's `SecurePaymentForm` component and one function, `sendChatMessage({message})`.
+- `src/a2ui/salesUI.js`: CopilotKit's `standardUI` (69 components), the app's `SecurePaymentForm` component and one function, `sendChatMessage({message, surface?, button?})` (the gateway sets `surface` and `button` on every Button).
+- `src/a2ui/actedSurface.js` (spec: generative-ui, acted surfaces show completion): pure `actedOperations(operations, history, kind)`. `ChatContext` keeps each surface's click history (`surface.actions`: `{button, label, status: pending|done|failed}`); `A2UISurface` ingests the original operations plus one `updateComponents` per entry, so the list only grows and the runtime updates the card in place (a list that does not extend the previous one recreates the surface and loses typed values). Pending: chosen button loading, others and inputs disabled, badge "Sending…"; done: check icon, badge "Saved" (contact) or "Selected: <label>"; failed: original components restored. A click while a reply is still streaming is recorded as pending at once and held in `queuedActionRef`; an effect sends it when `isStreaming` turns false (one held click at most). `closeSurfaces(kinds, label)` appends `closedEntry(label)` (status `closed`: nothing highlighted, all disabled) to open surfaces when `create_order` (cart, quote, contact: "Order placed") or `schedule_installation` (scheduling: "Installation booked") succeeds. Notification `activity_update`s with `status_update: true` update the panel entry with that `notification_id`. Tests: `npm test` (`node --test`, no extra dependencies).
 - `src/a2ui/SecurePaymentForm.jsx` (spec: guided-checkout): card / ACH entry inside the payment card. Details stay in component state (never in the A2UI data model or a chat message), go only to `savePaymentMethod()` → `POST /api/payment-methods`, and are cleared after submit; then it sends "I've added my Visa ending 1111. Please use it to pay for my order." Tailwind only. `ChatContext` mounts its handler with `useGenerativeUIFunction`; a button click sends `message` as the customer's next chat message.
 - `src/a2ui/GenerativeUIProvider.jsx` (in `main.jsx`): `CopilotKitProvider` with `generativeUI={{ ui: salesUI, theme: salesTheme }}` and one `InertAgent` (the provider requires an agent; this one never runs). No `runtimeUrl`, no `CopilotChat`.
 - `src/a2ui/theme.js`: `--a2ui-*` values mapped to the Tailwind palette. Do not restyle surfaces with inline styles.
@@ -364,7 +365,7 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';  // if used
 
 import MessageBubble from './MessageBubble';
-import TypingIndicator from './TypingIndicator';
+import TurnProgress from './TurnProgress';
 
 import { useChat } from '../hooks/useChat';
 import { formatTimestamp } from '../utils/date';
@@ -374,7 +375,7 @@ import { formatTimestamp } from '../utils/date';
 
 **Short conditions:**
 ```jsx
-{isLoading && <TypingIndicator />}
+{isStreaming && <TurnProgress progress={progress} />}
 {error && <ErrorMessage text={error} />}
 ```
 
@@ -432,21 +433,7 @@ function ChatInput({ onSend }) {
 
 ### Loading States
 
-**Typing indicator:**
-```jsx
-export default function TypingIndicator() {
-  return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg w-fit">
-      <div className="flex gap-1">
-        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
-        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-100" />
-        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce delay-200" />
-      </div>
-      <span className="text-sm text-slate-500">SuperAgent is typing...</span>
-    </div>
-  );
-}
-```
+**Turn status line:** `TurnProgress.jsx` is shown for the whole turn while `isStreaming` (not only until the first token). It names the current step from the SSE `progress` event (`utils/agentLabels.js` `progressLabel`), counts the elapsed seconds, and after 10 s on one step notes that starting a service can take up to a minute.
 
 ### Input Field
 
@@ -553,6 +540,12 @@ npm run dev
 
 ```bash
 npm run build
+```
+
+### Unit tests
+
+```bash
+npm test        # node --test "src/**/*.test.js" (pure modules, e.g. a2ui/actedSurface.js)
 ```
 
 **Output:** `dist/` folder with optimized static files

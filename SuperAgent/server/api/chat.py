@@ -28,6 +28,7 @@ from opentelemetry.trace import Status, StatusCode
 
 from api.feedback import issue_feedback_token
 from api.sse import EventMapper
+from api.background import notification_statuses, request_dispatch
 from api.suggestion_playbook import PLAYBOOK
 from api.suggestions import generate_suggestions
 from middleware.auth import Session, get_authenticator
@@ -165,7 +166,9 @@ async def _run_turn(session: Session, user_message: str, record: _TurnRecord, do
     # Journey state at the start of the turn: A2UI surfaces read the checked
     # address's products and the order total from it.
     turn_state = await _session_state(runner, session) if settings.server.a2ui_enabled else {}
+    dispatch_requested = False
     for attempt in range(_MAX_RETRIES):
+        yield _sse({"type": "progress", "stage": "routing" if attempt == 0 else "retrying"})
         mapper = EventMapper(a2ui_enabled=settings.server.a2ui_enabled, state=turn_state)
         record.mapper = mapper
         record.attempts = attempt + 1
@@ -185,6 +188,11 @@ async def _run_turn(session: Session, user_message: str, record: _TurnRecord, do
                     return
                 for payload in mapper.consume(event):
                     yield _sse(payload)
+                if mapper.notification_queued and not dispatch_requested:
+                    # Deliver the email now: on Cloud Run the communication service
+                    # has no CPU between requests (spec: conversation-orchestration).
+                    dispatch_requested = True
+                    request_dispatch()
         except _Retry as retry:
             delay = _RETRY_DELAYS[attempt]
             logger.warning("Retryable error (attempt %d/%d), retrying in %ds: %s", attempt + 1, _MAX_RETRIES, delay, str(retry)[:120])
@@ -210,12 +218,17 @@ async def _run_turn(session: Session, user_message: str, record: _TurnRecord, do
             if mapper.provisioning_done:
                 suggestions = PLAYBOOK["provisioning"]
             else:
+                yield _sse({"type": "progress", "stage": "suggestions"})
                 state = await _session_state(runner, session)
                 suggestions = await asyncio.to_thread(
                     generate_suggestions, user_message, "".join(mapper.response_parts), mapper.last_text_author, state
                 )
             if suggestions:
                 yield _sse({"type": "suggestions", "author": mapper.last_text_author or "agent", "data": suggestions})
+        # Delivery status of this turn's (and earlier still-pending) notifications.
+        for nid, status in (await notification_statuses(session.session_id, mapper.notification_ids)).items():
+            yield _sse({"type": "activity_update", "category": "notification", "tool": "notification_status",
+                        "data": {"notification_id": nid, "status": status, "status_update": True}})
         yield _sse(done)
         _schedule_memory_save(session.user_id, session.session_id)
         return

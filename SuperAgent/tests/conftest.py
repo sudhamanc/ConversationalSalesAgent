@@ -5,6 +5,8 @@ import pytest
 os.environ.setdefault("GEMINI_MODEL", "gemini-test")
 os.environ.setdefault("SESSION_SECRET_KEY", "test-secret-not-for-production")
 os.environ.setdefault("SUGGESTIONS_ENABLED", "false")
+# No warm-up calls to agent services from tests (api.background).
+os.environ.setdefault("WARMUP_ENABLED", "false")
 # super_agent.config loads the repo .env; never export traces from tests (tests enable
 # tracing explicitly with sales_common.telemetry.activate and an in-memory exporter).
 os.environ.setdefault("OTEL_SDK_DISABLED", "true")

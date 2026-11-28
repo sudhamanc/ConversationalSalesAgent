@@ -133,7 +133,7 @@ def test_failed_turn_marks_span_error(gateway, tracing, monkeypatch):
     monkeypatch.setattr(runtime.get_runner(), "run_async", broken)
     provider, exporter = tracing
     _, events = _chat(gateway, _session(gateway)["token"])
-    assert [e["type"] for e in events] == ["error", "done"]
+    assert [e["type"] for e in events if e["type"] != "progress"] == ["error", "done"]
     span = _turn_span(provider, exporter)
     assert span.status.status_code == StatusCode.ERROR
     assert "error" in span.attributes["langfuse.trace.tags"]

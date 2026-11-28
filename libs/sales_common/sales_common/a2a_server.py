@@ -11,10 +11,14 @@ Run with ``uvicorn order_agent.server:app --host 0.0.0.0 --port $PORT``.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
+import os
 from typing import Callable, Optional, Sequence
 from urllib.parse import urlsplit
+
+import httpx
 
 from google.adk import Runner
 from google.adk.a2a.utils.agent_to_a2a import to_a2a
@@ -29,6 +33,7 @@ from .adk_app import build_app
 from .config import require_env
 from .logging import mask_url, setup_logging
 from . import telemetry
+from .auth import service_headers
 from .telemetry import TelemetryFlushPlugin, TraceContextMiddleware, init_telemetry, shutdown_telemetry
 
 logger = logging.getLogger("sales_common.a2a_server")
@@ -42,6 +47,54 @@ def _public_endpoint() -> tuple[str, int, str]:
         raise ValueError(f"PUBLIC_URL must be an absolute http(s) URL, got {url!r}")
     port = parts.port or (443 if parts.scheme == "https" else 80)
     return parts.hostname, port, parts.scheme
+
+
+_WARMUP_TIMEOUT_S = 90.0
+_background: set[asyncio.Task] = set()
+
+
+def mcp_dependency_warm_urls(environ: Optional[dict] = None) -> list[str]:
+    """The MCP endpoint of every MCP dependency (``*_MCP_URL`` variables).
+
+    A plain ``GET`` on the MCP endpoint is answered by the tool service itself (with a
+    4xx: MCP wants a session), which is all a cold start needs. ``/healthz`` would
+    not work on Cloud Run: its front end answers that path with 404 without
+    reaching the container.
+    """
+    environ = os.environ if environ is None else environ
+    urls: list[str] = []
+    for key in sorted(environ):
+        if not key.endswith("_MCP_URL") or not str(environ[key]).strip():
+            continue
+        url = str(environ[key]).strip()
+        parts = urlsplit(url)
+        if parts.scheme in {"http", "https"} and parts.netloc:
+            if url not in urls:
+                urls.append(url)
+    return urls
+
+
+async def warm_mcp_dependencies(urls: Sequence[str], *, transport: Optional[httpx.AsyncBaseTransport] = None) -> None:
+    """``GET`` on each MCP dependency's endpoint so a scaled-to-zero tool service starts
+    while this agent is still idle (spec: agent-services, agents warm their tool
+    services at startup). Errors are logged and ignored."""
+    if not urls:
+        return
+    async with httpx.AsyncClient(timeout=_WARMUP_TIMEOUT_S, transport=transport) as client:
+        async def one(url: str) -> None:
+            try:
+                response = await client.get(url, headers=service_headers(url))
+                logger.info("Warmed MCP dependency %s (reached, %s)", url, response.status_code)
+            except Exception as exc:  # warm-up is best effort
+                logger.info("MCP dependency warm-up failed for %s: %s", url, type(exc).__name__)
+
+        await asyncio.gather(*(one(u) for u in urls))
+
+
+def _start_warmup() -> None:
+    task = asyncio.get_running_loop().create_task(warm_mcp_dependencies(mcp_dependency_warm_urls()))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
 
 
 _TASK_TABLE = "a2a_tasks"
@@ -113,6 +166,7 @@ def create_a2a_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
+        _start_warmup()
         if extra_lifespan is not None:
             async with extra_lifespan(_app):
                 yield

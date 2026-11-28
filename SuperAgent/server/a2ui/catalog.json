@@ -17997,6 +17997,34 @@
                   "$ref": "common_types.json#/$defs/FunctionCall"
                 }
               ]
+            },
+            "surface": {
+              "description": "Id of the surface the button belongs to",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "common_types.json#/$defs/DataBinding"
+                },
+                {
+                  "$ref": "common_types.json#/$defs/FunctionCall"
+                }
+              ]
+            },
+            "button": {
+              "description": "Component id of the clicked button",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "common_types.json#/$defs/DataBinding"
+                },
+                {
+                  "$ref": "common_types.json#/$defs/FunctionCall"
+                }
+              ]
             }
           },
           "required": [

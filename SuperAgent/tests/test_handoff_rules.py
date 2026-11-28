@@ -181,3 +181,77 @@ def test_no_order_handoff_without_email_or_waiting_order():
     customer = {**CUSTOMER, "contact": {"email": "jane@crane.io"}}
     state = {"customer_context": customer, "serviceability_context": {"service_address": {"zip_code": "19103"}}}
     assert evaluate_handoff(state, "discovery_agent", 0) is None
+
+
+# --- contact before coverage (spec: conversation-orchestration) ---------------
+
+def test_new_registration_waits_for_the_contact_before_coverage():
+    waiting = {"customer_context": CUSTOMER, "registration_waiting_for_contact": True}
+    assert evaluate_handoff(waiting, "discovery_agent", 0) is None
+
+    saved = {"customer_context": {**CUSTOMER, "contact": {"name": "Jane", "email": "jane@crane.io"}},
+             "registration_waiting_for_contact": True}
+    h = evaluate_handoff(saved, "discovery_agent", 0)
+    assert h.target == "serviceability_agent" and '"zip_code": "19103"' in h.message
+    assert h.clear_keys == ("registration_waiting_for_contact",)
+
+    plain = evaluate_handoff({"customer_context": CUSTOMER}, "discovery_agent", 0)
+    assert plain.target == "serviceability_agent" and plain.clear_keys == ()
+
+
+def _plugin_event(name, response, state=None):
+    import asyncio
+    from types import SimpleNamespace
+
+    from super_agent.plugins import ContextBridgePlugin
+
+    part = SimpleNamespace(function_response=SimpleNamespace(name=name, response=response))
+    event = SimpleNamespace(author="discovery_agent", content=SimpleNamespace(parts=[part]),
+                            actions=SimpleNamespace(state_delta={}))
+    ctx = SimpleNamespace(session=SimpleNamespace(id="s1", state=state or {}))
+    asyncio.run(ContextBridgePlugin().on_event_callback(invocation_context=ctx, event=event))
+    return event.actions.state_delta
+
+
+def test_plugin_flags_registration_without_contact():
+    from sales_common.context import CONTEXT_UPDATE_KEY
+
+    registered = {"success": True, "customer_id": "C1", "company_name": "Crane",
+                  CONTEXT_UPDATE_KEY: {"customer_context": CUSTOMER}}
+    assert _plugin_event("add_new_company", registered)["registration_waiting_for_contact"] is True
+
+    with_contact = {"customer_context": {**CUSTOMER, "contact": {"email": "jane@crane.io"}}}
+    assert "registration_waiting_for_contact" not in _plugin_event("add_new_company", {"success": True}, with_contact)
+    assert "registration_waiting_for_contact" not in _plugin_event("add_new_company", {"success": False})
+
+
+# --- provisioning after payment (spec: conversation-orchestration) ------------
+
+def _paid(installation_status):
+    order = {"order_id": "ORD-1", "status": "paid"}
+    if installation_status:
+        order["installation"] = {"appointment_id": "APT-1", "status": installation_status}
+    return {"order_context": order, "payment_completed_order": "ORD-1"}
+
+
+def test_payment_hands_off_to_provisioning():
+    h = evaluate_handoff(_paid("scheduled"), "payment_agent", 0)
+    assert h.target == "service_fulfillment_agent"
+    assert "ORD-1" in h.message and "provision_equipment" in h.message and "dispatch_technician" in h.message
+    assert "Do not activate" in h.message
+    assert h.clear_keys == ("payment_completed_order",)
+
+
+def test_no_provisioning_handoff_when_dispatched_or_unscheduled():
+    assert evaluate_handoff(_paid("dispatched"), "payment_agent", 0) is None
+    assert evaluate_handoff(_paid(None), "payment_agent", 0) is None
+    no_payment = {"order_context": {"installation": {"status": "scheduled"}}}
+    assert evaluate_handoff(no_payment, "payment_agent", 0) is None
+    assert evaluate_handoff(_paid("scheduled"), "payment_agent", 2) is None  # hop limit
+
+
+def test_plugin_records_completed_payment():
+    paid = {"success": True, "order_id": "ORD-1", "status": "completed", "transaction_id": "TXN-1"}
+    assert _plugin_event("process_payment", paid)["payment_completed_order"] == "ORD-1"
+    declined = {"success": False, "order_id": "ORD-1", "status": "declined"}
+    assert "payment_completed_order" not in _plugin_event("process_payment", declined)

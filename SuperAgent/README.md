@@ -57,10 +57,11 @@ graph TD
 3. **`dispatch`** validates the target (an unknown target falls back to `faq_agent`), sets `last_agent`, and writes the user message to `a2a_outbound_message`, which is the only text sent to the remote agent.
 4. **Agent node:** a `RemoteA2aAgent` (from `sales_common.a2a_client.remote_agent`) sends the message plus forwarded metadata (journey context, transcript, user profile). The gateway session id is used as the remote context id.
 5. **`handoff_policy`** (`HandoffPolicyNode`, a custom `google.adk.workflow.Node`) applies `evaluate_handoff()`:
-   - `discovery_agent` → `serviceability_agent` when the customer has an address ZIP and serviceability was not yet checked for it;
+   - `discovery_agent` → `serviceability_agent` when the customer has an address ZIP and serviceability was not yet checked for it; after a new registration without a contact email (`registration_waiting_for_contact`) it waits until discovery has saved the contact from the card, so the coverage result follows the contact instead of racing it;
    - `discovery_agent` → `order_agent` when `create_order` was refused for lack of an email (`order_waiting_for_contact`) and discovery has now saved `customer_context.contact.email`;
    - `order_agent` → `service_fulfillment_agent` when `create_order` succeeded this turn (`order_created_order`) and no installation is scheduled: fulfillment calls `check_availability` and the slots card appears in the same turn;
    - `service_fulfillment_agent` → `payment_agent` when a `schedule_installation` succeeded and the order is still unpaid (the message asks for `get_payment_methods`, which shows the secure payment card);
+   - `payment_agent` → `service_fulfillment_agent` when `process_payment` succeeded (`payment_completed_order`) and the installation is still `scheduled`: fulfillment provisions the equipment and dispatches the technician in the same turn (activation stays a later step);
    - at most `MAX_HANDOFF_HOPS = 2` per turn.
 6. **`finish_turn`** stores `user:customer_id` / `user:company_name` for returning visitors.
 
@@ -87,10 +88,11 @@ SSE events (`data: {...}` lines):
 | `type` | Meaning |
 |---|---|
 | `token` | Agent text, with `author` = domain agent name. Only domain agents produce text; repeated final texts from A2A are de-duplicated per author. |
-| `activity_update` | A remote tool ran (category, tool name, data). Drives the activity panel. |
+| `activity_update` | A remote tool ran (category, tool name, data). Drives the activity panel. Notification entries get a later update with `tool: notification_status`, `data: {notification_id, status, status_update: true}` once the email is delivered. |
 | `cart_update` | Cart/order tool results. |
 | `structured_card` | Typed card, e.g. `card_type: "quote"` from `generate_offer_quote` / `find_best_bundle_offer` / `get_quote_details`. |
-| `a2ui` | A2UI 1.0 surface (when `A2UI_ENABLED` is not `false`): `{surface_id, kind: quote\|serviceability\|products, tool, author, operations}`. Built deterministically by `server/api/a2ui.py` from tool results plus the turn's journey state: `kind` contact (name/email/phone card after a new company is registered without a contact, and when `create_order` returns `contact_email_required`; Save is disabled until the email is valid and sends "My contact details: …"), quote (buttons: accept, other contract terms, add a service, email), serviceability, products (list filtered to the address's internet plans, compare, detail; no prices), cart, order, scheduling (slot buttons, appointment) and payment (amount due, saved methods, `SecurePaymentForm`, receipt); no model call, using only CopilotKit standard-catalog components (`server/a2ui/catalog.json`). Buttons call the client function `sendChatMessage` with a customer-voice message. Additive: `structured_card` is still sent. |
+| `a2ui` | A2UI 1.0 surface (when `A2UI_ENABLED` is not `false`): `{surface_id, kind: quote\|serviceability\|products, tool, author, operations}`. Built deterministically by `server/api/a2ui.py` from tool results plus the turn's journey state: `kind` contact (name/email/phone card after a new company is registered without a contact, and when `create_order` returns `contact_email_required`; Save is disabled until the email is valid and sends "My contact details: …"), quote (buttons: accept, other contract terms, add a service, email), serviceability, products (list filtered to the address's internet plans, compare, detail; no prices), cart, order, scheduling (slot buttons, appointment) and payment (amount due, saved methods, `SecurePaymentForm`, receipt); no model call, using only CopilotKit standard-catalog components (`server/a2ui/catalog.json`). Buttons call the client function `sendChatMessage` with a customer-voice message plus `surface` (the surface id) and `button` (the Button's component id); after a click the UI marks that surface as done (chosen button highlighted with a check, the rest disabled, badge "Saved" / "Selected: …") and restores it if the turn fails. Additive: `structured_card` is still sent. |
+| `progress` | What the turn is doing now: `{"stage": "routing"}` at the start, `{"stage": "agent", "agent": "<name>"}` each time the workflow routes or hands off to another agent, `{"stage": "retrying"}` before a retry, `{"stage": "suggestions"}` before suggestions are generated. The UI shows it as a status line with the elapsed seconds until `done`/`error`. Additive. |
 | `suggestions` | Three customer-voice chips (when `SUGGESTIONS_ENABLED=true`): first-person messages the customer would send next, chosen for the journey stage read from session state. When the agent asked for details, chip 1 is a fill-in template with `[placeholders]`. Rep-voice and filler chips are dropped, and the stage playbook (`api/suggestion_playbook.py`) fills any gaps, including when the model call fails. |
 | `error` | User-friendly error naming the unavailable service. |
 | `done` | End of turn. With tracing on (Langfuse keys set) it is `{"type": "done", "trace_id": "<32 hex>", "feedback_token": "<token>"}`: the turn's trace (root span `chat_turn`) and a token for `POST /api/feedback`; otherwise `{"type": "done"}`. |
@@ -98,6 +100,8 @@ SSE events (`data: {...}` lines):
 Card numbers (Luhn-checked), CVVs and bank account numbers in the message are replaced with `[REDACTED_CARD]` / `[REDACTED_CVV]` / `[REDACTED_ACCOUNT]` (`sales_common.telemetry.mask_text`) before the workflow, the agents or the trace see them; customers enter payment details in the secure form instead. Payment-method tokens are stripped from every SSE payload.
 
 Errors before streaming: 401 invalid/expired token, 429 rate limit, 400 invalid body. Retryable model errors (503/429) are retried up to 3 times if no domain event was produced yet.
+
+**Email dispatch.** When a tool result in the turn reports a queued notification (`notification_id`, `email_notification_id`, `notification_queued`, `email_confirmation_queued` or `notification_sent`), the gateway calls the customer communication service's `POST /dispatch` in the background (`server/api/background.py`), so the email goes out at once even when that service is scaled to zero on Cloud Run. At most one call is in flight per process; triggers that arrive meanwhile cause one more call. Before `done`, the gateway waits up to `NOTIFY_STATUS_WAIT_S` seconds for that call, reads the status of the turn's notifications from the `notifications` table and sends a status update for each delivered one; rows still pending are reported at the end of the session's next turn.
 
 ### `POST /api/payment-methods`
 
@@ -143,6 +147,9 @@ The shared template is the repo-root [`.env.example`](../.env.example). `super_a
 | `RUN_MIGRATIONS` | no | `false` | Apply `db/migrations` + seed on startup (the scripts and the `csa-db-init` job normally do this) |
 | `SUGGESTIONS_ENABLED` | no | `true` | Generate follow-up suggestion chips after each turn |
 | `A2UI_ENABLED` | no | `true` | Emit `a2ui` SSE surfaces for quote, serviceability and product tool results (`false` turns them off) |
+| `WARMUP_ENABLED` | no | `true` | On `POST /api/session`, send one background request to every agent service (`GET /.well-known/agent-card.json`; `POST /dispatch` for customer communication; `/healthz` cannot be used because Cloud Run's front end answers it with 404) so scaled-to-zero Cloud Run services start while the customer reads the greeting |
+| `WARMUP_INTERVAL_S` | no | `300` | Minimum seconds between two warm-up rounds of one gateway process |
+| `NOTIFY_STATUS_WAIT_S` | no | `5` | Longest wait before `done` for the turn's email dispatch, so the activity panel can show "sent" instead of "queued" |
 | `DEBUG` | no | `false` | Enables `GET /api/debug/session` and FastAPI debug mode |
 | `ALLOWED_ORIGINS` | no | `http://localhost:3000,http://localhost:5173` | CORS origins (comma-separated) |
 | `RATE_LIMIT_RPM` / `RATE_LIMIT_RPH` / `RATE_LIMIT_BURST` | no | `20` / `200` / `5` | Per-session token bucket, **per gateway instance** |

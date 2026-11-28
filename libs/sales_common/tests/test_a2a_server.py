@@ -54,3 +54,60 @@ def test_two_task_stores_initialize(pg_url, monkeypatch):
                 await engine.dispose()
 
     assert asyncio.run(init_twice()) is True
+
+
+# --- startup warm-up of MCP dependencies (spec: agent-services) ---------------
+
+def test_mcp_dependency_warm_urls():
+    from sales_common.a2a_server import mcp_dependency_warm_urls
+
+    env = {
+        "CATALOG_MCP_URL": "https://csa-catalog-abc-uc.a.run.app/mcp/",
+        "SERVICEABILITY_MCP_URL": "http://localhost:8102/mcp/",
+        "OTHER_MCP_URL": "",
+        "DATABASE_URL": "postgresql://x",
+        "BROKEN_MCP_URL": "not a url",
+    }
+    assert mcp_dependency_warm_urls(env) == [
+        "https://csa-catalog-abc-uc.a.run.app/mcp/",
+        "http://localhost:8102/mcp/",
+    ]
+
+
+def test_warm_mcp_dependencies_requests_healthz_and_ignores_errors():
+    import httpx
+
+    from sales_common.a2a_server import warm_mcp_dependencies
+
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if "bad" in request.url.host:
+            raise httpx.ConnectError("down")
+        return httpx.Response(200, json={"status": "ok"})
+
+    asyncio.run(warm_mcp_dependencies(
+        ["http://good.test/healthz", "http://bad.test/healthz"], transport=httpx.MockTransport(handler)
+    ))
+    assert sorted(seen) == ["http://bad.test/healthz", "http://good.test/healthz"]
+
+
+def test_lifespan_does_not_wait_for_warmup(a2a_env, monkeypatch):
+    """Startup completes while the warm-up request is still pending."""
+    from starlette.testclient import TestClient
+
+    from sales_common import a2a_server
+
+    started = []
+
+    async def slow_warmup(urls, **_):
+        started.append(urls)
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(a2a_server, "warm_mcp_dependencies", slow_warmup)
+    monkeypatch.setenv("CATALOG_MCP_URL", "http://catalog.test/mcp/")
+    app = a2a_server.create_a2a_app(Agent(name="warm_agent", model="gemini-test", instruction="x"))
+    with TestClient(app) as client:
+        assert client.get("/.well-known/agent-card.json").status_code == 200
+    assert started == [["http://catalog.test/mcp/"]]

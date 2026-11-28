@@ -169,7 +169,17 @@ def _payload(response: Any) -> Optional[dict]:
     return response
 
 
+def _stamp_actions(surface_id: str, surface: _Surface) -> None:
+    """Every Button's ``sendChatMessage`` args name its surface and its component id,
+    so the UI can show which choice was made (spec: generative-ui, acted surfaces)."""
+    for node in surface.nodes:
+        call = (node.get("onClick") or {}).get("functionCall") if node.get("component") == "Button" else None
+        if isinstance(call, dict) and call.get("@call") == SEND_FUNCTION and isinstance(call.get("args"), dict):
+            call["args"] = {**call["args"], "surface": surface_id, "button": node["id"]}
+
+
 def _operations(surface_id: str, surface: _Surface) -> list[dict]:
+    _stamp_actions(surface_id, surface)
     create: dict[str, Any] = {"surfaceId": surface_id, "components": surface.nodes}
     if surface.data_model:
         create["dataModel"] = surface.data_model

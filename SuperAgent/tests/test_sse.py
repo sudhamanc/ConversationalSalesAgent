@@ -1,3 +1,4 @@
+import pytest
 from google.adk.events import Event, EventActions
 from google.genai import types
 
@@ -13,20 +14,25 @@ def _fr_event(author, name, response):
         types.Part(function_response=types.FunctionResponse(name=name, response=response))]))
 
 
+def _no_progress(payloads):
+    return [p for p in payloads if p["type"] != "progress"]
+
+
 def test_only_domain_agents_stream_and_duplicates_dropped():
     m = EventMapper()
     assert m.consume(_text_event("route_intent", '{"target": "x"}')) == []
     assert m.consume(_text_event("sales_journey", "internal")) == []
     first = m.consume(_text_event("order_agent", "Order ORD-1 created"))
     dup = m.consume(_text_event("order_agent", "Order ORD-1 created"))
-    assert first == [{"type": "token", "content": "Order ORD-1 created", "author": "order_agent"}]
+    assert first == [{"type": "progress", "stage": "agent", "agent": "order_agent"},
+                     {"type": "token", "content": "Order ORD-1 created", "author": "order_agent"}]
     assert dup == []
 
 
 def test_separator_between_agents():
     m = EventMapper()
     m.consume(_text_event("discovery_agent", "Welcome"))
-    out = m.consume(_text_event("serviceability_agent", "Serviceable"))
+    out = _no_progress(m.consume(_text_event("serviceability_agent", "Serviceable")))
     assert out[0]["content"] == "\n\n" and out[1]["author"] == "serviceability_agent"
 
 
@@ -115,3 +121,68 @@ def test_selected_quote_updates_the_quote_panel():
     out = m.consume(Event(author="prepare_turn", invocation_id="i", actions=EventActions(state_delta={"offer_context": offer})))
     assert out == [{"type": "activity_update", "category": "quote", "tool": "select_quote", "data": offer}]
     assert m.state["offer_context"]["offer_id"] == "OFF-11EB15AA3C"
+
+
+# --- progress (spec: conversation-orchestration, turn progress events) -------
+
+def _route_event(target):
+    return Event(author="sales_journey", invocation_id="i", actions=EventActions(route=target))
+
+
+def test_progress_once_per_agent_across_a_handoff():
+    m = EventMapper()
+    out = m.consume(_route_event("discovery_agent"))
+    out += m.consume(_text_event("discovery_agent", "Welcome"))
+    out += m.consume(_fr_event("discovery_agent", "add_new_company", {"success": True}))
+    out += m.consume(_route_event("serviceability_agent"))
+    out += m.consume(_text_event("serviceability_agent", "Serviceable"))
+    progress = [p for p in out if p["type"] == "progress"]
+    assert progress == [
+        {"type": "progress", "stage": "agent", "agent": "discovery_agent"},
+        {"type": "progress", "stage": "agent", "agent": "serviceability_agent"},
+    ]
+
+
+def test_routing_bookkeeping_gives_no_progress():
+    m = EventMapper()
+    assert m.consume(_text_event("route_intent", '{"target": "x"}')) == []
+    assert m.consume(_route_event("not_an_agent")) == []
+
+
+# --- queued notifications (spec: conversation-orchestration, email dispatch) -
+
+@pytest.mark.parametrize("tool,response", [
+    ("process_payment", {"success": True, "status": "completed", "notification_id": "NTF-1"}),
+    ("create_order", {"success": True, "order_id": "ORD-1", "email_notification_id": "NTF-2"}),
+    ("schedule_installation", {"success": True, "notification_queued": True}),
+    ("process_payment", {"success": True, "email_confirmation_queued": True}),
+    ("generate_offer_quote", {"offer_id": "OFF-1", "notification_sent": {"notification_id": "NTF-3"}}),
+])
+def test_queued_notification_detected(tool, response):
+    m = EventMapper()
+    m.consume(_fr_event("order_agent", tool, response))
+    assert m.notification_queued is True
+
+
+@pytest.mark.parametrize("response", [
+    {"success": True, "notification_queued": False},
+    {"success": True, "email_confirmation_queued": False, "notification_id": None},
+    {"offer_id": "OFF-1"},
+])
+def test_no_queued_notification(response):
+    m = EventMapper()
+    m.consume(_fr_event("order_agent", "create_order", response))
+    assert m.notification_queued is False
+
+
+@pytest.mark.parametrize("tool,response,ids", [
+    ("create_order", {"success": True, "email_notification_id": "N-O"}, ["N-O"]),
+    ("process_payment", {"success": True, "notification_id": "N-P", "email_confirmation_queued": True}, ["N-P"]),
+    ("schedule_installation", {"success": True, "notification_queued": True, "notification_id": "N-S"}, ["N-S"]),
+    ("generate_offer_quote", {"offer_id": "OFF-1", "notification_sent": {"notification_id": "N-Q"}}, ["N-Q"]),
+    ("create_order", {"success": False, "error": "contact_email_required"}, []),
+])
+def test_notification_ids_collected(tool, response, ids):
+    m = EventMapper(a2ui_enabled=False)
+    m.consume(_fr_event("order_agent", tool, response))
+    assert m.notification_ids == ids

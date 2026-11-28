@@ -1,7 +1,9 @@
 """Map ADK workflow events to the chat UI's SSE payloads.
 
 Contract for the React client: ``token``, ``activity_update``,
-``structured_card``, ``cart_update``, ``a2ui``, ``suggestions``, ``done``, ``error``.
+``structured_card``, ``cart_update``, ``a2ui``, ``progress``, ``suggestions``, ``done``, ``error``.
+``progress`` (``{stage: "agent", agent}`` here; ``routing``, ``retrying`` and
+``suggestions`` come from ``api.chat``) tells the UI which step is running.
 ``a2ui`` (spec: generative-ui) carries A2UI 1.0 operations built from quote,
 serviceability and product tool results by ``api.a2ui``; it is additive.
 Only events authored by domain agents produce ``token`` payloads; router and
@@ -39,7 +41,43 @@ PAYMENT_SUCCESS = {"approved", "completed", "captured"}
 _AUTO_NOTIFICATION_LABEL = {
     "create_order": "send_order_confirmation",
     "process_payment": "send_payment_notification",
+    "schedule_installation": "send_installation_scheduled",
+    "dispatch_technician": "send_technician_dispatched",
+    "complete_installation": "send_installation_complete",
+    "activate_service": "send_service_activated_notification",
 }
+
+
+def notification_queued(response: Any) -> bool:
+    """True when a producer tool result reports a queued outbox notification.
+
+    Producers report it in different shapes: ``notification_id`` (payment),
+    ``email_notification_id`` (order), ``notification_queued`` (fulfillment),
+    ``email_confirmation_queued`` (payment) or a ``notification_sent`` object (offer).
+    """
+    if not isinstance(response, dict):
+        return False
+    sent = response.get("notification_sent")
+    return bool(
+        response.get("notification_id")
+        or response.get("email_notification_id")
+        or response.get("notification_queued") is True
+        or response.get("email_confirmation_queued") is True
+        or (isinstance(sent, dict) and sent.get("notification_id"))
+    )
+
+
+def notification_ids(response: Any) -> list[str]:
+    """The outbox ``notification_id``s a tool result reports (every producer shape)."""
+    if not isinstance(response, dict):
+        return []
+    sent = response.get("notification_sent")
+    ids = [
+        response.get("notification_id"),
+        response.get("email_notification_id"),
+        sent.get("notification_id") if isinstance(sent, dict) else None,
+    ]
+    return [i for i in dict.fromkeys(ids) if isinstance(i, str) and i]
 
 
 def _strip_tokens(value: Any) -> Any:
@@ -77,25 +115,30 @@ class EventMapper:
         self.domain_events_seen = False
         self.agents: list[str] = []  # domain agents that answered this turn, in order
         self._a2ui_surfaces: set[str] = set()  # surface ids sent this turn (A2A can repeat results)
+        self.notification_queued = False  # a tool queued an outbox notification this turn
+        self.notification_ids: list[str] = []  # their ids, for the delivery status before ``done``
+        self._progress_target: Optional[str] = None
 
     @property
     def sent_text(self) -> bool:
         return bool(self.response_parts)
 
     def consume(self, event) -> list[dict]:
+        payloads: list[dict] = []
         route = getattr(getattr(event, "actions", None), "route", None)
         if isinstance(route, str) and route in AGENT_NAMES:
             self.current_target = route
+            payloads.extend(self._progress(route))
 
         selected = self._selected_quote(event)
         if selected:
-            return selected
+            return payloads + selected
         if event.author not in AGENT_NAMES or not event.content or not event.content.parts:
-            return []
+            return payloads
         self.domain_events_seen = True
         if event.author not in self.agents:
             self.agents.append(event.author)
-        payloads: list[dict] = []
+        payloads.extend(self._progress(event.author))
         for part in event.content.parts:
             text = getattr(part, "text", None)
             if text and text.strip() and not getattr(part, "thought", False):
@@ -111,11 +154,23 @@ class EventMapper:
             fr = getattr(part, "function_response", None)
             if fr is not None:
                 self._merge_context(fr.response)
+                if notification_queued(fr.response):
+                    self.notification_queued = True
+                for nid in notification_ids(fr.response):
+                    if nid not in self.notification_ids:
+                        self.notification_ids.append(nid)
                 response = _clean_response(fr.response)
                 payloads.extend(self._tool_payloads(fr.name, response, event.author))
                 if self.a2ui_enabled:
                     payloads.extend(self._a2ui_payloads(fr.name, response, event.author))
         return payloads
+
+    def _progress(self, agent: str) -> list[dict]:
+        """One ``progress`` event each time the turn moves to a different agent."""
+        if agent == self._progress_target:
+            return []
+        self._progress_target = agent
+        return [{"type": "progress", "stage": "agent", "agent": agent}]
 
     def _selected_quote(self, event) -> list[dict]:
         """The quote the customer chose (``prepare_turn`` restored it) updates the quote panel."""
@@ -179,7 +234,9 @@ class EventMapper:
             if sent:
                 activity(
                     "notification",
-                    {"type": (sent.get("type") if isinstance(sent, dict) else None) or "QUOTE_CONFIRMATION", "status": "queued"},
+                    {"type": (sent.get("type") if isinstance(sent, dict) else None) or "QUOTE_CONFIRMATION",
+                     "notification_id": sent.get("notification_id") if isinstance(sent, dict) else None,
+                     "status": "queued"},
                     tool="send_quote_confirmation",
                 )
 

@@ -3,6 +3,7 @@ import { streamChat, resetSession, getToken, sendFeedback } from "../utils/api";
 import { getAgentInfo } from "../utils/agentLabels";
 import { useGenerativeUIFunction } from "@copilotkit/react-core/v2/generative-ui";
 import { salesUI } from "../a2ui/salesUI";
+import { buttonLabel, closedEntry, isLocked } from "../a2ui/actedSurface";
 
 const ChatContext = createContext(null);
 
@@ -65,12 +66,67 @@ export function ChatProvider({ children }) {
     notifications: [],
   });
   const [isStreaming, setIsStreaming] = useState(false);
+  // What the running turn is doing (SSE `progress`): {stage, agent?, since}; null when idle.
+  const [progress, setProgress] = useState(null);
+  // The A2UI button click that started the running turn: {surface, button, label}.
+  const pendingActionRef = useRef(null);
+  // A card click made while a reply was still streaming: {message, surface, button, label}.
+  // Sent as soon as that reply ends (spec: generative-ui, surface actions).
+  const queuedActionRef = useRef(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const abortRef = useRef(false);
   const stepCountRef = useRef(0);
   // Track current turn's active agent and accumulated text per agent
   const currentAuthorRef = useRef(null);
   const agentContentRef = useRef("");
+
+  /**
+   * Appends `{button, label, status}` to the action history of A2UI surface
+   * `surfaceId` (spec: generative-ui, acted surfaces show completion).
+   */
+  const recordSurfaceAction = useCallback((surfaceId, entry) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (!Array.isArray(msg.a2uiSurfaces) || !msg.a2uiSurfaces.some((s) => s.surface_id === surfaceId)) return msg;
+        return {
+          ...msg,
+          a2uiSurfaces: msg.a2uiSurfaces.map((s) =>
+            s.surface_id === surfaceId ? { ...s, actions: [...(s.actions || []), entry] } : s
+          ),
+        };
+      })
+    );
+  }, []);
+
+  /**
+   * Closes every open surface of `kinds` whose step was completed without a click
+   * on it, e.g. the cart once the order exists (spec: generative-ui, completed
+   * steps close their surfaces). Surfaces that already show a choice keep it.
+   */
+  const closeSurfaces = useCallback((kinds, label) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (!Array.isArray(msg.a2uiSurfaces)) return msg;
+        let changed = false;
+        const surfaces = msg.a2uiSurfaces.map((s) => {
+          if (!kinds.includes(s.kind) || isLocked(s.actions)) return s;
+          changed = true;
+          return { ...s, actions: [...(s.actions || []), closedEntry(label)] };
+        });
+        return changed ? { ...msg, a2uiSurfaces: surfaces } : msg;
+      })
+    );
+  }, []);
+
+  /** Marks the click that started this turn as done or failed. */
+  const settlePendingAction = useCallback(
+    (status) => {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      if (action) recordSurfaceAction(action.surface, { button: action.button, label: action.label, status });
+    },
+    [recordSurfaceAction]
+  );
 
   /**
    * Finalizes the current streaming journey step with a summary from accumulated content.
@@ -120,6 +176,7 @@ export function ChatProvider({ children }) {
       const userMsg = { role: "user", content: text };
       setMessages((prev) => [...prev, userMsg]);
       setIsStreaming(true);
+      setProgress({ stage: "routing", since: Date.now() });
       abortRef.current = false;
       currentAuthorRef.current = null;
       agentContentRef.current = "";
@@ -202,6 +259,8 @@ export function ChatProvider({ children }) {
         (done) => {
           setMessages((prev) => withTraceInfo(prev, done));
           setIsStreaming(false);
+          setProgress(null);
+          settlePendingAction("done");
           finalizeCurrentStep();
         },
         // onError
@@ -218,6 +277,8 @@ export function ChatProvider({ children }) {
             return updated;
           });
           setIsStreaming(false);
+          setProgress(null);
+          settlePendingAction("failed");
 
           // Mark step as complete with error
           setJourneySteps((prev) => {
@@ -259,10 +320,22 @@ export function ChatProvider({ children }) {
         // onActivityUpdate
         (event) => {
           if (!event || !event.category || !event.data) return;
+          if (event.category === "order" && event.tool === "create_order" && event.data.success && event.data.order_id) {
+            closeSurfaces(["cart", "quote", "contact"], "Order placed");
+          } else if (event.category === "scheduling" && event.tool === "schedule_installation" && event.data.success) {
+            closeSurfaces(["scheduling"], "Installation booked");
+          }
           setActivities((prev) => {
             const next = { ...prev };
             if (event.category === "customer") {
               next.customer = event.data;
+            } else if (event.category === "notification" && event.data.status_update) {
+              // Delivery status of a queued email: update its entry in place.
+              const id = event.data.notification_id;
+              if (!id || !prev.notifications.some((n) => n.notification_id === id)) return prev;
+              next.notifications = prev.notifications.map((n) =>
+                n.notification_id === id ? { ...n, status: event.data.status } : n
+              );
             } else if (event.category === "notification") {
               next.notifications = [...prev.notifications, { tool: event.tool, ...event.data, _ts: Date.now() }];
             } else if (event.category === "fulfillment") {
@@ -309,18 +382,48 @@ export function ChatProvider({ children }) {
             }
             return updated;
           });
+        },
+        // onProgress — which step the turn is on (SSE `progress`)
+        (event) => {
+          if (!event || !event.stage) return;
+          setProgress({ stage: event.stage, agent: event.agent, since: Date.now() });
         }
       );
     },
-    [isStreaming, finalizeCurrentStep, startNewAgentStep]
+    [isStreaming, finalizeCurrentStep, startNewAgentStep, settlePendingAction, closeSurfaces]
   );
 
-  // A2UI Buttons call sendChatMessage({message}): the click is the customer's next message.
-  useGenerativeUIFunction(salesUI, "sendChatMessage", ({ message }) => {
-    if (isStreaming) return { sent: false, reason: "A reply is still streaming" };
+  // A2UI Buttons call sendChatMessage({message, surface, button}): the click is the
+  // customer's next message, and the card shows the choice (pending → done/failed).
+  // A card can arrive before its turn ends (e.g. the contact card, then a handoff):
+  // a click in that window locks the card now and is sent when the reply ends.
+  useGenerativeUIFunction(salesUI, "sendChatMessage", ({ message, surface, button }) => {
+    if (queuedActionRef.current) return { sent: false, reason: "Another choice is waiting to be sent" };
+    let action = null;
+    if (surface && button) {
+      const owner = messagesRef.current.find((m) => m.a2uiSurfaces?.some((s) => s.surface_id === surface));
+      const target = owner?.a2uiSurfaces.find((s) => s.surface_id === surface);
+      if (target && isLocked(target.actions)) return { sent: false, reason: "This card was already used" };
+      if (target) action = { surface, button, label: buttonLabel(target.operations, button) };
+    }
+    if (action) recordSurfaceAction(action.surface, { button: action.button, label: action.label, status: "pending" });
+    if (isStreaming) {
+      queuedActionRef.current = { message, action };
+      return { sent: true, queued: true };
+    }
+    pendingActionRef.current = action;
     sendMessage(message);
     return { sent: true };
   });
+
+  // Send a click queued during the previous reply once that reply has ended.
+  useEffect(() => {
+    if (isStreaming || !queuedActionRef.current) return;
+    const { message, action } = queuedActionRef.current;
+    queuedActionRef.current = null;
+    pendingActionRef.current = action;
+    sendMessage(message);
+  }, [isStreaming, sendMessage]);
 
   /**
    * Thumbs up/down on the assistant message at `index`. Optimistic; reverts
@@ -352,6 +455,9 @@ export function ChatProvider({ children }) {
     setCart(null);
     setActivities({ customer: null, quote: null, order: null, scheduling: null, payment: null, fulfillment: [], notifications: [] });
     setIsStreaming(false);
+    setProgress(null);
+    pendingActionRef.current = null;
+    queuedActionRef.current = null;
     abortRef.current = true;
     stepCountRef.current = 0;
     currentAuthorRef.current = null;
@@ -369,6 +475,7 @@ export function ChatProvider({ children }) {
 
       if (cancelled) return;
       setIsStreaming(true);
+      setProgress({ stage: "routing", since: Date.now() });
       currentAuthorRef.current = null;
       agentContentRef.current = "";
 
@@ -436,12 +543,14 @@ export function ChatProvider({ children }) {
           if (cancelled) return;
           setMessages((prev) => withTraceInfo(prev, done));
           setIsStreaming(false);
+          setProgress(null);
           finalizeCurrentStep();
         },
         // onError — silently fail; customer can still type
         () => {
           if (cancelled) return;
           setIsStreaming(false);
+          setProgress(null);
           // Remove the empty placeholder if nothing came through
           setMessages((prev) => (prev.length === 1 && !prev[0].content ? [] : prev));
           setJourneySteps((prev) => {
@@ -470,7 +579,14 @@ export function ChatProvider({ children }) {
         // onActivityUpdate
         null,
         // onStructuredCard
-        null
+        null,
+        // onA2UI
+        null,
+        // onProgress
+        (event) => {
+          if (cancelled || !event || !event.stage) return;
+          setProgress({ stage: event.stage, agent: event.agent, since: Date.now() });
+        }
       );
     }
 
@@ -484,6 +600,7 @@ export function ChatProvider({ children }) {
       value={{
         messages,
         isStreaming,
+        progress,
         sendMessage,
         clearChat,
         submitFeedback,

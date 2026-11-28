@@ -2,11 +2,11 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { useChatContext } from "../contexts/ChatContext";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
-import TypingIndicator from "./TypingIndicator";
+import TurnProgress from "./TurnProgress";
 import { exportSessionToPdf } from "../utils/pdfExport";
 
 export default function ChatWindow({ onRegisterExport }) {
-  const { messages, isStreaming, sendMessage, clearChat, submitFeedback } = useChatContext();
+  const { messages, isStreaming, progress, sendMessage, clearChat, submitFeedback } = useChatContext();
   const bottomRef = useRef(null);
   const transcriptRef = useRef(null);
   const [prefillRequest, setPrefillRequest] = useState(null);
@@ -84,11 +84,8 @@ export default function ChatWindow({ onRegisterExport }) {
           />
         ))}
 
-        {isStreaming &&
-          messages.length > 0 &&
-          messages[messages.length - 1].content === "" && (
-            <TypingIndicator />
-          )}
+        {/* Shown for the whole turn, not only until the first token (spec: turn progress events). */}
+        {isStreaming && messages.length > 0 && <TurnProgress progress={progress} />}
 
         <div ref={bottomRef} />
       </div>

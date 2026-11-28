@@ -235,6 +235,7 @@ def schedule_installation(
         "special_instructions": special_instructions,
         "status": "scheduled",
         "notification_queued": notification_id is not None,
+        "notification_id": notification_id,
         "message": f"Installation scheduled for {scheduled_date} {window} ({start_time}-{end_time})",
     }
 

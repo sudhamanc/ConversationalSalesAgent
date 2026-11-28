@@ -285,7 +285,9 @@ One SSE event per surface, next to the usual `token`, `activity_update`, `struct
 
 ### Actions: how a click becomes the next turn
 
-CopilotKit forwards `{event}` actions to a CopilotKit agent, which this app does not have. Every button therefore uses a **client function call**: `onClick: {functionCall: {"@call": "sendChatMessage", "args": {"message": …}}}`. `sendChatMessage` is declared in `salesUI` (`requiresUserActivation: true`, so only a real click can run it) and handled in `ChatContext`, which sends the message exactly as if the customer typed it. Messages are written in the customer's voice ("I'll take quote OFF-… (24 months). Please place my order."), so the router, the transcript and the evals treat clicks and typed messages the same. The message can be a literal or a renderer-side function: the contact card uses `formatString` over its data model (`${/contact/email}`).
+CopilotKit forwards `{event}` actions to a CopilotKit agent, which this app does not have. Every button therefore uses a **client function call**: `onClick: {functionCall: {"@call": "sendChatMessage", "args": {"message": …, "surface": <surface id>, "button": <component id>}}}` (`surface` and `button` are stamped by `build_surface`). `sendChatMessage` is declared in `salesUI` (`requiresUserActivation: true`, so only a real click can run it) and handled in `ChatContext`, which sends the message exactly as if the customer typed it. Messages are written in the customer's voice ("I'll take quote OFF-… (24 months). Please place my order."), so the router, the transcript and the evals treat clicks and typed messages the same. The message can be a literal or a renderer-side function: the contact card uses `formatString` over its data model (`${/contact/email}`).
+
+**A clicked card shows the choice.** `ChatContext` records each click on the surface (`{button, label, status}`), and `A2UISurface` adds one A2UI `updateComponents` operation per click (`src/a2ui/actedSurface.js`): while the turn runs the chosen button shows a spinner and a "Sending…" badge; when it completes the chosen button is the only highlighted one, with a check, every other button and input is disabled, and the badge says "Saved" (contact card) or "Selected: 1 PM–5 PM"; if the turn fails the card is restored. A card can arrive before its turn ends (the contact card, then the coverage handoff): a click in that window locks the card at once and its message is sent as soon as the running reply ends. A step finished without a click closes its open cards: once the order is placed the cart, quote and contact cards say "Order placed", and once the installation is booked the slot cards say "Installation booked". Operations are only appended, so CopilotKit updates the surface in place and keeps typed values. A step completed by typing instead of clicking leaves its card unchanged.
 
 Gateway rules that make clicks deterministic:
 
@@ -341,6 +343,7 @@ The legacy cards are also used for any message without a surface of the same `ki
 - CopilotKit's generative UI is marked experimental; versions are pinned exactly (`@copilotkit/react-core` 1.85.0, `zod` 3.25.76, `@ag-ui/client` 1.0.2, `rxjs` 7.8.1) and the catalog contract test catches renamed components.
 - The provider's local agent uses `agents__unsafe_dev_only` (CopilotKit's `selfManagedAgents` belongs to a paid tier); the agent is inert and holds no secrets.
 - The UI bundle grows by roughly 0.9 MB gzipped (CopilotKit, charts, maps, markdown); lazy-loading the renderer is a possible follow-up.
+- Completion state lives in the browser session; reloading the page shows the cards as they arrived.
 - Surfaces are deterministic by design; agents do not author A2UI yet. The exported catalog is ready for that (for example via `SkillGenerator` from `@a2ui/agent`).
 
 ---
@@ -1017,7 +1020,7 @@ Typical end-to-end flow:
 | Agent protocol | A2A (a2a-sdk 1.x) with agent cards and a PostgreSQL task store |
 | Tool protocol | MCP (`mcp` 2.x `MCPServer`, streamable HTTP) |
 | LLM | Gemini (configured via `GEMINI_MODEL`, e.g. `gemini-3-flash-preview`) |
-| Streaming | Server-Sent Events (SSE): text, activity, cart and `a2ui` events |
+| Streaming | Server-Sent Events (SSE): text, activity, cart, `a2ui` and `progress` events |
 | Database | PostgreSQL 16 (psycopg 3, SQLAlchemy 2.1 + asyncpg), versioned SQL migrations |
 | RAG | ChromaDB + sentence-transformers (catalog service) |
 | Observability | OpenTelemetry (OTLP/HTTP) + OpenInference ADK instrumentation → Langfuse Cloud (traces, sessions, scores, datasets) |
