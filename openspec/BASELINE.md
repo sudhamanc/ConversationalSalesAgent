@@ -147,9 +147,11 @@ Workflow `sales_journey` (`super_agent/workflow.py`): `START â†’ prepare_turn â†
 | project-baseline | project-baseline |
 | agent-observability (+ additions to conversation-orchestration, agent-evaluation, service-operations) | langfuse-observability (2026-11-15) |
 | generative-ui (+ SSE contract in conversation-orchestration) | a2ui-generative-cards (2026-11-23) |
-| acted surfaces, `progress` events, warm-up, on-demand email dispatch | turn-feedback-and-email-dispatch (open) |
+| returning-customer resume, agent span delivery | returning-customer-resume (2026-11-28) |
+| checkout surfaces, secure payment form, automatic scheduling, contact email | guided-checkout (2026-11-28) |
+| acted surfaces, `progress` events, warm-up, on-demand email dispatch and delivery status, contact before coverage, provisioning after payment | turn-feedback-and-email-dispatch (2026-11-28) |
 
-Open: `guided-checkout` (checkout surfaces, secure payment form, automatic scheduling, contact email; golden evals pending), `returning-customer-resume`, `turn-feedback-and-email-dispatch` (acted A2UI cards, turn progress, warm-up, `POST /dispatch`; cloud verification pending). Decided not to do: `openspec/changes/archive/2026-11-16-mcp-remaining-domains` (REST + MCP services for the other six domains; archived without merging specs). Archived changes: `openspec/changes/archive/`.
+Open: none. Decided not to do: `openspec/changes/archive/2026-11-16-mcp-remaining-domains` (REST + MCP services for the other six domains; archived without merging specs). Archived changes: `openspec/changes/archive/`.
 
 ## 10. Observability (`libs/sales_common/sales_common/telemetry.py`)
 

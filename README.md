@@ -1496,6 +1496,6 @@ See [GCP_DEPLOY.md](./GCP_DEPLOY.md) for resources, IAM, secrets, environment va
 | [evals/README.md](./evals/README.md) | Golden evals: tiers, running, Langfuse export, golden lifecycle |
 | [tests/integration/README.md](./tests/integration/README.md) | Multi-process integration test |
 | [Scenarios.md](./Scenarios.md) | Test cases and end-to-end conversation flows |
-| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth, incl. `generative-ui`) and change proposals (open: `guided-checkout`; history, including `a2ui-generative-cards`, `2026-11-15-langfuse-observability` and the declined `2026-11-16-mcp-remaining-domains`, in `archive/`) |
+| `openspec/specs/`, `openspec/changes/` | Behavioral specs (source of truth, incl. `generative-ui`) and change proposals (none open; history, including `a2ui-generative-cards`, `guided-checkout`, `returning-customer-resume`, `turn-feedback-and-email-dispatch`, `2026-11-15-langfuse-observability` and the declined `2026-11-16-mcp-remaining-domains`, in `archive/`) |
 | Each `<Agent>/AGENTS.md` | Individual agent documentation |
 

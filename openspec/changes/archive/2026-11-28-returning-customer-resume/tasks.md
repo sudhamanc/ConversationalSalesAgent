@@ -24,5 +24,5 @@
 ## 5. Docs and deploy
 
 - [x] 5.1 BASELINE, `db/README.md`, `.env.example`, `DiscoveryAgent/AGENTS.md`. Verify: `pytest tests/test_baseline_doc.py -q`.
-- [ ] 5.2 Deploy (migration job runs), then confirm agent spans in Langfuse after a turn. Verify: Langfuse observations from agent services with the new release.
+- [x] 5.2 Deploy (migration job runs), then confirm agent spans in Langfuse after a turn. Verify: Langfuse observations from agent services with the new release. Done: deployed 2026-11-27 (all 13 services, migration job); Langfuse v2 observations 2026-11-27/28 (environment `gcp`, 273) include agent-service spans `invocation [payment_agent]`, `invocation [service_fulfillment_agent]`, `invocation [greeting_agent]` and their tool spans (`create_order`, `get_payment_methods`, `check_availability`, …).
 - [x] 5.3 Golden evals: skipped by user decision (no billed Gemini requests).

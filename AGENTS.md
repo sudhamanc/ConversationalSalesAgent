@@ -579,7 +579,7 @@ Follow `services/catalog/` or `services/serviceability/`: `core.py` shared by Fa
 **Remaining:**
 
 1. **Known domain bugs:** all fixed with regression tests (see README "Recent Fixes and Known Limitations"). Residual limitations are listed in each agent's `AGENTS.md` under "Known issues".
-2. **Golden evals** for the guided-checkout prompt and handoff changes (serviceability, product, order, fulfillment, payment, journeys) need a billed re-run and re-recording (`scripts/eval.sh`).
+2. **Golden evals** for the guided-checkout prompt and handoff changes and the turn-feedback handoffs (contact before coverage, provisioning after payment) (serviceability, product, order, fulfillment, payment, journeys `s1`, `s4`) need a billed re-run and re-recording (`scripts/eval.sh`).
 3. **Rate limiting** is per gateway instance (in-memory token bucket); move to a shared store for multi-instance deployments.
 4. **Known environment limitations:** the RAG embedding model download is blocked in the build sandbox (the catalog service then reports `available: false` for knowledge search); Docker images were not built in the sandbox (run `docker compose build` / `scripts/deploy_cloud.sh` yourself).
 6. Per-service databases and IaC (Terraform) once table ownership is single-writer.

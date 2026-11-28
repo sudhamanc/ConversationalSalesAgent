@@ -143,3 +143,81 @@ README.md SHALL contain the "Agent Service Guide" section, the single descriptio
 - **WHEN** a developer adds an agent
 - **THEN** README "Agent Service Guide" gives the layout and templates, and no other template folder exists
 
+### Requirement: Returning customers are acknowledged and resumed
+
+When `discovery_agent` identifies a customer that already exists in the CRM, it SHALL publish `returning_customer_context` with `status` (`active_service`, `in_progress` or `known`) and the customer's active quote, pending orders, fulfillments, active services and last stored serviceability check. It SHALL restore the most recent active quote as `offer_context`. It SHALL restore a serviceability check for the account address made within `SERVICEABILITY_REUSE_DAYS` (default 30) as `serviceability_context` with `reused: true`. Its reply SHALL acknowledge that the customer was found and summarize their status before anything else happens:
+- **active service:** the active service, and a question about what else the customer needs
+- **in progress:** the saved quote, order or installation, and an offer to continue
+- **known:** the address on file, and a question to confirm it
+
+#### Scenario: Returning customer with a saved quote
+- **WHEN** a customer with active quote `OFF-1` introduces their company
+- **THEN** `offer_context.offer_id` is `OFF-1`
+- **AND** the reply welcomes them back and offers to continue with `OFF-1`
+
+#### Scenario: Customer with an activated service
+- **WHEN** a customer with a `customer_master` row introduces their company
+- **THEN** `returning_customer_context.status` is `active_service`
+- **AND** the reply names the active service and asks what else they need
+
+#### Scenario: Serviceability reused
+- **WHEN** the account address was checked 3 days ago
+- **THEN** `serviceability_context.reused` is true and no serviceability check runs in that turn
+
+### Requirement: Unsaved quotes are not presented
+
+`generate_offer_quote` SHALL return `success: false` with `error: "quote_not_saved"` and SHALL NOT publish `offer_context` when the quote cannot be persisted. The offer agent SHALL tell the customer that the quote could not be saved. When no quote is found, it SHALL say so without inventing a reason.
+
+#### Scenario: Database unavailable while quoting
+- **WHEN** saving the quote raises a database error
+- **THEN** the tool result has `success: false` and `error: "quote_not_saved"`
+- **AND** session state has no new `offer_context`
+
+### Requirement: Payment methods REST endpoint
+
+The payment service SHALL expose `POST /payment-methods` taking `customer_id`, `payment_type` (`credit_card` or `ach`) and the card (`card_number`, `expiry_month`, `expiry_year`, `cvv`) or bank (`routing_number`, `account_number`, `account_type`) fields. It SHALL validate and tokenize without a model call, save only the masked method and opaque token to `customer_payment_methods`, and return the payment type, brand, last four digits and whether it was saved, never the token or full numbers. Invalid details SHALL return HTTP 400 with the validation error. The gateway SHALL proxy it as `POST /api/payment-methods` for an authenticated chat session, taking `customer_id` only from the session state.
+
+#### Scenario: Invalid card
+- **WHEN** the card number fails the Luhn check
+- **THEN** the endpoint returns 400 with "Invalid card number (failed Luhn check)" and nothing is saved
+
+### Requirement: Replies do not repeat cards
+
+Agents SHALL keep a reply to at most two short sentences when their tool result is shown as a card in the chat (serviceability, product lists and details, quotes, cart, orders, installation slots and confirmations, payment methods and receipts), and SHALL NOT repeat the card's rows, prices, slots or identifiers. The serviceability agent SHALL NOT disclose internal network element details (switch, cabinet, OLT, splice point or fiber pair identifiers).
+
+#### Scenario: Serviceable address
+- **WHEN** serviceability_agent confirms service at an FTTP address
+- **THEN** its reply is a one- or two-sentence confirmation with a next question and contains no switch or cabinet id
+
+### Requirement: Notification dispatch endpoint
+
+The customer communication service SHALL serve `POST /dispatch`, without calling a model: it delivers the due pending notifications within the request (the same delivery as the background loop, safe to run concurrently with it) and returns `{"success": true, "processed", "sent", "simulated", "deduped", "retrying", "failed"}`. On Cloud Run the endpoint SHALL be private like every agent service.
+
+#### Scenario: Pending rows delivered on request
+- **WHEN** two `pending` notifications exist and `POST /dispatch` is called
+- **THEN** the response reports `processed: 2` and both rows are no longer `pending`
+
+### Requirement: Agents warm their tool services at startup
+
+An agent service SHALL, when it starts, send a `GET` in the background to the endpoint of each configured MCP dependency (environment variables ending in `_MCP_URL`), with service authentication; any response from the tool service counts as warmed. Failures SHALL NOT delay or fail startup.
+
+#### Scenario: Product agent cold start
+- **WHEN** the product agent starts with `CATALOG_MCP_URL=https://csa-catalog-…/mcp/`
+- **THEN** it sends `GET https://csa-catalog-…/mcp/` without waiting for the response before serving
+
+### Requirement: Producer tools report the queued notification id
+
+Every tool that queues an outbox notification SHALL return its `notification_id` (order: `email_notification_id`) in the result, next to any boolean flag, so the gateway can report the notification's delivery status. This covers `schedule_installation`, `dispatch_technician`, `complete_installation` and `activate_service` in service fulfillment.
+
+#### Scenario: Installation booked
+- **WHEN** `schedule_installation` books an appointment and queues `installation_scheduled`
+- **THEN** its result contains `notification_queued: true` and the row's `notification_id`
+
+### Requirement: Installation emails show the time window
+
+The `installation_scheduled` email SHALL show the booked time window as a readable range built from `start_time` and `end_time` (for example `1 PM–5 PM (afternoon)`), not the bare window code (`PM`); without times it SHALL fall back to the window name.
+
+#### Scenario: Afternoon window
+- **WHEN** the notification args are `window: "PM"`, `start_time: "13:00"`, `end_time: "17:00"`
+- **THEN** the email reads `Time Window: 1 PM–5 PM (afternoon)`
+
